@@ -113,7 +113,7 @@ window.viewService = s => { const d = db(), ms = d.members.filter(m => (m.servic
 let reportFilters = { search: '', chapter: 'All', type: 'All', period: 'All' };
 function reportTypes(d) { return [...new Set(d.reports.map(r => r.type).filter(Boolean))].sort(); }
 function filteredReports(d) { return d.reports.filter(r => { const text = `${r.title} ${r.activity} ${r.preparedBy} ${r.description}`.toLowerCase(); if (!text.includes(reportFilters.search.toLowerCase())) return false; if (reportFilters.chapter !== 'All' && r.chapter !== reportFilters.chapter) return false; if (reportFilters.type !== 'All' && r.type !== reportFilters.type) return false; if (reportFilters.period === 'This Month') { const dt = new Date(r.date), now = new Date(); if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return false; } return true; }); }
-function renderReports() { const d = db(), list = filteredReports(d), types = reportTypes(d), monthCount = d.reports.filter(r => { const x = new Date(r.date), n = new Date(); return x.getMonth() === n.getMonth() && x.getFullYear() === n.getFullYear() }).length; const months = [...Array(6)].map((_, i) => { const x = new Date(); x.setMonth(x.getMonth() - (5 - i)); const label = x.toLocaleDateString('en', { month: 'short' }); const count = d.reports.filter(r => { const q = new Date(r.date); return q.getMonth() === x.getMonth() && q.getFullYear() === x.getFullYear() }).length; return { label, count } }); const max = Math.max(...months.map(x => x.count), 1); content.innerHTML = pageHeader('Activity Reports', 'Manage reports and review simple activity analytics.', '<button class="btn blue" id="addReport">+ Add Report</button> <button class="btn" id="printReports">Print / Export PDF</button>') + `<div class="stat-grid"><section class="card stat-card"><span>Matching Reports</span><strong>${list.length}</strong></section><section class="card stat-card"><span>This Month</span><strong>${monthCount}</strong></section><section class="card stat-card"><span>Chapters</span><strong>${new Set(d.reports.map(r => r.chapter).filter(Boolean)).size}</strong></section><section class="card stat-card"><span>Report Types</span><strong>${types.length}</strong></section></div><div class="toolbar"><div class="grow"><input class="search-input" id="reportSearch" placeholder="Search reports..." value="${esc(reportFilters.search)}"></div><select class="select-input" id="reportChapter" style="max-width:180px"><option>All</option>${d.chapters.map(c => `<option ${reportFilters.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><select class="select-input" id="reportType" style="max-width:180px"><option>All</option>${types.map(t => `<option ${reportFilters.type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select><select class="select-input" id="reportPeriod" style="max-width:160px"><option>All</option><option ${reportFilters.period === 'This Month' ? 'selected' : ''}>This Month</option></select><button class="btn" id="clearReportFilters">Clear Filters</button></div><div class="grid-2"><section class="card panel"><h3>Monthly Activity</h3><div class="chart-bars">${months.map(m => `<div class="chart-bar" style="height:${Math.max(8, (m.count / max) * 145)}px"><span>${m.label}</span></div>`).join('')}</div></section><section class="card panel"><h3>Report Type Mix</h3>${types.length ? `<div class="bar-list">${types.map(t => { const n = d.reports.filter(r => r.type === t).length; return `<div class="bar-row"><span>${esc(t)}</span><div class="bar-track"><div class="bar-fill" style="width:${n / Math.max(d.reports.length, 1) * 100}%"></div></div><strong>${n}</strong></div>` }).join('')}</div>` : '<div class="empty-state"><h3>No analytics yet</h3><p>Add activity reports to see report type totals.</p></div>'}</section></div><section class="card table-wrap" style="margin-top:18px">${list.length ? `<table class="data-table"><thead><tr><th>Date</th><th>Report Title</th><th>Chapter</th><th>Type</th><th>Activity</th><th>Prepared By</th><th>Actions</th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r.date)}</td><td><strong>${esc(r.title)}</strong></td><td>${esc(r.chapter || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc(r.activity || '—')}</td><td>${esc(r.preparedBy || '—')}</td><td><button class="btn" onclick="reportModal(${r.id})">Edit</button> <button class="btn red" onclick="deleteReport(${r.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Activity Reports</h3><p>Add a report to start your analytics.</p></div>'}</section>`; document.getElementById('addReport').onclick = () => reportModal(); document.getElementById('printReports').onclick = () => window.print(); document.getElementById('reportSearch').oninput = e => { reportFilters.search = e.target.value; renderReports() }; document.getElementById('reportChapter').onchange = e => { reportFilters.chapter = e.target.value; renderReports() }; document.getElementById('reportType').onchange = e => { reportFilters.type = e.target.value; renderReports() }; document.getElementById('reportPeriod').onchange = e => { reportFilters.period = e.target.value; renderReports() }; document.getElementById('clearReportFilters').onclick = () => { reportFilters = { search: '', chapter: 'All', type: 'All', period: 'All' }; renderReports() }; }
+function renderReports() { const d = db(), list = filteredReports(d), types = reportTypes(d), monthCount = d.reports.filter(r => { const x = new Date(r.date), n = new Date(); return x.getMonth() === n.getMonth() && x.getFullYear() === n.getFullYear() }).length; const months = [...Array(6)].map((_, i) => { const x = new Date(); x.setMonth(x.getMonth() - (5 - i)); const label = x.toLocaleDateString('en', { month: 'short' }); const count = d.reports.filter(r => { const q = new Date(r.date); return q.getMonth() === x.getMonth() && q.getFullYear() === x.getFullYear() }).length; return { label, count } }); const max = Math.max(...months.map(x => x.count), 1); content.innerHTML = pageHeader('Activity Reports', 'Manage reports and review simple activity analytics.', '<button class="btn blue" id="addReport">+ Add Report</button> <button class="btn" id="printReports">Print</button> <button class="btn" id="exportPdfBtn">Export PDF</button>') + `<div class="stat-grid"><section class="card stat-card"><span>Matching Reports</span><strong>${list.length}</strong></section><section class="card stat-card"><span>This Month</span><strong>${monthCount}</strong></section><section class="card stat-card"><span>Chapters</span><strong>${new Set(d.reports.map(r => r.chapter).filter(Boolean)).size}</strong></section><section class="card stat-card"><span>Report Types</span><strong>${types.length}</strong></section></div><div class="toolbar"><div class="grow"><input class="search-input" id="reportSearch" placeholder="Search reports..." value="${esc(reportFilters.search)}"></div><select class="select-input" id="reportChapter" style="max-width:180px"><option>All</option>${d.chapters.map(c => `<option ${reportFilters.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><select class="select-input" id="reportType" style="max-width:180px"><option>All</option>${types.map(t => `<option ${reportFilters.type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select><select class="select-input" id="reportPeriod" style="max-width:160px"><option>All</option><option ${reportFilters.period === 'This Month' ? 'selected' : ''}>This Month</option></select><button class="btn" id="clearReportFilters">Clear Filters</button></div><div class="grid-2"><section class="card panel"><h3>Monthly Activity</h3><div class="chart-bars">${months.map(m => `<div class="chart-bar" style="height:${Math.max(8, (m.count / max) * 145)}px"><span>${m.label}</span></div>`).join('')}</div></section><section class="card panel"><h3>Report Type Mix</h3>${types.length ? `<div class="bar-list">${types.map(t => { const n = d.reports.filter(r => r.type === t).length; return `<div class="bar-row"><span>${esc(t)}</span><div class="bar-track"><div class="bar-fill" style="width:${n / Math.max(d.reports.length, 1) * 100}%"></div></div><strong>${n}</strong></div>` }).join('')}</div>` : '<div class="empty-state"><h3>No analytics yet</h3><p>Add activity reports to see report type totals.</p></div>'}</section></div><section class="card table-wrap" style="margin-top:18px">${list.length ? `<table class="data-table"><thead><tr><th>Date</th><th>Report Title</th><th>Chapter</th><th>Type</th><th>Activity</th><th>Prepared By</th><th>Actions</th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r.date)}</td><td><strong>${esc(r.title)}</strong></td><td>${esc(r.chapter || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc(r.activity || '—')}</td><td>${esc(r.preparedBy || '—')}</td><td><button class="btn" onclick="reportModal(${r.id})">Edit</button> <button class="btn red" onclick="deleteReport(${r.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Activity Reports</h3><p>Add a report to start your analytics.</p></div>'}</section>`; document.getElementById('addReport').onclick = () => reportModal(); document.getElementById('printReports').onclick = () => window.print(); document.getElementById('exportPdfBtn').onclick = () => exportReportsPdf(d); document.getElementById('reportSearch').oninput = e => { reportFilters.search = e.target.value; renderReports() }; document.getElementById('reportChapter').onchange = e => { reportFilters.chapter = e.target.value; renderReports() }; document.getElementById('reportType').onchange = e => { reportFilters.type = e.target.value; renderReports() }; document.getElementById('reportPeriod').onchange = e => { reportFilters.period = e.target.value; renderReports() }; document.getElementById('clearReportFilters').onclick = () => { reportFilters = { search: '', chapter: 'All', type: 'All', period: 'All' }; renderReports() }; }
 window.reportModal = function (id = null) { const d = db(), r = id ? d.reports.find(x => x.id === id) : {}; const body = `<div class="form-grid">${field('Report Title', 'rTitle', 'text', r.title || '', 'required')}<div class="form-group"><label>Chapter</label><select class="select-input" id="rChapter"><option value="">No Chapter</option>${d.chapters.map(c => `<option ${r.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>${field('Report Type', 'rType', 'text', r.type || '')}${field('Activity', 'rActivity', 'text', r.activity || '')}${field('Report Date', 'rDate', 'date', r.date || new Date().toISOString().slice(0, 10), 'required')}${field('Prepared By', 'rPrepared', 'text', r.preparedBy || '')}<div class="form-group full"><label>Description</label><textarea class="textarea-input" id="rDescription">${esc(r.description || '')}</textarea></div></div>`; openModal(id ? 'Edit Activity Report' : 'Add Activity Report', body, close => { const title = document.getElementById('rTitle').value.trim(); if (!title) { toast('Report title is required.', 'error'); return; } const obj = { id: id || uid(), title, chapter: document.getElementById('rChapter').value, type: document.getElementById('rType').value.trim(), activity: document.getElementById('rActivity').value.trim(), date: document.getElementById('rDate').value, preparedBy: document.getElementById('rPrepared').value.trim(), description: document.getElementById('rDescription').value.trim() }; if (id) Object.assign(d.reports.find(x => x.id === id), obj); else d.reports.push(obj); save(d); close(); toast(id ? 'Report updated.' : 'Report added.'); renderReports(); }); }; window.deleteReport = id => { if (!confirm('Delete this report?')) return; const d = db(); d.reports = d.reports.filter(x => x.id !== id); save(d); toast('Report deleted.'); renderReports(); };
 
 // ---------------- EVENTS ----------------
@@ -133,6 +133,126 @@ window.viewEvent = id => {
 };
 window.participantModal = (eventId, id = null) => { const d = db(), p = id ? d.participants.find(x => x.id === id) : {}; const body = `<div class="form-grid">${field('First Name', 'pFirst', 'text', p.first || '', 'required')}${field('Last Name', 'pLast', 'text', p.last || '', 'required')}${field('Middle Initial (optional)', 'pMI', 'text', p.mi || '', 'maxlength="2"')}${field('Age', 'pAge', 'number', p.age || '', 'min="1"')}${field('Contact Number', 'pContact', 'text', p.contact || '', 'maxlength="11"')}${field('Address', 'pAddress', 'text', p.address || '')}<div class="form-group"><label>Chapter</label><select class="select-input" id="pChapter"><option value="">No Chapter</option>${d.chapters.map(c => `<option ${p.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div class="form-group"><label>Service</label><select class="select-input" id="pService"><option value="">No Service</option>${d.services.map(s => `<option ${p.service === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>${selectField('Mode of Payment', 'pMode', ['Cash', 'GCash', 'Bank Transfer', 'Other'], p.paymentMode || 'Cash')}${selectField('Payment Status', 'pPay', ['Unpaid', 'Paid'], p.paymentStatus || 'Unpaid')}<div class="form-group full"><label class="check-row"><input type="checkbox" id="pAttended" ${p.attended ? 'checked' : ''}> Mark as attended</label></div></div>`; openModal(id ? 'Edit Participant' : 'Register Participant', body, close => { const first = document.getElementById('pFirst').value.trim(), last = document.getElementById('pLast').value.trim(); if (!first || !last) { toast('First and last name are required.', 'error'); return; } const contact = document.getElementById('pContact').value.trim(); if (contact && !/^\d{11}$/.test(contact)) { toast('Contact number must be 11 digits.', 'error'); return; } const obj = { id: id || uid(), eventId, first, last, mi: document.getElementById('pMI').value.trim(), age: Number(document.getElementById('pAge').value || 0), contact, address: document.getElementById('pAddress').value.trim(), chapter: document.getElementById('pChapter').value, service: document.getElementById('pService').value, paymentMode: document.getElementById('pMode').value, paymentStatus: document.getElementById('pPay').value, attended: document.getElementById('pAttended').checked }; if (id) Object.assign(d.participants.find(x => x.id === id), obj); else d.participants.push(obj); save(d); close(); toast(id ? 'Participant updated.' : 'Participant registered.'); viewEvent(eventId); }); };
 window.deleteParticipant = (eventId, id) => { if (!confirm('Delete this participant?')) return; const d = db(); d.participants = d.participants.filter(x => x.id !== id); save(d); toast('Participant deleted.'); viewEvent(eventId); };
+
+// PDF helpers inserted to generate a summarized report document (separate from window.print())
+function calculateTotalParticipants(reports, data) {
+  return reports.reduce((sum, r) => {
+    if (typeof r.participants === 'number') return sum + r.participants;
+    if (typeof r.attendance === 'number') return sum + r.attendance;
+    if (r.eventId) return sum + (data.participants.filter(p => p.eventId === r.eventId).length || 0);
+    return sum;
+  }, 0);
+}
+
+function groupActivitiesByType(reports, data) {
+  const map = {};
+  reports.forEach(r => {
+    const t = r.type || 'Unspecified';
+    if (!map[t]) map[t] = { count: 0, participants: 0 };
+    map[t].count += 1;
+    if (typeof r.participants === 'number') map[t].participants += r.participants;
+    else if (typeof r.attendance === 'number') map[t].participants += r.attendance;
+    else if (r.eventId) map[t].participants += data.participants.filter(p => p.eventId === r.eventId).length;
+  });
+  return Object.keys(map).map(k => ({ type: k, count: map[k].count, participants: map[k].participants }));
+}
+
+function groupActivitiesByChapter(reports, data) {
+  const map = {};
+  reports.forEach(r => {
+    const c = r.chapter || 'No Chapter';
+    if (!map[c]) map[c] = { count: 0, participants: 0 };
+    map[c].count += 1;
+    if (typeof r.participants === 'number') map[c].participants += r.participants;
+    else if (typeof r.attendance === 'number') map[c].participants += r.attendance;
+    else if (r.eventId) map[c].participants += data.participants.filter(p => p.eventId === r.eventId).length;
+  });
+  return Object.keys(map).map(k => ({ chapter: k, count: map[k].count, participants: map[k].participants }));
+}
+
+function calculateReportSummary(reports, data) {
+  const totalActivities = reports.length;
+  const totalParticipants = calculateTotalParticipants(reports, data);
+  const averageAttendance = totalActivities ? Math.round(totalParticipants / totalActivities) : 0;
+  const chaptersInvolved = new Set(reports.map(r => r.chapter).filter(Boolean)).size;
+  const activityTypes = new Set(reports.map(r => r.type).filter(Boolean)).size;
+  return { totalActivities, totalParticipants, averageAttendance, chaptersInvolved, activityTypes };
+}
+
+function generateReportInsights(reports, data) {
+  const byChapter = groupActivitiesByChapter(reports, data).sort((a, b) => b.count - a.count);
+  const byType = groupActivitiesByType(reports, data).sort((a, b) => b.count - a.count);
+  const insights = [];
+  if (reports.length === 0) return insights;
+  if (byChapter.length) insights.push(`${byChapter[0].chapter} recorded the highest number of activities (${byChapter[0].count}).`);
+  if (byType.length) insights.push(`${byType[0].type} was the most frequently recorded activity (${byType[0].count}).`);
+  const totalParticipants = calculateTotalParticipants(reports, data);
+  if (reports.length) insights.push(`Total recorded participation was ${totalParticipants}.`);
+  if (reports.length) insights.push(`Average attendance per activity was approximately ${Math.round(totalParticipants / Math.max(1, reports.length))} participants.`);
+  return insights;
+}
+
+function exportReportsPdf(data) {
+  const reports = filteredReports(data);
+  if (!reports.length) { alert('No report data is available for the selected filters.'); return; }
+  const summary = calculateReportSummary(reports, data);
+  const byType = groupActivitiesByType(reports, data);
+  const byChapter = groupActivitiesByChapter(reports, data);
+  const details = reports.map(r => ({ date: r.date ? fmtDate(r.date) : '—', title: r.title || '—', chapter: r.chapter || '—', type: r.type || '—', participants: (typeof r.participants === 'number' ? r.participants : (typeof r.attendance === 'number' ? r.attendance : (r.eventId ? data.participants.filter(p => p.eventId === r.eventId).length : '—'))), location: r.location || r.venue || '—' }));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  let y = 40;
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('MFC YOUTH', 40, y); y += 18;
+  doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text('Area Management System', 40, y); y += 24;
+  doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY SUMMARY REPORT', 40, y); y += 18;
+
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  const now = new Date();
+  doc.text(`Generated: ${now.toLocaleString()}`, 40, y); y += 14;
+  const scope = (reportFilters.chapter !== 'All' || reportFilters.type !== 'All' || reportFilters.period !== 'All' || reportFilters.search) ? 'Filtered' : 'All Recorded Activities';
+  doc.text(`Report Scope: ${scope}`, 40, y); y += 18;
+
+  doc.setFont('helvetica', 'bold'); doc.text('EXECUTIVE SUMMARY', 40, y); y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Activities: ${summary.totalActivities}`, 60, y); y += 12;
+  doc.text(`Total Participants: ${summary.totalParticipants}`, 60, y); y += 12;
+  doc.text(`Average Attendance: ${summary.averageAttendance}`, 60, y); y += 12;
+  doc.text(`Chapters Involved: ${summary.chaptersInvolved}`, 60, y); y += 12;
+  doc.text(`Activity Types: ${summary.activityTypes}`, 60, y); y += 18;
+
+  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY BREAKDOWN', 40, y); y += 12;
+  doc.setFont('helvetica', 'normal');
+  const typeBody = byType.map(t => [t.type, String(t.count), String(t.participants || 0)]);
+  doc.autoTable({ startY: y, head: [['Activity Type', 'Number of Activities', 'Participants']], body: typeBody, theme: 'grid', styles: { fontSize: 9 } });
+  y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : y + 80;
+
+  doc.setFont('helvetica', 'bold'); doc.text('CHAPTER SUMMARY', 40, y); y += 12;
+  const chapBody = byChapter.map(c => [c.chapter, String(c.count), String(c.participants || 0)]);
+  doc.autoTable({ startY: y, head: [['Chapter', 'Activities', 'Participants']], body: chapBody, theme: 'grid', styles: { fontSize: 9 } });
+  y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : y + 80;
+
+  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY DETAILS', 40, y); y += 12;
+  const detailBody = details.map(d => [d.date, d.title, d.chapter, d.type, String(d.participants), d.location]);
+  doc.autoTable({ startY: y, head: [['Date', 'Activity Name', 'Chapter', 'Type', 'Participants', 'Location']], body: detailBody, theme: 'striped', styles: { fontSize: 8 }, headStyles: { fillColor: [34, 139, 34] }, didDrawPage: function (data) {
+      const pageCount = doc.internal.getNumberOfPages();
+      const str = 'Page ' + doc.internal.getCurrentPageInfo().pageNumber + ' of ' + pageCount;
+      doc.setFontSize(9);
+      doc.text('MFC Youth Area Management System', 40, doc.internal.pageSize.getHeight() - 30);
+      doc.text(`Generated ${now.toLocaleDateString()}`, doc.internal.pageSize.getWidth() - 200, doc.internal.pageSize.getHeight() - 30);
+      doc.text(str, doc.internal.pageSize.getWidth() / 2 - 20, doc.internal.pageSize.getHeight() - 30);
+    } });
+
+  const insights = generateReportInsights(reports, data);
+  let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 18 : 40;
+  doc.setFont('helvetica', 'bold'); doc.text('REPORT INSIGHTS', 40, finalY); finalY += 12;
+  doc.setFont('helvetica', 'normal');
+  insights.forEach(ins => { doc.text(`• ${ins}`, 60, finalY); finalY += 12; });
+
+  const dateTag = now.toISOString().slice(0, 10);
+  const filename = `MFCYouth_Activity_Report_${dateTag}.pdf`;
+  doc.save(filename);
+}
 
 // Render the page selected by the HTML file.
 ({ dashboard: renderDashboard, members: renderMembers, chapters: renderChapters, services: renderServices, reports: renderReports, events: renderEvents }[page] || renderDashboard)();
