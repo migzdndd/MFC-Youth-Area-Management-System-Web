@@ -34,7 +34,7 @@ if (loginForm) {
     if (!user && !demoOk) { showMessage('loginMessage', 'Account not found or password is incorrect.'); return; }
     const name = user?.name || 'Area Administrator';
     localStorage.setItem(SESSION_KEY, JSON.stringify({ email, name, loginAt: new Date().toISOString() }));
-    location.href = 'dashboard.html';
+    location.href = '/dashboard';
   });
 }
 
@@ -72,7 +72,7 @@ if (registerForm) {
 
     localStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify(pending));
     showMessage('registerMessage', 'Verification code generated. Redirecting to confirmation…', 'success');
-    setTimeout(() => location.href = 'confirm.html', 600);
+    setTimeout(() => location.href = '/confirm', 600);
   });
 }
 
@@ -84,9 +84,9 @@ if (confirmForm) {
   const codeDisplay = document.getElementById('demoVerificationCode');
   const resendBtn = document.getElementById('resendCodeBtn');
 
-  if (!pending) {
+    if (!pending) {
     showMessage('confirmMessage', 'No pending verification found. Please register again.', 'error');
-    setTimeout(() => location.href = 'register.html', 1200);
+    setTimeout(() => location.href = '/register', 1200);
   } else {
     if (emailEl) emailEl.textContent = pending.email;
     if (codeDisplay) codeDisplay.textContent = pending.code;
@@ -108,7 +108,7 @@ if (confirmForm) {
       if (users.some(u => u.email === pending.email)) {
         localStorage.removeItem(PENDING_VERIFICATION_KEY);
         showMessage('confirmMessage', 'This email is already registered. Please sign in instead.', 'success');
-        setTimeout(() => location.href = 'login.html', 1200);
+        setTimeout(() => location.href = '/', 1200);
         return;
       }
 
@@ -123,7 +123,7 @@ if (confirmForm) {
       localStorage.setItem(USER_KEY, JSON.stringify(users));
       localStorage.removeItem(PENDING_VERIFICATION_KEY);
       showMessage('confirmMessage', 'Email verified successfully. Redirecting to sign in…', 'success');
-      setTimeout(() => location.href = 'login.html', 1300);
+      setTimeout(() => location.href = '/', 1300);
     });
 
     if (resendBtn) {

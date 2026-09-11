@@ -46,9 +46,9 @@ function selectField(label, id, options, value = '') {
 
 // Protects app pages from opening without a demo session.
 seedDB();
-if (!localStorage.getItem(SESSION_KEY)) { location.href = 'index.html'; }
+if (!localStorage.getItem(SESSION_KEY)) { location.href = '/'; }
 
-document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem(SESSION_KEY); location.href = 'index.html'; };
+document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem(SESSION_KEY); location.href = '/'; };
 document.getElementById('menuBtn')?.addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
 
 const page = document.body.dataset.page;
