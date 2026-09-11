@@ -205,6 +205,55 @@ function fullName(member) {
     .join(' ');
 }
 
+function calculateAge(birthDate) {
+  if (!birthDate) return null;
+
+  const parsed = new Date(
+    `${birthDate}T00:00:00`
+  );
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - parsed.getFullYear();
+  const monthDelta = today.getMonth() - parsed.getMonth();
+
+  if (
+    monthDelta < 0 ||
+    (
+      monthDelta === 0 &&
+      today.getDate() < parsed.getDate()
+    )
+  ) {
+    age -= 1;
+  }
+
+  return age >= 0 ? age : null;
+}
+
+function isUnassignedMember(member) {
+  if (!member || typeof member !== 'object') {
+    return false;
+  }
+
+  const chapterId = member.chapterId;
+  const chapterName = member.chapterName;
+
+  const hasEmptyId =
+    chapterId === null ||
+    chapterId === undefined ||
+    chapterId === '' ||
+    String(chapterId).trim() === '';
+
+  const hasEmptyName =
+    !chapterName ||
+    String(chapterName).trim() === '';
+
+  return hasEmptyId || hasEmptyName;
+}
+
 function validEmail(value) {
   return (
     !value ||
@@ -1148,8 +1197,7 @@ function renderMembers() {
       ${data.members.length}
       member${data.members.length === 1
       ? ''
-      : 's'
-    }
+      : 's'}
     </div>
 
     <section class="card table-wrap">
@@ -1207,8 +1255,7 @@ function renderMembers() {
                             class="badge ${member.status ===
               'Active'
               ? 'active'
-              : 'inactive'
-            }"
+              : 'inactive'}"
                           >
                             ${esc(
               member.status ||
@@ -1239,6 +1286,13 @@ function renderMembers() {
                         <td
                           class="actions-cell"
                         >
+                          <button
+                            class="btn"
+                            onclick="viewMember(${member.id})"
+                          >
+                            View
+                          </button>
+
                           <button
                             class="btn"
                             onclick="editMember(${member.id})"
@@ -1331,6 +1385,155 @@ function renderMembers() {
     renderMembers();
   };
 }
+
+window.viewMember = function(id) {
+  const data = db();
+
+  const member = data.members.find(
+    item => item.id === id
+  );
+
+  if (!member) return;
+
+  const rows = data.gig
+    .filter(item => item.memberId === id)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const totalContributions = rows.reduce(
+    (sum, item) => sum + Number(item.amount || 0),
+    0
+  );
+
+  const age = calculateAge(member.birthDate);
+  const services = Array.isArray(member.services)
+    ? member.services.filter(Boolean).map(String)
+    : [];
+
+  const chapterLabel = member.chapterName && String(member.chapterName).trim()
+    ? member.chapterName
+    : 'No Chapter Assigned';
+
+  const emailLabel = member.email && String(member.email).trim()
+    ? member.email
+    : 'No Email Provided';
+
+  const addressLabel = member.address && String(member.address).trim()
+    ? member.address
+    : 'No Address Provided';
+
+  const serviceList = services.length
+    ? `
+      <ul class="detail-list">
+        ${services
+          .map(
+            service =>
+              `<li class="detail-list-item"><span class="detail-pill">${esc(service)}</span></li>`
+          )
+          .join('')}
+      </ul>
+    `
+    : '<span class="muted">No Services Assigned</span>';
+
+  const gigHistory = rows.length
+    ? `
+      <div class="detail-history">
+        ${rows
+          .map(
+            row => `
+              <div class="detail-history-item">
+                <div class="detail-history-head">
+                  <span>${esc(fmtDate(row.date))}</span>
+                  <strong>${esc(money(row.amount || 0))}</strong>
+                </div>
+                <div class="detail-history-note">${esc(row.note || '—')}</div>
+              </div>
+            `
+          )
+          .join('')}
+      </div>
+    `
+    : '<span class="muted">No GIG contributions recorded.</span>';
+
+  openModal(
+    'Member Details',
+    `
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-label">Full Name</span>
+          <div class="detail-value">${esc(fullName(member) || '—')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Status</span>
+          <div class="detail-value">${esc(member.status || 'Active')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">First Name</span>
+          <div class="detail-value">${esc(member.firstName || '—')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Middle Name</span>
+          <div class="detail-value">${esc(member.middleName || '—')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Last Name</span>
+          <div class="detail-value">${esc(member.lastName || '—')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Current Age</span>
+          <div class="detail-value">${age === null ? '—' : esc(String(age))}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Birth Date</span>
+          <div class="detail-value">${esc(fmtDate(member.birthDate))}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Contact Number</span>
+          <div class="detail-value">${esc(member.contact || '—')}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Email Address</span>
+          <div class="detail-value">
+            ${member.email && String(member.email).trim()
+              ? `<a href="mailto:${esc(member.email)}">${esc(member.email)}</a>`
+              : '<span class="muted">No Email Provided</span>'}
+          </div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Chapter</span>
+          <div class="detail-value">${esc(chapterLabel)}</div>
+        </div>
+
+        <div class="detail-item full">
+          <span class="detail-label">Address</span>
+          <div class="detail-value">${esc(addressLabel)}</div>
+        </div>
+
+        <div class="detail-item full">
+          <span class="detail-label">Assigned Services</span>
+          <div class="detail-value">${serviceList}</div>
+        </div>
+
+        <div class="detail-item full">
+          <span class="detail-label">Total GIG Contributions</span>
+          <div class="detail-value">
+            <div class="detail-total">${esc(money(totalContributions))}</div>
+            <div class="detail-section-label">GIG contribution history</div>
+            ${gigHistory}
+          </div>
+        </div>
+      </div>
+    `
+  );
+};
 
 function memberModal(id = null) {
   const data = db();
@@ -2121,16 +2324,23 @@ function renderChapters() {
                           >
                             <button
                               class="btn"
-                              onclick="editChapter(${chapter.id})"
+                              onclick="viewChapter(${chapter.id})"
                             >
-                              Rename
+                              View Members
                             </button>
 
                             <button
                               class="btn"
-                              onclick="viewChapter(${chapter.id})"
+                              onclick="window.addMembersToChapter(${chapter.id})"
                             >
-                              View Members
+                              + Add Members
+                            </button>
+
+                            <button
+                              class="btn"
+                              onclick="editChapter(${chapter.id})"
+                            >
+                              Rename
                             </button>
 
                             <button
@@ -2357,40 +2567,19 @@ window.viewChapter = id => {
           member => `
                 <div class="mini-row">
 
-                  <div>
-                    <strong>
-                      ${esc(
+                  <strong>
+                    ${esc(
             fullName(
               member
             )
           )}
-                    </strong>
+                  </strong>
 
-                    <div
-                      class="muted"
-                    >
-                      ${esc(
-            (
-              member.services ||
-              []
-            ).join(
-              ', '
-            ) ||
-            'No service'
-          )}
-                    </div>
-                  </div>
-
-                  <span
-                    class="badge ${member.status ===
-              'Active'
-              ? 'active'
-              : 'inactive'
-            }"
-                  >
+                  <span>
                     ${esc(
-              member.status
-            )}
+            member.chapterName ||
+            'No Chapter'
+          )}
                   </span>
 
                 </div>
@@ -3579,9 +3768,7 @@ window.reportModal = function (
         'maxlength="150"'
       )}
 
-      <div
-        class="form-group full"
-      >
+      <div class="form-group full">
 
         <label for="rEvent">
           Linked Event (optional)
@@ -3983,7 +4170,7 @@ function printReportSummary(
           body {
             font-family: Arial, sans-serif;
             color: #17263a;
-            margin: 36px;
+            margin:  36px;
           }
 
           h1,
@@ -5231,9 +5418,7 @@ window.eventModal = function (
     'min="0" step="1"'
   )}
 
-      <div
-        class="form-group full"
-      >
+      <div class="form-group">
 
         <label for="eDescription">
           Event Description

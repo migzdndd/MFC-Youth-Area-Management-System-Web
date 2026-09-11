@@ -1557,3 +1557,129 @@ button:disabled {
   .quick-stat-row { flex-direction: column; }
   .quick-stat-row span { border-radius: 9px; }
 }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-item.full {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  font-size: .76rem;
+  font-weight: 800;
+  color: #59667a;
+}
+
+.detail-value {
+  color: #182433;
+  font-size: .92rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.detail-value a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.detail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-list-item {
+  list-style: none;
+}
+
+.detail-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef3fb;
+  border: 1px solid #dbe7f6;
+  color: #194f86;
+  font-size: .76rem;
+  font-weight: 700;
+}
+
+.detail-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.detail-history-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.detail-history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: .82rem;
+}
+
+.detail-history-note {
+  margin-top: 4px;
+  font-size: .78rem;
+  color: var(--muted);
+}
+
+.detail-total {
+  font-weight: 800;
+  color: var(--navy);
+  margin-bottom: 8px;
+}
+
+.detail-section-label {
+  font-size: .74rem;
+  font-weight: 800;
+  color: #59667a;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 760px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-history-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.member-check-row {
+  align-items: flex-start;
+}
+
+.member-check-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.member-check-row small {
+  color: var(--muted);
+  font-size: .72rem;
+}
