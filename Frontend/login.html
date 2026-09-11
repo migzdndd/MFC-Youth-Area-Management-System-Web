@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFC Youth Area Management System - Login</title>
+  <style>
+    @import url('https://fonts.cdnfonts.com/css/visby');
+  </style>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="img/logo-2.png">
+</head>
+
+<body class="auth-body">
+  <main class="auth-page">
+    <section class="login-card">
+      <div class="login-header"><img class="logo-mark" src="img/logo.png" alt="MFC Youth Logo">
+        <h1>MFC Youth Area Management System</h1>
+        <p>Manage your Area with just a few clicks of a button</p>
+      </div>
+      <form class="login-form" id="loginForm">
+        <p class="login-heading">Sign In</p>
+        <div id="loginMessage"></div>
+        <div class="login-field"><svg class="input-icon" viewBox="0 0 16 16">
+            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+            <path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z" />
+          </svg><input class="login-input" id="loginEmail" type="email" placeholder="Email Address" autocomplete="email"
+            required></div>
+        <div class="login-field"><svg class="input-icon" viewBox="0 0 16 16">
+            <path
+              d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
+          </svg><input class="login-input" id="loginPassword" type="password" placeholder="Password"
+            autocomplete="current-password" required></div>
+        <div class="form-options"><label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember
+              me</span></label><a href="recover.html">Forgot Password?</a></div>
+        <div class="login-buttons"><button class="btn-auth btn-primary" type="submit">Sign In</button><button
+            class="btn-auth btn-dark" type="button" onclick="location.href='register.html'">Sign Up</button></div>
+      </form>
+      <div class="auth-bottom">Don't have an account? <a href="register.html">Sign up here</a></div>
+    </section>
+  </main>
+  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org"
+      target="_blank">mfcyouth.org</a></footer>
+  <script src="js/auth.js"></script>
+</body>
+
+</html>
