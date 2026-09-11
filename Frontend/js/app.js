@@ -2722,6 +2722,13 @@ window.viewService = service => {
 // REPORTS
 // =========================================================
 
+const REPORT_TYPES = [
+  'Core Household',
+  'Household',
+  'Assembly',
+  'Fellowship'
+];
+
 let reportFilters = {
   search: '',
   chapter: 'All',
@@ -2731,16 +2738,26 @@ let reportFilters = {
 };
 
 function reportTypes(data) {
-  return [
+  // Get all unique types from existing reports
+  const allTypes = [
     ...new Set(
       data.reports
-        .map(
-          report =>
-            report.type
-        )
+        .map(report => report.type)
         .filter(Boolean)
     )
-  ].sort();
+  ];
+
+  // Separate standard types from legacy types
+  const standardTypes = REPORT_TYPES.filter(
+    type => allTypes.includes(type)
+  );
+
+  const legacyTypes = allTypes.filter(
+    type => !REPORT_TYPES.includes(type)
+  ).sort();
+
+  // Return standard types first, then legacy types
+  return [...standardTypes, ...legacyTypes];
 }
 
 function filteredReports(data) {
@@ -3236,7 +3253,7 @@ function renderReports() {
           All
         </option>
 
-        ${types
+        ${REPORT_TYPES
       .map(
         type => `
               <option
@@ -3251,6 +3268,33 @@ function renderReports() {
             `
       )
       .join('')}
+
+        ${(() => {
+        // Add any legacy types that don't match standard types
+        const legacyTypes = types.filter(
+          type => !REPORT_TYPES.includes(type)
+        );
+
+        if (legacyTypes.length === 0) {
+          return '';
+        }
+
+        return legacyTypes
+          .map(
+            type => `
+              <option
+                ${reportFilters.type ===
+            type
+            ? 'selected'
+            : ''
+          }
+              >
+                ${esc(type)} (Legacy)
+              </option>
+            `
+          )
+          .join('');
+      })()}
       </select>
 
       <label class="date-filter">
@@ -3715,12 +3759,63 @@ window.reportModal = function (
         </select>
       </div>
 
-      ${field(
-        'Report Type',
-        'rType',
-        'text',
-        report?.type || '',
-        'placeholder="e.g. Household, Assembly" maxlength="80"'
+      <div class="form-group">
+        <label for="rType">
+          Report Type
+        </label>
+
+        <select
+          class="select-input"
+          id="rType"
+        >
+          <option value="">
+            Select Report Type
+          </option>
+
+          ${REPORT_TYPES
+      .map(
+        type => `
+              <option
+                ${report?.type === type
+            ? 'selected'
+            : ''
+          }
+              >
+                ${esc(type)}
+              </option>
+            `
+      )
+      .join('')}
+
+          ${(() => {
+        // Add legacy types if editing an old report with non-standard type
+        const existingType = report?.type;
+
+        if (
+          existingType &&
+          !REPORT_TYPES.includes(
+            existingType
+          )
+        ) {
+          return `
+                  <option
+                    value="${esc(
+            existingType
+          )}"
+                    selected
+                  >
+                    ${esc(
+            existingType
+          )} (Legacy)
+                  </option>
+                `;
+        }
+
+        return '';
+      })()}
+
+        </select>
+      </div>
       )}
 
       ${field(
@@ -3829,6 +3924,11 @@ window.reportModal = function (
           'rDate'
         ).value;
 
+      const reportType =
+        document
+          .getElementById('rType')
+          .value.trim();
+
       const participants =
         Number(
           document.getElementById(
@@ -3842,6 +3942,15 @@ window.reportModal = function (
       ) {
         toast(
           'Report title and date are required.',
+          'error'
+        );
+
+        return;
+      }
+
+      if (!reportType) {
+        toast(
+          'Please select a report type.',
           'error'
         );
 
