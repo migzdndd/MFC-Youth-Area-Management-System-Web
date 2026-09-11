@@ -2,7 +2,7 @@ MFC Youth Area Management System - Web Prototype
 
 HOW TO RUN
 1. Keep all files/folders together.
-2. Open login.html in a browser, or use VS Code Live Server.
+2. Open index.html in a browser, or use VS Code Live Server.
 3. Demo login: admin@mfcyouth.local / admin123
 4. You may also create a demo account from register.html.
 
