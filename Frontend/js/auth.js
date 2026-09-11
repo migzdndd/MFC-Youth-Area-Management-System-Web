@@ -1,9 +1,18 @@
 // This file handles the simple demo account system.
 const USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
+const PENDING_VERIFICATION_KEY = 'mfc_pending_verification';
 
 // Reads saved demo users from the browser.
 function getUsers() { return JSON.parse(localStorage.getItem(USER_KEY) || '[]'); }
+
+function getPendingVerification() {
+  return JSON.parse(localStorage.getItem(PENDING_VERIFICATION_KEY) || 'null');
+}
+
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 // Shows a small message inside an auth form.
 function showMessage(id, text, type = 'error') {
@@ -38,14 +47,88 @@ if (registerForm) {
     const email = document.getElementById('regEmail').value.trim().toLowerCase();
     const password = document.getElementById('regPassword').value;
     const confirm = document.getElementById('regConfirm').value;
+    if (!name || !email || !password) {
+      showMessage('registerMessage', 'Please complete all required fields.');
+      return;
+    }
     if (password !== confirm) { showMessage('registerMessage', 'Passwords do not match.'); return; }
+    if (password.length < 6) { showMessage('registerMessage', 'Password must be at least 6 characters long.'); return; }
     const users = getUsers();
     if (users.some(u => u.email === email)) { showMessage('registerMessage', 'That email is already registered.'); return; }
-    users.push({ id: Date.now(), name, email, password });
-    localStorage.setItem(USER_KEY, JSON.stringify(users));
-    showMessage('registerMessage', 'Account created. You can sign in now.', 'success');
-    setTimeout(() => location.href = 'index.html', 900);
+
+    const verificationCode = generateVerificationCode();
+    const pending = {
+      id: Date.now(),
+      name,
+      email,
+      password,
+      code: verificationCode,
+      createdAt: new Date().toISOString()
+    };
+
+    localStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify(pending));
+    showMessage('registerMessage', 'Verification code generated. Redirecting to confirmation…', 'success');
+    setTimeout(() => location.href = 'confirm.html', 600);
   });
+}
+
+// Confirmation page logic.
+const confirmForm = document.getElementById('confirmForm');
+if (confirmForm) {
+  const pending = getPendingVerification();
+  const emailEl = document.getElementById('confirmEmail');
+  const codeDisplay = document.getElementById('demoVerificationCode');
+  const resendBtn = document.getElementById('resendCodeBtn');
+
+  if (!pending) {
+    showMessage('confirmMessage', 'No pending verification found. Please register again.', 'error');
+    setTimeout(() => location.href = 'register.html', 1200);
+  } else {
+    if (emailEl) emailEl.textContent = pending.email;
+    if (codeDisplay) codeDisplay.textContent = pending.code;
+
+    confirmForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const enteredCode = document.getElementById('confirmCode').value.trim();
+      if (!enteredCode) {
+        showMessage('confirmMessage', 'Please enter the verification code.');
+        return;
+      }
+
+      if (enteredCode !== pending.code) {
+        showMessage('confirmMessage', 'The confirmation code is incorrect. Please try again.');
+        return;
+      }
+
+      const users = getUsers();
+      if (users.some(u => u.email === pending.email)) {
+        localStorage.removeItem(PENDING_VERIFICATION_KEY);
+        showMessage('confirmMessage', 'This email is already registered. Please sign in instead.', 'success');
+        setTimeout(() => location.href = 'login.html', 1200);
+        return;
+      }
+
+      users.push({
+        id: pending.id,
+        name: pending.name,
+        email: pending.email,
+        password: pending.password
+      });
+      localStorage.setItem(USER_KEY, JSON.stringify(users));
+      localStorage.removeItem(PENDING_VERIFICATION_KEY);
+      showMessage('confirmMessage', 'Email verified successfully. Redirecting to sign in…', 'success');
+      setTimeout(() => location.href = 'login.html', 1300);
+    });
+
+    if (resendBtn) {
+      resendBtn.addEventListener('click', () => {
+        const updated = { ...pending, code: generateVerificationCode() };
+        localStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify(updated));
+        if (codeDisplay) codeDisplay.textContent = updated.code;
+        showMessage('confirmMessage', 'A new confirmation code has been sent to the demo email.', 'success');
+      });
+    }
+  }
 }
 
 // Recovery page logic. This does not send a real email yet.

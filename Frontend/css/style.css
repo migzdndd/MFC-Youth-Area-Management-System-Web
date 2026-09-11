@@ -1159,3 +1159,48 @@ a {
     width: 180px
   }
 }
+
+.auth-card {
+  width: min(460px, 100%);
+}
+
+.verification-badge,
+.verification-code-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(15, 72, 111, 0.08);
+  border: 1px solid rgba(8, 120, 189, 0.15);
+  color: var(--navy);
+  font-size: .82rem;
+  text-align: left;
+}
+
+.verification-badge strong,
+.verification-code-box strong {
+  font-size: 1.02rem;
+  letter-spacing: .04em;
+}
+
+.verification-code-box {
+  background: rgba(47, 140, 90, 0.08);
+  border-color: rgba(47, 140, 90, 0.18);
+}
+
+.verification-code-box strong {
+  letter-spacing: .25em;
+  color: var(--success);
+}
+
+@media (max-width: 480px) {
+  .login-form {
+    padding-left: 1em;
+    padding-right: 1em;
+  }
+
+  .login-buttons {
+    flex-direction: column;
+  }
+}
