@@ -1,43 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - MFC Youth Area Management System</title>
-    <style>
-        @import url('https://fonts.cdnfonts.com/css/visby');
-    </style>
-    <link rel="stylesheet" href="/css/style.css">
-    <link rel="icon" type="image/png" href="/img/logo-2.png">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#002847">
+  <meta name="description" content="Dashboard - MFC Youth Area Management System.">
+  <title>Dashboard - MFC Youth Area Management System</title>
+  <style>@import url('https://fonts.cdnfonts.com/css/visby');</style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
-
 <body data-page="dashboard">
-    <div class="mobile-topbar"><strong>MFC Youth AMS</strong><button id="menuBtn">Menu</button></div>
-    <div class="app-layout">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-brand"><img src="/img/logo-2.png" class="sidebar-logo" alt="MFC Youth Logo">
-                <div>
-                    <h2>MFC YOUTH</h2>
-                    <p>AREA MANAGEMENT SYSTEM</p>
-                </div>
-            </div>
-            <nav class="sidebar-nav"><a href="/dashboard" class="active"><img src="/Icons/dashboard.png"
-                        class="nav-icon" alt="Dashboard">Dashboard</a><a href="/members" class=""><img
-                        src="/Icons/members.png" class="nav-icon" alt="Members">Members</a><a href="/chapters"
-                    class=""><img src="/Icons/chapters.png" class="nav-icon" alt="Chapters">Chapters</a><a
-                    href="/services" class=""><img src="/Icons/services.png" class="nav-icon"
-                        alt="Services">Services</a><a href="/reports" class=""><img src="/Icons/reports.png"
-                        class="nav-icon" alt="Reports">Activity
-                    Reports</a><a href="/events" class=""><img src="/Icons/events.png" class="nav-icon"
-                        alt="Events">Events</a></nav>
-            <div class="sidebar-bottom"><button class="logout-link" id="logoutBtn">Logout</button></div>
-        </aside>
-        <main class="app-content" id="pageContent"></main>
-    </div>
-    <div id="modalRoot"></div>
-    <div class="toast-wrap" id="toastWrap"></div>
-    <script src="/js/app.js"></script>
+  <div class="mobile-topbar"><strong>MFC Youth AMS</strong><button id="menuBtn" type="button">Menu</button></div>
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="sidebar-brand"><img src="/img/logo-2.png" class="sidebar-logo" alt="MFC Youth Logo"><div><h2>MFC YOUTH</h2><p>AREA MANAGEMENT SYSTEM</p></div></div>
+      <nav class="sidebar-nav"><a href="/dashboard" class="active"><img src="/Icons/dashboard.png" class="nav-icon" alt="">Dashboard</a><a href="/members" class=""><img src="/Icons/members.png" class="nav-icon" alt="">Members</a><a href="/chapters" class=""><img src="/Icons/chapters.png" class="nav-icon" alt="">Chapters</a><a href="/services" class=""><img src="/Icons/services.png" class="nav-icon" alt="">Services</a><a href="/reports" class=""><img src="/Icons/reports.png" class="nav-icon" alt="">Activity Reports</a><a href="/events" class=""><img src="/Icons/events.png" class="nav-icon" alt="">Events</a></nav>
+      <div class="sidebar-bottom"><button class="logout-link" id="logoutBtn" type="button">Logout</button></div>
+    </aside>
+    <main class="app-content" id="pageContent" tabindex="-1"></main>
+  </div>
+  <div id="modalRoot"></div>
+  <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+  <script src="/js/app.js"></script>
 </body>
-
 </html>

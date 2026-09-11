@@ -1,258 +1,630 @@
 // =========================================================
-// MFC Youth Area Management System - Browser Prototype
-// This file handles page rendering and local browser data.
+// MFC Youth Area Management System - Frontend Application
+// Browser-only data layer. A future backend can replace db()/save().
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const SERVICES = ['Unit Servant', 'Household Servant', 'Chapter Servant', 'Area Servant', 'LIT Servant', 'Campus Servant', 'MFC High Servant'];
+const DB_VERSION = 2;
+let activeModalCleanup = null;
+const SERVICES = [
+  'Unit Servant', 'Household Servant', 'Chapter Servant', 'Area Servant',
+  'LIT Servant', 'Campus Servant', 'MFC High Servant'
+];
 
-// Creates an empty database the first time the website is opened.
+function safeParse(raw, fallback) {
+  try { return JSON.parse(raw); } catch { return fallback; }
+}
+
+function getSession() {
+  return safeParse(localStorage.getItem(SESSION_KEY), null) || safeParse(sessionStorage.getItem(SESSION_KEY), null);
+}
+
+function normalizeDatabase(input) {
+  const data = input && typeof input === 'object' ? input : {};
+  return {
+    version: DB_VERSION,
+    members: Array.isArray(data.members) ? data.members : [],
+    chapters: Array.isArray(data.chapters) ? data.chapters : [],
+    services: Array.isArray(data.services) && data.services.length ? data.services : [...SERVICES],
+    reports: Array.isArray(data.reports) ? data.reports.map(report => {
+      const eventId = report.eventId ? Number(report.eventId) : null;
+      const linkedParticipants = eventId && Array.isArray(data.participants) ? data.participants.filter(item => item.eventId === eventId) : [];
+      const inferredParticipants = linkedParticipants.filter(item => item.attended).length || linkedParticipants.length;
+      const sourceParticipants = report.participants ?? report.attendance ?? (eventId ? inferredParticipants : 0);
+      return {
+        ...report,
+        participants: Number.isFinite(Number(sourceParticipants)) ? Number(sourceParticipants) : 0,
+        location: report.location || report.venue || '',
+        eventId
+      };
+    }) : [],
+    events: Array.isArray(data.events) ? data.events : [],
+    participants: Array.isArray(data.participants) ? data.participants : [],
+    gig: Array.isArray(data.gig) ? data.gig : []
+  };
+}
+
 function seedDB() {
-  if (localStorage.getItem(DB_KEY)) return;
-  localStorage.setItem(DB_KEY, JSON.stringify({ members: [], chapters: [], services: SERVICES, reports: [], events: [], participants: [], gig: [] }));
+  const existing = safeParse(localStorage.getItem(DB_KEY), null);
+  localStorage.setItem(DB_KEY, JSON.stringify(normalizeDatabase(existing)));
 }
-function db() { seedDB(); return JSON.parse(localStorage.getItem(DB_KEY)); }
-// Saves the whole demo database back to the browser.
-function save(data) { localStorage.setItem(DB_KEY, JSON.stringify(data)); }
+
+function db() {
+  return normalizeDatabase(safeParse(localStorage.getItem(DB_KEY), null));
+}
+
+function save(data) {
+  localStorage.setItem(DB_KEY, JSON.stringify(normalizeDatabase(data)));
+}
+
 function uid() { return Date.now() + Math.floor(Math.random() * 10000); }
-function esc(v = '') { return String(v).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
-function money(v) { return Number(v || 0).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }); }
-function fmtDate(v) { if (!v) return '—'; return new Date(v).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }); }
-function fmtDateTime(v) { if (!v) return '—'; return new Date(v).toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function esc(value = '') { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
+function money(value) { return Number(value || 0).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }); }
+function fmtDate(value) { if (!value) return '—'; const d = new Date(`${value}`.length === 10 ? `${value}T00:00:00` : value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }); }
+function fmtDateTime(value) { if (!value) return '—'; const d = new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function fullName(member) { return [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' '); }
+function validEmail(value) { return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
 
-// Simple popup message in the lower-right corner.
 function toast(text, type = 'success') {
-  const wrap = document.getElementById('toastWrap'); if (!wrap) return;
-  const n = document.createElement('div'); n.className = `toast ${type}`; n.textContent = text; wrap.appendChild(n); setTimeout(() => n.remove(), 2600);
+  const wrap = document.getElementById('toastWrap');
+  if (!wrap) return;
+  const item = document.createElement('div');
+  item.className = `toast ${type}`;
+  item.setAttribute('role', 'status');
+  item.textContent = text;
+  wrap.appendChild(item);
+  setTimeout(() => item.remove(), 3000);
 }
 
-// Opens a reusable modal window.
-function openModal(title, body, onSave, saveText = 'Save') {
+function openModal(title, body, onSave = null, saveText = 'Save') {
   const root = document.getElementById('modalRoot');
-  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal"><header class="modal-header"><h2>${title}</h2><button class="icon-btn" id="closeModal">×</button></header><div class="modal-body">${body}</div><footer class="modal-footer"><button class="btn" id="cancelModal">Cancel</button>${onSave ? `<button class="btn blue" id="saveModal">${saveText}</button>` : ''}</footer></section></div>`;
-  const close = () => root.innerHTML = '';
-  document.getElementById('closeModal').onclick = close; document.getElementById('cancelModal').onclick = close;
-  document.getElementById('modalBackdrop').addEventListener('click', e => { if (e.target.id === 'modalBackdrop') close(); });
+  if (!root) return;
+  if (activeModalCleanup) activeModalCleanup();
+  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><header class="modal-header"><h2 id="modalTitle">${title}</h2><button class="icon-btn" id="closeModal" type="button" aria-label="Close dialog">×</button></header><div class="modal-body">${body}</div><footer class="modal-footer"><button class="btn" id="cancelModal" type="button">${onSave ? 'Cancel' : 'Close'}</button>${onSave ? `<button class="btn blue" id="saveModal" type="button">${saveText}</button>` : ''}</footer></section></div>`;
+
+  const close = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    root.innerHTML = '';
+    if (activeModalCleanup === close) activeModalCleanup = null;
+  };
+  activeModalCleanup = close;
+  const onKeyDown = event => { if (event.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKeyDown);
+  document.getElementById('closeModal').onclick = close;
+  document.getElementById('cancelModal').onclick = close;
+  document.getElementById('modalBackdrop').addEventListener('click', event => { if (event.target.id === 'modalBackdrop') close(); });
   if (onSave) document.getElementById('saveModal').onclick = () => onSave(close);
+  requestAnimationFrame(() => root.querySelector('input, select, textarea, button')?.focus());
 }
 
 function field(label, id, type = 'text', value = '', extra = '') {
   return `<div class="form-group"><label for="${id}">${label}</label><input class="text-input" id="${id}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 }
+
 function selectField(label, id, options, value = '') {
-  return `<div class="form-group"><label for="${id}">${label}</label><select class="select-input" id="${id}">${options.map(o => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+  return `<div class="form-group"><label for="${id}">${label}</label><select class="select-input" id="${id}">${options.map(option => `<option ${option === value ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
 }
-
-// Protects app pages from opening without a demo session.
-seedDB();
-if (!localStorage.getItem(SESSION_KEY)) { location.href = '/'; }
-
-document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem(SESSION_KEY); location.href = '/'; };
-document.getElementById('menuBtn')?.addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
-
-const page = document.body.dataset.page;
-const content = document.getElementById('pageContent');
 
 function pageHeader(title, subtitle, actions = '') {
   return `<header class="page-header"><div><h1>${title}</h1><p>${subtitle}</p></div><div class="page-actions">${actions}</div></header>`;
 }
 
+function emptyState(title, text) {
+  return `<div class="empty-state"><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+}
+
+// ---------------- APP BOOTSTRAP ----------------
+seedDB();
+const session = getSession();
+if (!session) location.replace('/');
+
+const page = document.body.dataset.page;
+const content = document.getElementById('pageContent');
+const logoutBtn = document.getElementById('logoutBtn');
+
+if (logoutBtn) {
+  const user = document.createElement('div');
+  user.className = 'signed-in-user';
+  user.innerHTML = `<span>Signed in as</span><strong>${esc(session?.name || session?.email || 'Area User')}</strong>`;
+  logoutBtn.parentElement?.insertBefore(user, logoutBtn);
+  logoutBtn.onclick = () => {
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    location.href = '/';
+  };
+}
+
+const sidebar = document.getElementById('sidebar');
+const menuBtn = document.getElementById('menuBtn');
+if (sidebar && menuBtn) {
+  const scrim = document.createElement('button');
+  scrim.type = 'button';
+  scrim.className = 'sidebar-scrim';
+  scrim.id = 'sidebarScrim';
+  scrim.setAttribute('aria-label', 'Close navigation menu');
+  document.body.appendChild(scrim);
+
+  const closeMenu = () => {
+    sidebar.classList.remove('open');
+    scrim.classList.remove('show');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  };
+  const toggleMenu = () => {
+    const open = !sidebar.classList.contains('open');
+    sidebar.classList.toggle('open', open);
+    scrim.classList.toggle('show', open);
+    menuBtn.setAttribute('aria-expanded', String(open));
+  };
+  menuBtn.setAttribute('aria-controls', 'sidebar');
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.addEventListener('click', toggleMenu);
+  scrim.addEventListener('click', closeMenu);
+  sidebar.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(); });
+}
+
 // ---------------- DASHBOARD ----------------
 function renderDashboard() {
-  const d = db();
-  const cards = [['members', 'Total Members', d.members.length, 'People currently on record'], ['chapters', 'Chapters', d.chapters.length, 'Registered chapters'], ['services', 'Services', d.services.length, 'Available service roles'], ['reports', 'Activity Reports', d.reports.length, 'Reports currently filed'], ['events', 'Events', d.events.length, 'Events currently recorded']];
-  const chapterCounts = d.chapters.map(c => ({ name: c.name, count: d.members.filter(m => m.chapterId === c.id).length })).sort((a, b) => b.count - a.count);
+  const data = db();
+  const cards = [
+    ['members', 'Total Members', data.members.length, 'People currently on record'],
+    ['chapters', 'Chapters', data.chapters.length, 'Registered chapters'],
+    ['services', 'Services', data.services.length, 'Available service roles'],
+    ['reports', 'Activity Reports', data.reports.length, 'Reports currently filed'],
+    ['events', 'Events', data.events.length, 'Events currently recorded']
+  ];
+  const chapterCounts = data.chapters.map(chapter => ({ name: chapter.name, count: data.members.filter(member => member.chapterId === chapter.id).length })).sort((a, b) => b.count - a.count);
   const now = Date.now();
-  const upcomingEvents = [...d.events]
-    .filter(e => e.date && new Date(e.date).getTime() >= now)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(0, 5);
-  const recentEvents = [...d.events].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
-  content.innerHTML = pageHeader('Dashboard', 'A quick overview of your MFC Youth Area records.') + `<section><div class="section-heading"><h2>Area Summary</h2><p>Current totals across your area records</p><div class="section-line"></div></div><div class="summary-card card">${cards.map(c => `<article class="summary-item ${c[0]}"><div class="summary-label">${c[1]}<div class="label-line"></div></div><strong class="summary-number">${c[2]}</strong><p>${c[3]}</p><span class="tracking">• Monthly tracking started</span></article>`).join('')}</div></section>
- <div class="grid-2"><section class="card panel"><h3>Members by Chapter</h3>${chapterCounts.length ? `<div class="bar-list">${chapterCounts.slice(0, 7).map(x => { const max = Math.max(...chapterCounts.map(y => y.count), 1); return `<div class="bar-row"><span>${esc(x.name)}</span><div class="bar-track"><div class="bar-fill" style="width:${(x.count / max) * 100}%"></div></div><strong>${x.count}</strong></div>` }).join('')}</div>` : '<div class="empty-state"><h3>No chapter data yet</h3><p>Add chapters and members to see distribution.</p></div>'}</section>
- <section class="card panel"><h3>Upcoming Events</h3>${upcomingEvents.length ? `<div class="mini-list">${upcomingEvents.map(e => `<div class="mini-row"><div><strong>${esc(e.name)}</strong><div class="muted">${esc(e.venue || 'No venue')}</div></div><span>${fmtDateTime(e.date)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No upcoming events</h3><p>Any event you add will appear here automatically.</p></div>'}</section></div>
- <div class="grid-2" style="margin-top:18px;"><section class="card panel"><h3>Recent Events</h3>${recentEvents.length ? `<div class="mini-list">${recentEvents.map(e => `<div class="mini-row"><div><strong>${esc(e.name)}</strong><div class="muted">${esc(e.venue || 'No venue')}</div></div><span>${fmtDate(e.date)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No events yet</h3><p>Your newest events will appear here.</p></div>'}</section></div>`;
+  const upcomingEvents = [...data.events].filter(event => event.date && new Date(event.date).getTime() >= now).sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 5);
+  const recentEvents = [...data.events].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+  const activeMembers = data.members.filter(member => member.status === 'Active').length;
+  const attended = data.participants.filter(participant => participant.attended).length;
+
+  content.innerHTML = pageHeader('Dashboard', `Welcome, ${esc(session?.name || 'Area User')}. Here is a quick overview of your Area records.`) +
+    `<section><div class="section-heading"><h2>Area Summary</h2><p>Current totals across your browser records</p><div class="section-line"></div></div><div class="summary-card card">${cards.map(card => `<article class="summary-item ${card[0]}"><div class="summary-label">${card[1]}<div class="label-line"></div></div><strong class="summary-number">${card[2]}</strong><p>${card[3]}</p></article>`).join('')}</div></section>
+    <div class="quick-stat-row"><span><strong>${activeMembers}</strong> Active Members</span><span><strong>${data.participants.length}</strong> Event Registrations</span><span><strong>${attended}</strong> Recorded Attendances</span></div>
+    <div class="grid-2"><section class="card panel"><h3>Members by Chapter</h3>${chapterCounts.length ? `<div class="bar-list">${chapterCounts.slice(0, 7).map(item => { const max = Math.max(...chapterCounts.map(row => row.count), 1); return `<div class="bar-row"><span>${esc(item.name)}</span><div class="bar-track"><div class="bar-fill" style="width:${(item.count / max) * 100}%"></div></div><strong>${item.count}</strong></div>`; }).join('')}</div>` : emptyState('No chapter data yet', 'Add chapters and members to see distribution.')}</section>
+    <section class="card panel"><h3>Upcoming Events</h3>${upcomingEvents.length ? `<div class="mini-list">${upcomingEvents.map(event => `<div class="mini-row"><div><strong>${esc(event.name)}</strong><div class="muted">${esc(event.venue || 'No venue')}</div></div><span>${fmtDateTime(event.date)}</span></div>`).join('')}</div>` : emptyState('No upcoming events', 'Future events you add will appear here.')}</section></div>
+    <div class="grid-2"><section class="card panel"><h3>Recent Events</h3>${recentEvents.length ? `<div class="mini-list">${recentEvents.map(event => `<div class="mini-row"><div><strong>${esc(event.name)}</strong><div class="muted">${esc(event.venue || 'No venue')}</div></div><span>${fmtDate(event.date)}</span></div>`).join('')}</div>` : emptyState('No events yet', 'Your newest events will appear here.')}</section>
+    <section class="card panel"><h3>Frontend Status</h3><div class="status-list"><div><span>Clean routes</span><strong class="status-ok">Ready</strong></div><div><span>Responsive interface</span><strong class="status-ok">Ready</strong></div><div><span>Browser data persistence</span><strong class="status-ok">Ready</strong></div><div><span>Cloud backend</span><strong class="status-pending">Future phase</strong></div></div></section></div>`;
 }
 
 // ---------------- MEMBERS ----------------
-let memberSearch = '';
-function renderMembers() {
-  const d = db(); const list = d.members.filter(m => `${m.firstName} ${m.middleName || ''} ${m.lastName} ${m.chapterName || ''} ${m.services?.join(' ') || ''}`.toLowerCase().includes(memberSearch.toLowerCase()));
-  content.innerHTML = pageHeader('Members', 'Manage registered MFC Youth members, Chapters, Services, and GIG records.', '<button class="btn blue" id="addMember">+ Add Member</button>') + `<div class="toolbar"><div class="grow"><input class="search-input" id="memberSearch" placeholder="Search members..." value="${esc(memberSearch)}"></div><button class="btn" id="refreshMembers">Refresh</button></div><section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Member</th><th>Chapter</th><th>Status</th><th>Services</th><th>Contact Number</th><th>Actions</th></tr></thead><tbody>${list.map(m => `<tr><td><strong>${esc(fullName(m))}</strong><div class="muted">${esc(m.email || '')}</div></td><td>${esc(m.chapterName || '—')}</td><td><span class="badge ${m.status === 'Active' ? 'active' : 'inactive'}">${esc(m.status)}</span></td><td>${esc((m.services || []).join(', ') || 'No Service Assigned')}</td><td>${esc(m.contact || '—')}</td><td><button class="btn" onclick="editMember(${m.id})">Edit</button> <button class="btn" onclick="serviceMember(${m.id})">Services</button> <button class="btn" onclick="gigMember(${m.id})">GIG</button> <button class="btn red" onclick="deleteMember(${m.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Members Yet</h3><p>Add the first MFC Youth member to begin managing your Area.</p></div>'}</section>`;
-  document.getElementById('addMember').onclick = () => memberModal(); document.getElementById('memberSearch').oninput = e => { memberSearch = e.target.value; renderMembers(); }; document.getElementById('refreshMembers').onclick = () => { memberSearch = ''; renderMembers(); };
-}
-function fullName(m) { return [m.firstName, m.middleName, m.lastName].filter(Boolean).join(' '); }
-function memberModal(id = null) {
-  const d = db(); const m = id ? d.members.find(x => x.id === id) : {}; const chapters = d.chapters;
-  const body = `<div class="form-grid">${field('First Name', 'mFirst', 'text', m.firstName || '', 'required')}${field('Middle Name (optional)', 'mMiddle', 'text', m.middleName || '')}${field('Last Name', 'mLast', 'text', m.lastName || '', 'required')}${field('Birth Date', 'mBirth', 'date', m.birthDate || '', 'required')}${field('Contact Number', 'mContact', 'text', m.contact || '', 'maxlength="11" placeholder="09XXXXXXXXX" required')}${field('Email Address (optional)', 'mEmail', 'email', m.email || '')}${selectField('Status', 'mStatus', ['Active', 'Inactive'], m.status || 'Active')}<div class="form-group"><label>Chapter</label><select class="select-input" id="mChapter"><option value="">No Chapter</option>${chapters.map(c => `<option value="${c.id}" ${m.chapterId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div class="form-group full"><label>Address</label><textarea class="textarea-input" id="mAddress">${esc(m.address || '')}</textarea></div></div>`;
-  openModal(id ? 'Edit Member' : 'Add Member', body, close => {
-    const contact = document.getElementById('mContact').value.trim(); if (!/^\d{11}$/.test(contact)) { toast('Contact number must be exactly 11 digits.', 'error'); return; }
-    const first = document.getElementById('mFirst').value.trim(), last = document.getElementById('mLast').value.trim(); if (!first || !last) { toast('First and last name are required.', 'error'); return; }
-    const chapId = Number(document.getElementById('mChapter').value) || null; const chap = d.chapters.find(c => c.id === chapId);
-    const obj = { id: id || uid(), firstName: first, middleName: document.getElementById('mMiddle').value.trim(), lastName: last, birthDate: document.getElementById('mBirth').value, contact, email: document.getElementById('mEmail').value.trim(), status: document.getElementById('mStatus').value, chapterId: chapId, chapterName: chap?.name || '', address: document.getElementById('mAddress').value.trim(), services: m.services || [] };
-    if (id) { Object.assign(d.members.find(x => x.id === id), obj) } else d.members.push(obj); save(d); close(); toast(id ? 'Member updated.' : 'Member added.'); renderMembers();
+let memberFilters = { search: '', status: 'All', chapter: 'All' };
+
+function filteredMembers(data) {
+  return data.members.filter(member => {
+    const haystack = `${member.firstName} ${member.middleName || ''} ${member.lastName} ${member.email || ''} ${member.contact || ''} ${member.chapterName || ''} ${(member.services || []).join(' ')}`.toLowerCase();
+    if (!haystack.includes(memberFilters.search.toLowerCase())) return false;
+    if (memberFilters.status !== 'All' && member.status !== memberFilters.status) return false;
+    if (memberFilters.chapter !== 'All' && member.chapterName !== memberFilters.chapter) return false;
+    return true;
   });
 }
+
+function renderMembers() {
+  const data = db();
+  const list = filteredMembers(data);
+  content.innerHTML = pageHeader('Members', 'Manage registered MFC Youth members, chapter assignments, services, and GIG records.', '<button class="btn blue" id="addMember">+ Add Member</button>') +
+    `<div class="toolbar"><div class="grow"><input class="search-input" id="memberSearch" placeholder="Search members, email, contact, chapter, or service..." value="${esc(memberFilters.search)}"></div><select class="select-input compact-filter" id="memberStatus"><option>All</option><option ${memberFilters.status === 'Active' ? 'selected' : ''}>Active</option><option ${memberFilters.status === 'Inactive' ? 'selected' : ''}>Inactive</option></select><select class="select-input compact-filter" id="memberChapter"><option>All</option>${data.chapters.map(chapter => `<option ${memberFilters.chapter === chapter.name ? 'selected' : ''}>${esc(chapter.name)}</option>`).join('')}</select><button class="btn" id="clearMemberFilters">Clear</button></div>
+    <div class="result-count">Showing ${list.length} of ${data.members.length} member${data.members.length === 1 ? '' : 's'}</div>
+    <section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Member</th><th>Chapter</th><th>Status</th><th>Services</th><th>Contact Number</th><th>Actions</th></tr></thead><tbody>${list.map(member => `<tr><td><strong>${esc(fullName(member))}</strong><div class="muted">${esc(member.email || 'No email')}</div></td><td>${esc(member.chapterName || '—')}</td><td><span class="badge ${member.status === 'Active' ? 'active' : 'inactive'}">${esc(member.status || 'Active')}</span></td><td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td><td>${esc(member.contact || '—')}</td><td class="actions-cell"><button class="btn" onclick="editMember(${member.id})">Edit</button><button class="btn" onclick="serviceMember(${member.id})">Services</button><button class="btn" onclick="gigMember(${member.id})">GIG</button><button class="btn red" onclick="deleteMember(${member.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : emptyState('No matching members', data.members.length ? 'Change or clear the filters to see other members.' : 'Add the first MFC Youth member to begin managing your Area.')}</section>`;
+
+  document.getElementById('addMember').onclick = () => memberModal();
+  document.getElementById('memberSearch').oninput = event => { memberFilters.search = event.target.value; renderMembers(); };
+  document.getElementById('memberStatus').onchange = event => { memberFilters.status = event.target.value; renderMembers(); };
+  document.getElementById('memberChapter').onchange = event => { memberFilters.chapter = event.target.value; renderMembers(); };
+  document.getElementById('clearMemberFilters').onclick = () => { memberFilters = { search: '', status: 'All', chapter: 'All' }; renderMembers(); };
+}
+
+function memberModal(id = null) {
+  const data = db();
+  const member = id ? data.members.find(item => item.id === id) : {};
+  const body = `<div class="form-grid">${field('First Name', 'mFirst', 'text', member.firstName || '', 'required maxlength="60"')}${field('Middle Name (optional)', 'mMiddle', 'text', member.middleName || '', 'maxlength="60"')}${field('Last Name', 'mLast', 'text', member.lastName || '', 'required maxlength="60"')}${field('Birth Date', 'mBirth', 'date', member.birthDate || '', `required max="${todayISO()}"`)}${field('Contact Number', 'mContact', 'tel', member.contact || '', 'maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required')}${field('Email Address (optional)', 'mEmail', 'email', member.email || '')}${selectField('Status', 'mStatus', ['Active', 'Inactive'], member.status || 'Active')}<div class="form-group"><label for="mChapter">Chapter</label><select class="select-input" id="mChapter"><option value="">No Chapter</option>${data.chapters.map(chapter => `<option value="${chapter.id}" ${member.chapterId === chapter.id ? 'selected' : ''}>${esc(chapter.name)}</option>`).join('')}</select></div><div class="form-group full"><label for="mAddress">Address</label><textarea class="textarea-input" id="mAddress" maxlength="250">${esc(member.address || '')}</textarea></div></div>`;
+
+  openModal(id ? 'Edit Member' : 'Add Member', body, close => {
+    const firstName = document.getElementById('mFirst').value.trim();
+    const lastName = document.getElementById('mLast').value.trim();
+    const birthDate = document.getElementById('mBirth').value;
+    const contact = document.getElementById('mContact').value.trim();
+    const email = document.getElementById('mEmail').value.trim().toLowerCase();
+    if (!firstName || !lastName || !birthDate) { toast('First name, last name, and birth date are required.', 'error'); return; }
+    if (birthDate > todayISO()) { toast('Birth date cannot be in the future.', 'error'); return; }
+    if (!/^\d{11}$/.test(contact)) { toast('Contact number must be exactly 11 digits.', 'error'); return; }
+    if (!validEmail(email)) { toast('Enter a valid email address.', 'error'); return; }
+    if (data.members.some(item => item.id !== id && item.contact === contact)) { toast('That contact number is already assigned to another member.', 'error'); return; }
+    if (email && data.members.some(item => item.id !== id && (item.email || '').toLowerCase() === email)) { toast('That email address is already assigned to another member.', 'error'); return; }
+
+    const chapterId = Number(document.getElementById('mChapter').value) || null;
+    const chapter = data.chapters.find(item => item.id === chapterId);
+    const record = {
+      id: id || uid(),
+      firstName,
+      middleName: document.getElementById('mMiddle').value.trim(),
+      lastName,
+      birthDate,
+      contact,
+      email,
+      status: document.getElementById('mStatus').value,
+      chapterId,
+      chapterName: chapter?.name || '',
+      address: document.getElementById('mAddress').value.trim(),
+      services: member.services || []
+    };
+    if (id) Object.assign(data.members.find(item => item.id === id), record); else data.members.push(record);
+    save(data); close(); toast(id ? 'Member updated.' : 'Member added.'); renderMembers();
+  });
+}
+
 window.editMember = memberModal;
-window.deleteMember = id => { if (!confirm('Delete this member?')) return; const d = db(); d.members = d.members.filter(x => x.id !== id); d.gig = d.gig.filter(g => g.memberId !== id); save(d); toast('Member deleted.'); renderMembers(); };
-window.serviceMember = id => { const d = db(), m = d.members.find(x => x.id === id); const checks = d.services.map(s => `<label class="check-row"><input type="checkbox" value="${esc(s)}" ${(m.services || []).includes(s) ? 'checked' : ''}> ${esc(s)}</label>`).join(''); openModal(`Assign Services - ${esc(fullName(m))}`, `<div class="check-grid" id="serviceChecks">${checks}</div>`, close => { m.services = [...document.querySelectorAll('#serviceChecks input:checked')].map(x => x.value); save(d); close(); toast('Services updated.'); renderMembers(); }); };
-window.gigMember = id => { const d = db(), m = d.members.find(x => x.id === id), rows = d.gig.filter(g => g.memberId === id); openModal(`GIG Tracker - ${esc(fullName(m))}`, `<div class="form-grid">${field('Contribution Date', 'gDate', 'date', new Date().toISOString().slice(0, 10))}${field('Amount', 'gAmount', 'number', '0', 'min="0" step="0.01"')}<div class="form-group full"><label>Note (optional)</label><input class="text-input" id="gNote"></div></div><div style="margin-top:18px"><strong>Total: ${money(rows.reduce((s, x) => s + Number(x.amount), 0))}</strong>${rows.length ? `<div class="mini-list" style="margin-top:10px">${rows.map(r => `<div class="mini-row"><span>${fmtDate(r.date)} — ${esc(r.note || 'Contribution')}</span><strong>${money(r.amount)}</strong></div>`).join('')}</div>` : ''}</div>`, close => { const amount = Number(document.getElementById('gAmount').value); if (amount <= 0) { toast('Enter an amount greater than zero.', 'error'); return; } d.gig.push({ id: uid(), memberId: id, date: document.getElementById('gDate').value, amount, note: document.getElementById('gNote').value.trim() }); save(d); close(); toast('GIG contribution added.'); renderMembers(); }, 'Add Contribution'); };
+window.deleteMember = id => {
+  if (!confirm('Delete this member and their GIG contribution records?')) return;
+  const data = db();
+  data.members = data.members.filter(item => item.id !== id);
+  data.gig = data.gig.filter(item => item.memberId !== id);
+  save(data); toast('Member deleted.'); renderMembers();
+};
+window.serviceMember = id => {
+  const data = db(); const member = data.members.find(item => item.id === id); if (!member) return;
+  const checks = data.services.map(service => `<label class="check-row"><input type="checkbox" value="${esc(service)}" ${(member.services || []).includes(service) ? 'checked' : ''}> ${esc(service)}</label>`).join('');
+  openModal(`Assign Services - ${esc(fullName(member))}`, `<div class="check-grid" id="serviceChecks">${checks}</div>`, close => {
+    member.services = [...document.querySelectorAll('#serviceChecks input:checked')].map(input => input.value);
+    save(data); close(); toast('Services updated.'); renderMembers();
+  });
+};
+window.gigMember = id => {
+  const data = db(); const member = data.members.find(item => item.id === id); if (!member) return;
+  const rows = data.gig.filter(item => item.memberId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const history = rows.length ? `<div class="mini-list gig-history">${rows.map(row => `<div class="mini-row"><span>${fmtDate(row.date)} — ${esc(row.note || 'Contribution')}</span><span class="inline-actions"><strong>${money(row.amount)}</strong><button class="mini-delete" type="button" onclick="deleteGigContribution(${id},${row.id})" aria-label="Delete contribution">×</button></span></div>`).join('')}</div>` : '<p class="muted">No GIG contributions recorded yet.</p>';
+  openModal(`GIG Tracker - ${esc(fullName(member))}`, `<div class="form-grid">${field('Contribution Date', 'gDate', 'date', todayISO(), `max="${todayISO()}"`)}${field('Amount', 'gAmount', 'number', '', 'min="0.01" step="0.01" placeholder="0.00"')}<div class="form-group full"><label for="gNote">Note (optional)</label><input class="text-input" id="gNote" maxlength="120"></div></div><div class="modal-section"><strong>Total Contributions: ${money(rows.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</strong>${history}</div>`, close => {
+    const amount = Number(document.getElementById('gAmount').value);
+    const date = document.getElementById('gDate').value;
+    if (!date || amount <= 0) { toast('Enter a valid contribution date and amount.', 'error'); return; }
+    data.gig.push({ id: uid(), memberId: id, date, amount, note: document.getElementById('gNote').value.trim() });
+    save(data); close(); toast('GIG contribution added.'); renderMembers();
+  }, 'Add Contribution');
+};
+window.deleteGigContribution = (memberId, contributionId) => {
+  if (!confirm('Delete this GIG contribution?')) return;
+  const data = db(); data.gig = data.gig.filter(item => item.id !== contributionId); save(data); toast('Contribution deleted.');
+  activeModalCleanup?.(); window.gigMember(memberId);
+};
 
 // ---------------- CHAPTERS ----------------
 let chapterSearch = '';
-function renderChapters() { const d = db(); const list = d.chapters.filter(c => c.name.toLowerCase().includes(chapterSearch.toLowerCase())); content.innerHTML = pageHeader('Chapters', 'Create and manage MFC Youth chapters.', '<button class="btn blue" id="addChapter">+ Add Chapter</button>') + `<div class="toolbar"><div class="grow"><input class="search-input" id="chapterSearch" placeholder="Search chapters..." value="${esc(chapterSearch)}"></div><button class="btn" id="refreshChapters">Refresh</button></div><section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Chapter</th><th>Member Count</th><th>Actions</th></tr></thead><tbody>${list.map(c => `<tr><td><strong>${esc(c.name)}</strong></td><td>${d.members.filter(m => m.chapterId === c.id).length}</td><td><button class="btn" onclick="editChapter(${c.id})">Rename</button> <button class="btn" onclick="viewChapter(${c.id})">View Members</button> <button class="btn red" onclick="deleteChapter(${c.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Chapters Yet</h3><p>Add your first chapter.</p></div>'}</section>`; document.getElementById('addChapter').onclick = () => chapterModal(); document.getElementById('chapterSearch').oninput = e => { chapterSearch = e.target.value; renderChapters() }; document.getElementById('refreshChapters').onclick = () => { chapterSearch = ''; renderChapters() }; }
-function chapterModal(id = null) { const d = db(), c = id ? d.chapters.find(x => x.id === id) : {}; openModal(id ? 'Rename Chapter' : 'Add Chapter', field('Chapter Name', 'cName', 'text', c.name || '', 'required'), close => { const name = document.getElementById('cName').value.trim(); if (!name) { toast('Chapter name is required.', 'error'); return; } if (d.chapters.some(x => x.name.toLowerCase() === name.toLowerCase() && x.id !== id)) { toast('That chapter already exists.', 'error'); return; } if (id) { c.name = name; d.members.filter(m => m.chapterId === id).forEach(m => m.chapterName = name) } else d.chapters.push({ id: uid(), name }); save(d); close(); toast(id ? 'Chapter renamed.' : 'Chapter added.'); renderChapters(); }); }
-window.editChapter = chapterModal; window.deleteChapter = id => { const d = db(); if (d.members.some(m => m.chapterId === id)) { alert('Move or remove the members from this chapter before deleting it.'); return; } if (confirm('Delete this chapter?')) { d.chapters = d.chapters.filter(c => c.id !== id); save(d); toast('Chapter deleted.'); renderChapters(); } }; window.viewChapter = id => { const d = db(), c = d.chapters.find(x => x.id === id), members = d.members.filter(m => m.chapterId === id); openModal(`${esc(c.name)} Members`, members.length ? `<div class="mini-list">${members.map(m => `<div class="mini-row"><strong>${esc(fullName(m))}</strong><span>${esc(m.status)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No Members</h3><p>This chapter has no assigned members yet.</p></div>'); };
+function renderChapters() {
+  const data = db();
+  const list = data.chapters.filter(chapter => chapter.name.toLowerCase().includes(chapterSearch.toLowerCase()));
+  content.innerHTML = pageHeader('Chapters', 'Create and manage MFC Youth chapters and view their assigned members.', '<button class="btn blue" id="addChapter">+ Add Chapter</button>') +
+    `<div class="toolbar"><div class="grow"><input class="search-input" id="chapterSearch" placeholder="Search chapters..." value="${esc(chapterSearch)}"></div><button class="btn" id="clearChapterSearch">Clear</button></div><div class="result-count">Showing ${list.length} of ${data.chapters.length} chapter${data.chapters.length === 1 ? '' : 's'}</div><section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Chapter</th><th>Member Count</th><th>Active Members</th><th>Actions</th></tr></thead><tbody>${list.map(chapter => { const members = data.members.filter(member => member.chapterId === chapter.id); return `<tr><td><strong>${esc(chapter.name)}</strong></td><td>${members.length}</td><td>${members.filter(member => member.status === 'Active').length}</td><td class="actions-cell"><button class="btn" onclick="editChapter(${chapter.id})">Rename</button><button class="btn" onclick="viewChapter(${chapter.id})">View Members</button><button class="btn red" onclick="deleteChapter(${chapter.id})">Delete</button></td></tr>`; }).join('')}</tbody></table>` : emptyState('No matching chapters', data.chapters.length ? 'Change or clear your search.' : 'Add your first chapter.')}</section>`;
+  document.getElementById('addChapter').onclick = () => chapterModal();
+  document.getElementById('chapterSearch').oninput = event => { chapterSearch = event.target.value; renderChapters(); };
+  document.getElementById('clearChapterSearch').onclick = () => { chapterSearch = ''; renderChapters(); };
+}
+function chapterModal(id = null) {
+  const data = db(); const chapter = id ? data.chapters.find(item => item.id === id) : {};
+  openModal(id ? 'Rename Chapter' : 'Add Chapter', field('Chapter Name', 'cName', 'text', chapter?.name || '', 'required maxlength="100"'), close => {
+    const name = document.getElementById('cName').value.trim();
+    if (!name) { toast('Chapter name is required.', 'error'); return; }
+    if (data.chapters.some(item => item.id !== id && item.name.toLowerCase() === name.toLowerCase())) { toast('That chapter already exists.', 'error'); return; }
+    if (id) {
+      const oldName = chapter.name;
+      chapter.name = name;
+      data.members.filter(member => member.chapterId === id).forEach(member => { member.chapterName = name; });
+      data.reports.filter(report => report.chapter === oldName).forEach(report => { report.chapter = name; });
+    } else data.chapters.push({ id: uid(), name });
+    save(data); close(); toast(id ? 'Chapter renamed.' : 'Chapter added.'); renderChapters();
+  });
+}
+window.editChapter = chapterModal;
+window.deleteChapter = id => {
+  const data = db();
+  if (data.members.some(member => member.chapterId === id)) { alert('Move or remove members from this chapter before deleting it.'); return; }
+  if (confirm('Delete this chapter?')) { data.chapters = data.chapters.filter(chapter => chapter.id !== id); save(data); toast('Chapter deleted.'); renderChapters(); }
+};
+window.viewChapter = id => {
+  const data = db(); const chapter = data.chapters.find(item => item.id === id); if (!chapter) return;
+  const members = data.members.filter(member => member.chapterId === id);
+  openModal(`${esc(chapter.name)} Members`, members.length ? `<div class="mini-list">${members.map(member => `<div class="mini-row"><div><strong>${esc(fullName(member))}</strong><div class="muted">${esc((member.services || []).join(', ') || 'No service')}</div></div><span class="badge ${member.status === 'Active' ? 'active' : 'inactive'}">${esc(member.status)}</span></div>`).join('')}</div>` : emptyState('No members', 'This chapter has no assigned members yet.'));
+};
 
 // ---------------- SERVICES ----------------
-function renderServices() { const d = db(); content.innerHTML = pageHeader('Services', 'View the seven built-in MFC Youth service roles and their assigned members.') + `<div class="service-grid">${d.services.map(s => { const n = d.members.filter(m => (m.services || []).includes(s)).length; return `<section class="card service-card"><h3>${esc(s)}</h3><div class="count">${n}</div><p>Assigned member${n === 1 ? '' : 's'}</p><button class="btn" onclick="viewService('${esc(s).replace(/'/g, "\\'")}')">View Members</button></section>` }).join('')}</div>`; }
-window.viewService = s => { const d = db(), ms = d.members.filter(m => (m.services || []).includes(s)); openModal(`${esc(s)} Members`, ms.length ? `<div class="mini-list">${ms.map(m => `<div class="mini-row"><strong>${esc(fullName(m))}</strong><span>${esc(m.chapterName || 'No Chapter')}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No Assigned Members</h3><p>Assign this service from the Members page.</p></div>'); };
+function renderServices() {
+  const data = db();
+  content.innerHTML = pageHeader('Services', 'View the seven built-in MFC Youth service roles and assigned members.') +
+    `<div class="service-grid">${data.services.map(service => { const members = data.members.filter(member => (member.services || []).includes(service)); return `<section class="card service-card"><h3>${esc(service)}</h3><div class="count">${members.length}</div><p>Assigned member${members.length === 1 ? '' : 's'}</p><button class="btn" onclick="viewService('${esc(service).replace(/'/g, "\\'")}')">View Members</button></section>`; }).join('')}</div>`;
+}
+window.viewService = service => {
+  const data = db(); const members = data.members.filter(member => (member.services || []).includes(service));
+  openModal(`${esc(service)} Members`, members.length ? `<div class="mini-list">${members.map(member => `<div class="mini-row"><strong>${esc(fullName(member))}</strong><span>${esc(member.chapterName || 'No Chapter')}</span></div>`).join('')}</div>` : emptyState('No assigned members', 'Assign this service from the Members page.'));
+};
 
 // ---------------- REPORTS ----------------
-let reportFilters = { search: '', chapter: 'All', type: 'All', period: 'All' };
-function reportTypes(d) { return [...new Set(d.reports.map(r => r.type).filter(Boolean))].sort(); }
-function filteredReports(d) { return d.reports.filter(r => { const text = `${r.title} ${r.activity} ${r.preparedBy} ${r.description}`.toLowerCase(); if (!text.includes(reportFilters.search.toLowerCase())) return false; if (reportFilters.chapter !== 'All' && r.chapter !== reportFilters.chapter) return false; if (reportFilters.type !== 'All' && r.type !== reportFilters.type) return false; if (reportFilters.period === 'This Month') { const dt = new Date(r.date), now = new Date(); if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return false; } return true; }); }
-function renderReports() { const d = db(), list = filteredReports(d), types = reportTypes(d), monthCount = d.reports.filter(r => { const x = new Date(r.date), n = new Date(); return x.getMonth() === n.getMonth() && x.getFullYear() === n.getFullYear() }).length; const months = [...Array(6)].map((_, i) => { const x = new Date(); x.setMonth(x.getMonth() - (5 - i)); const label = x.toLocaleDateString('en', { month: 'short' }); const count = d.reports.filter(r => { const q = new Date(r.date); return q.getMonth() === x.getMonth() && q.getFullYear() === x.getFullYear() }).length; return { label, count } }); const max = Math.max(...months.map(x => x.count), 1); content.innerHTML = pageHeader('Activity Reports', 'Manage reports and review simple activity analytics.', '<button class="btn blue" id="addReport">+ Add Report</button> <button class="btn" id="printReports">Print</button> <button class="btn" id="exportPdfBtn">Export PDF</button>') + `<div class="stat-grid"><section class="card stat-card"><span>Matching Reports</span><strong>${list.length}</strong></section><section class="card stat-card"><span>This Month</span><strong>${monthCount}</strong></section><section class="card stat-card"><span>Chapters</span><strong>${new Set(d.reports.map(r => r.chapter).filter(Boolean)).size}</strong></section><section class="card stat-card"><span>Report Types</span><strong>${types.length}</strong></section></div><div class="toolbar"><div class="grow"><input class="search-input" id="reportSearch" placeholder="Search reports..." value="${esc(reportFilters.search)}"></div><select class="select-input" id="reportChapter" style="max-width:180px"><option>All</option>${d.chapters.map(c => `<option ${reportFilters.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><select class="select-input" id="reportType" style="max-width:180px"><option>All</option>${types.map(t => `<option ${reportFilters.type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select><select class="select-input" id="reportPeriod" style="max-width:160px"><option>All</option><option ${reportFilters.period === 'This Month' ? 'selected' : ''}>This Month</option></select><button class="btn" id="clearReportFilters">Clear Filters</button></div><div class="grid-2"><section class="card panel"><h3>Monthly Activity</h3><div class="chart-bars">${months.map(m => `<div class="chart-bar" style="height:${Math.max(8, (m.count / max) * 145)}px"><span>${m.label}</span></div>`).join('')}</div></section><section class="card panel"><h3>Report Type Mix</h3>${types.length ? `<div class="bar-list">${types.map(t => { const n = d.reports.filter(r => r.type === t).length; return `<div class="bar-row"><span>${esc(t)}</span><div class="bar-track"><div class="bar-fill" style="width:${n / Math.max(d.reports.length, 1) * 100}%"></div></div><strong>${n}</strong></div>` }).join('')}</div>` : '<div class="empty-state"><h3>No analytics yet</h3><p>Add activity reports to see report type totals.</p></div>'}</section></div><section class="card table-wrap" style="margin-top:18px">${list.length ? `<table class="data-table"><thead><tr><th>Date</th><th>Report Title</th><th>Chapter</th><th>Type</th><th>Activity</th><th>Prepared By</th><th>Actions</th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r.date)}</td><td><strong>${esc(r.title)}</strong></td><td>${esc(r.chapter || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc(r.activity || '—')}</td><td>${esc(r.preparedBy || '—')}</td><td><button class="btn" onclick="reportModal(${r.id})">Edit</button> <button class="btn red" onclick="deleteReport(${r.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Activity Reports</h3><p>Add a report to start your analytics.</p></div>'}</section>`; document.getElementById('addReport').onclick = () => reportModal(); document.getElementById('printReports').onclick = () => window.print(); document.getElementById('exportPdfBtn').onclick = () => exportReportsPdf(d); document.getElementById('reportSearch').oninput = e => { reportFilters.search = e.target.value; renderReports() }; document.getElementById('reportChapter').onchange = e => { reportFilters.chapter = e.target.value; renderReports() }; document.getElementById('reportType').onchange = e => { reportFilters.type = e.target.value; renderReports() }; document.getElementById('reportPeriod').onchange = e => { reportFilters.period = e.target.value; renderReports() }; document.getElementById('clearReportFilters').onclick = () => { reportFilters = { search: '', chapter: 'All', type: 'All', period: 'All' }; renderReports() }; }
-window.reportModal = function (id = null) { const d = db(), r = id ? d.reports.find(x => x.id === id) : {}; const body = `<div class="form-grid">${field('Report Title', 'rTitle', 'text', r.title || '', 'required')}<div class="form-group"><label>Chapter</label><select class="select-input" id="rChapter"><option value="">No Chapter</option>${d.chapters.map(c => `<option ${r.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>${field('Report Type', 'rType', 'text', r.type || '')}${field('Activity', 'rActivity', 'text', r.activity || '')}${field('Report Date', 'rDate', 'date', r.date || new Date().toISOString().slice(0, 10), 'required')}${field('Prepared By', 'rPrepared', 'text', r.preparedBy || '')}<div class="form-group full"><label>Description</label><textarea class="textarea-input" id="rDescription">${esc(r.description || '')}</textarea></div></div>`; openModal(id ? 'Edit Activity Report' : 'Add Activity Report', body, close => { const title = document.getElementById('rTitle').value.trim(); if (!title) { toast('Report title is required.', 'error'); return; } const obj = { id: id || uid(), title, chapter: document.getElementById('rChapter').value, type: document.getElementById('rType').value.trim(), activity: document.getElementById('rActivity').value.trim(), date: document.getElementById('rDate').value, preparedBy: document.getElementById('rPrepared').value.trim(), description: document.getElementById('rDescription').value.trim() }; if (id) Object.assign(d.reports.find(x => x.id === id), obj); else d.reports.push(obj); save(d); close(); toast(id ? 'Report updated.' : 'Report added.'); renderReports(); }); }; window.deleteReport = id => { if (!confirm('Delete this report?')) return; const d = db(); d.reports = d.reports.filter(x => x.id !== id); save(d); toast('Report deleted.'); renderReports(); };
-
-// ---------------- EVENTS ----------------
-let eventSearch = '';
-function renderEvents() { const d = db(), list = d.events.filter(e => `${e.name} ${e.venue} ${e.description}`.toLowerCase().includes(eventSearch.toLowerCase())); content.innerHTML = pageHeader('Events', 'Manage Area events and participant registration.', '<button class="btn blue" id="addEvent">+ Add Event</button>') + `<div class="toolbar"><div class="grow"><input class="search-input" id="eventSearch" placeholder="Search events..." value="${esc(eventSearch)}"></div><button class="btn" id="refreshEvents">Refresh</button></div><section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Date & Time</th><th>Event</th><th>Venue</th><th>Fee</th><th>Registered</th><th>Attended</th><th>Actions</th></tr></thead><tbody>${list.map(e => { const ps = d.participants.filter(p => p.eventId === e.id), att = ps.filter(p => p.attended).length; return `<tr><td>${fmtDateTime(e.date)}</td><td><strong>${esc(e.name)}</strong></td><td>${esc(e.venue || '—')}</td><td>${Number(e.fee) > 0 ? money(e.fee) : 'Free'}</td><td>${ps.length}</td><td>${att}</td><td><button class="btn" onclick="viewEvent(${e.id})">View</button> <button class="btn" onclick="eventModal(${e.id})">Edit</button> <button class="btn red" onclick="deleteEvent(${e.id})">Delete</button></td></tr>` }).join('')}</tbody></table>` : '<div class="empty-state"><h3>No Events Yet</h3><p>Add your first Area event.</p></div>'}</section>`; document.getElementById('addEvent').onclick = () => eventModal(); document.getElementById('eventSearch').oninput = e => { eventSearch = e.target.value; renderEvents() }; document.getElementById('refreshEvents').onclick = () => { eventSearch = ''; renderEvents() }; }
-window.eventModal = function (id = null) { const d = db(), e = id ? d.events.find(x => x.id === id) : {}; const body = `<div class="form-grid">${field('Event Name', 'eName', 'text', e.name || '', 'required')}${field('Date & Time', 'eDate', 'datetime-local', e.date || '', 'required')}${field('Registration Fee', 'eFee', 'number', e.fee || 0, 'min="0" step="0.01"')}${field('Venue', 'eVenue', 'text', e.venue || '')}${field('People Attended', 'eAttended', 'number', e.peopleAttended || 0, 'min="0"')}<div class="form-group full"><label>Event Description</label><textarea class="textarea-input" id="eDescription">${esc(e.description || '')}</textarea></div></div>`; openModal(id ? 'Edit Event' : 'Add Event', body, close => { const name = document.getElementById('eName').value.trim(), date = document.getElementById('eDate').value; if (!name || !date) { toast('Event name and date are required.', 'error'); return; } const obj = { id: id || uid(), name, date, fee: Number(document.getElementById('eFee').value || 0), venue: document.getElementById('eVenue').value.trim(), peopleAttended: Number(document.getElementById('eAttended').value || 0), description: document.getElementById('eDescription').value.trim() }; if (id) Object.assign(d.events.find(x => x.id === id), obj); else d.events.push(obj); save(d); close(); toast(id ? 'Event updated.' : 'Event added.'); renderEvents(); }); };
-window.deleteEvent = id => { if (!confirm('Delete this event and its participant records?')) return; const d = db(); d.events = d.events.filter(x => x.id !== id); d.participants = d.participants.filter(p => p.eventId !== id); save(d); toast('Event deleted.'); renderEvents(); };
-window.viewEvent = id => {
-  const d = db();
-  const e = d.events.find(x => x.id === id);
-  const ps = d.participants.filter(p => p.eventId === id);
-  const participantsHtml = ps.length
-    ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Age</th><th>Chapter</th><th>Service</th><th>Payment</th><th>Attendance</th><th></th></tr></thead><tbody>${ps.map(p => `<tr><td>${esc([p.first, p.mi, p.last].filter(Boolean).join(' '))}</td><td>${p.age || '—'}</td><td>${esc(p.chapter || '—')}</td><td>${esc(p.service || '—')}</td><td><span class="badge ${p.paymentStatus === 'Paid' ? 'paid' : 'unpaid'}">${esc(p.paymentStatus)}</span></td><td><span class="badge ${p.attended ? 'attended' : 'pending'}">${p.attended ? 'Attended' : 'Not Yet'}</span></td><td><button class="btn" onclick="participantModal(${id},${p.id})">Edit</button> <button class="btn red" onclick="deleteParticipant(${id},${p.id})">Delete</button></td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty-state"><h3>No Participants Yet</h3><p>Register the first participant for this event.</p></div>';
-  const body = `<div class="mini-list"><div class="mini-row"><span>Date & Time</span><strong>${fmtDateTime(e.date)}</strong></div><div class="mini-row"><span>Venue</span><strong>${esc(e.venue || '—')}</strong></div><div class="mini-row"><span>Registration Fee</span><strong>${Number(e.fee) > 0 ? money(e.fee) : 'Free'}</strong></div></div><div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px"><h3>Participants (${ps.length})</h3><button class="btn blue" onclick="participantModal(${id})">+ Register Participant</button></div>${participantsHtml}`;
-  openModal(esc(e.name), body);
-};
-window.participantModal = (eventId, id = null) => { const d = db(), p = id ? d.participants.find(x => x.id === id) : {}; const body = `<div class="form-grid">${field('First Name', 'pFirst', 'text', p.first || '', 'required')}${field('Last Name', 'pLast', 'text', p.last || '', 'required')}${field('Middle Initial (optional)', 'pMI', 'text', p.mi || '', 'maxlength="2"')}${field('Age', 'pAge', 'number', p.age || '', 'min="1"')}${field('Contact Number', 'pContact', 'text', p.contact || '', 'maxlength="11"')}${field('Address', 'pAddress', 'text', p.address || '')}<div class="form-group"><label>Chapter</label><select class="select-input" id="pChapter"><option value="">No Chapter</option>${d.chapters.map(c => `<option ${p.chapter === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div class="form-group"><label>Service</label><select class="select-input" id="pService"><option value="">No Service</option>${d.services.map(s => `<option ${p.service === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>${selectField('Mode of Payment', 'pMode', ['Cash', 'GCash', 'Bank Transfer', 'Other'], p.paymentMode || 'Cash')}${selectField('Payment Status', 'pPay', ['Unpaid', 'Paid'], p.paymentStatus || 'Unpaid')}<div class="form-group full"><label class="check-row"><input type="checkbox" id="pAttended" ${p.attended ? 'checked' : ''}> Mark as attended</label></div></div>`; openModal(id ? 'Edit Participant' : 'Register Participant', body, close => { const first = document.getElementById('pFirst').value.trim(), last = document.getElementById('pLast').value.trim(); if (!first || !last) { toast('First and last name are required.', 'error'); return; } const contact = document.getElementById('pContact').value.trim(); if (contact && !/^\d{11}$/.test(contact)) { toast('Contact number must be 11 digits.', 'error'); return; } const obj = { id: id || uid(), eventId, first, last, mi: document.getElementById('pMI').value.trim(), age: Number(document.getElementById('pAge').value || 0), contact, address: document.getElementById('pAddress').value.trim(), chapter: document.getElementById('pChapter').value, service: document.getElementById('pService').value, paymentMode: document.getElementById('pMode').value, paymentStatus: document.getElementById('pPay').value, attended: document.getElementById('pAttended').checked }; if (id) Object.assign(d.participants.find(x => x.id === id), obj); else d.participants.push(obj); save(d); close(); toast(id ? 'Participant updated.' : 'Participant registered.'); viewEvent(eventId); }); };
-window.deleteParticipant = (eventId, id) => { if (!confirm('Delete this participant?')) return; const d = db(); d.participants = d.participants.filter(x => x.id !== id); save(d); toast('Participant deleted.'); viewEvent(eventId); };
-
-// PDF helpers inserted to generate a summarized report document (separate from window.print())
-function calculateTotalParticipants(reports, data) {
-  return reports.reduce((sum, r) => {
-    if (typeof r.participants === 'number') return sum + r.participants;
-    if (typeof r.attendance === 'number') return sum + r.attendance;
-    if (r.eventId) return sum + (data.participants.filter(p => p.eventId === r.eventId).length || 0);
-    return sum;
-  }, 0);
+let reportFilters = { search: '', chapter: 'All', type: 'All', from: '', to: '' };
+function reportTypes(data) { return [...new Set(data.reports.map(report => report.type).filter(Boolean))].sort(); }
+function filteredReports(data) {
+  return data.reports.filter(report => {
+    const text = `${report.title || ''} ${report.activity || ''} ${report.preparedBy || ''} ${report.description || ''} ${report.location || ''}`.toLowerCase();
+    if (!text.includes(reportFilters.search.toLowerCase())) return false;
+    if (reportFilters.chapter !== 'All' && report.chapter !== reportFilters.chapter) return false;
+    if (reportFilters.type !== 'All' && report.type !== reportFilters.type) return false;
+    if (reportFilters.from && report.date < reportFilters.from) return false;
+    if (reportFilters.to && report.date > reportFilters.to) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 }
-
-function groupActivitiesByType(reports, data) {
+function calculateTotalParticipants(reports) { return reports.reduce((sum, report) => sum + Number(report.participants || 0), 0); }
+function groupActivitiesByType(reports) {
   const map = {};
-  reports.forEach(r => {
-    const t = r.type || 'Unspecified';
-    if (!map[t]) map[t] = { count: 0, participants: 0 };
-    map[t].count += 1;
-    if (typeof r.participants === 'number') map[t].participants += r.participants;
-    else if (typeof r.attendance === 'number') map[t].participants += r.attendance;
-    else if (r.eventId) map[t].participants += data.participants.filter(p => p.eventId === r.eventId).length;
-  });
-  return Object.keys(map).map(k => ({ type: k, count: map[k].count, participants: map[k].participants }));
+  reports.forEach(report => { const key = report.type || 'Unspecified'; if (!map[key]) map[key] = { type: key, count: 0, participants: 0 }; map[key].count++; map[key].participants += Number(report.participants || 0); });
+  return Object.values(map).sort((a, b) => b.count - a.count || b.participants - a.participants);
 }
-
-function groupActivitiesByChapter(reports, data) {
+function groupActivitiesByChapter(reports) {
   const map = {};
-  reports.forEach(r => {
-    const c = r.chapter || 'No Chapter';
-    if (!map[c]) map[c] = { count: 0, participants: 0 };
-    map[c].count += 1;
-    if (typeof r.participants === 'number') map[c].participants += r.participants;
-    else if (typeof r.attendance === 'number') map[c].participants += r.attendance;
-    else if (r.eventId) map[c].participants += data.participants.filter(p => p.eventId === r.eventId).length;
-  });
-  return Object.keys(map).map(k => ({ chapter: k, count: map[k].count, participants: map[k].participants }));
+  reports.forEach(report => { const key = report.chapter || 'No Chapter'; if (!map[key]) map[key] = { chapter: key, count: 0, participants: 0 }; map[key].count++; map[key].participants += Number(report.participants || 0); });
+  return Object.values(map).sort((a, b) => b.count - a.count || b.participants - a.participants);
 }
-
-function calculateReportSummary(reports, data) {
+function calculateReportSummary(reports) {
   const totalActivities = reports.length;
-  const totalParticipants = calculateTotalParticipants(reports, data);
-  const averageAttendance = totalActivities ? Math.round(totalParticipants / totalActivities) : 0;
-  const chaptersInvolved = new Set(reports.map(r => r.chapter).filter(Boolean)).size;
-  const activityTypes = new Set(reports.map(r => r.type).filter(Boolean)).size;
-  return { totalActivities, totalParticipants, averageAttendance, chaptersInvolved, activityTypes };
+  const totalParticipants = calculateTotalParticipants(reports);
+  return {
+    totalActivities,
+    totalParticipants,
+    averageAttendance: totalActivities ? Math.round(totalParticipants / totalActivities) : 0,
+    chaptersInvolved: new Set(reports.map(report => report.chapter).filter(Boolean)).size,
+    activityTypes: new Set(reports.map(report => report.type).filter(Boolean)).size
+  };
+}
+function generateReportInsights(reports) {
+  if (!reports.length) return [];
+  const byChapter = groupActivitiesByChapter(reports);
+  const byType = groupActivitiesByType(reports);
+  const summary = calculateReportSummary(reports);
+  const insights = [];
+  if (byChapter.length) insights.push(`${byChapter[0].chapter} recorded the highest number of activities (${byChapter[0].count}).`);
+  if (byType.length) insights.push(`${byType[0].type} was the most frequently recorded activity type (${byType[0].count}).`);
+  insights.push(`Total recorded participation was ${summary.totalParticipants} across ${summary.totalActivities} activit${summary.totalActivities === 1 ? 'y' : 'ies'}.`);
+  insights.push(`Average attendance per recorded activity was approximately ${summary.averageAttendance} participant${summary.averageAttendance === 1 ? '' : 's'}.`);
+  return insights;
+}
+function reportScopeText() {
+  const parts = [];
+  if (reportFilters.chapter !== 'All') parts.push(`Chapter: ${reportFilters.chapter}`);
+  if (reportFilters.type !== 'All') parts.push(`Type: ${reportFilters.type}`);
+  if (reportFilters.from || reportFilters.to) parts.push(`Date: ${reportFilters.from ? fmtDate(reportFilters.from) : 'Beginning'} to ${reportFilters.to ? fmtDate(reportFilters.to) : 'Present'}`);
+  if (reportFilters.search) parts.push(`Search: ${reportFilters.search}`);
+  return parts.length ? parts.join(' | ') : 'All Recorded Activities';
 }
 
-function generateReportInsights(reports, data) {
-  const byChapter = groupActivitiesByChapter(reports, data).sort((a, b) => b.count - a.count);
-  const byType = groupActivitiesByType(reports, data).sort((a, b) => b.count - a.count);
-  const insights = [];
-  if (reports.length === 0) return insights;
-  if (byChapter.length) insights.push(`${byChapter[0].chapter} recorded the highest number of activities (${byChapter[0].count}).`);
-  if (byType.length) insights.push(`${byType[0].type} was the most frequently recorded activity (${byType[0].count}).`);
-  const totalParticipants = calculateTotalParticipants(reports, data);
-  if (reports.length) insights.push(`Total recorded participation was ${totalParticipants}.`);
-  if (reports.length) insights.push(`Average attendance per activity was approximately ${Math.round(totalParticipants / Math.max(1, reports.length))} participants.`);
-  return insights;
+function renderReports() {
+  const data = db(); const list = filteredReports(data); const types = reportTypes(data); const summary = calculateReportSummary(list);
+  const months = [...Array(6)].map((_, index) => { const date = new Date(); date.setDate(1); date.setMonth(date.getMonth() - (5 - index)); const count = list.filter(report => { const rd = new Date(`${report.date}T00:00:00`); return rd.getMonth() === date.getMonth() && rd.getFullYear() === date.getFullYear(); }).length; return { label: date.toLocaleDateString('en', { month: 'short' }), count }; });
+  const max = Math.max(...months.map(item => item.count), 1);
+  const typeGroups = groupActivitiesByType(list);
+
+  content.innerHTML = pageHeader('Activity Reports', 'Manage activity reports, filter records, review analytics, and export summarized documents.', '<button class="btn blue" id="addReport">+ Add Report</button><button class="btn" id="printReports">Print Summary</button><button class="btn" id="exportPdfBtn">Export PDF</button>') +
+    `<div class="stat-grid"><section class="card stat-card"><span>Matching Reports</span><strong>${summary.totalActivities}</strong></section><section class="card stat-card"><span>Total Participants</span><strong>${summary.totalParticipants}</strong></section><section class="card stat-card"><span>Chapters Involved</span><strong>${summary.chaptersInvolved}</strong></section><section class="card stat-card"><span>Average Attendance</span><strong>${summary.averageAttendance}</strong></section></div>
+    <div class="toolbar report-toolbar"><div class="grow"><input class="search-input" id="reportSearch" placeholder="Search title, activity, preparer, location..." value="${esc(reportFilters.search)}"></div><select class="select-input compact-filter" id="reportChapter"><option>All</option>${data.chapters.map(chapter => `<option ${reportFilters.chapter === chapter.name ? 'selected' : ''}>${esc(chapter.name)}</option>`).join('')}</select><select class="select-input compact-filter" id="reportType"><option>All</option>${types.map(type => `<option ${reportFilters.type === type ? 'selected' : ''}>${esc(type)}</option>`).join('')}</select><label class="date-filter">From<input class="date-input" id="reportFrom" type="date" value="${esc(reportFilters.from)}"></label><label class="date-filter">To<input class="date-input" id="reportTo" type="date" value="${esc(reportFilters.to)}"></label><button class="btn" id="clearReportFilters">Clear</button></div>
+    <div class="result-count">Report scope: ${esc(reportScopeText())}</div>
+    <div class="grid-2"><section class="card panel"><h3>Monthly Activity</h3><div class="chart-bars">${months.map(month => `<div class="chart-bar-wrap"><div class="chart-value">${month.count}</div><div class="chart-bar" style="height:${Math.max(8, (month.count / max) * 125)}px"></div><span>${month.label}</span></div>`).join('')}</div></section><section class="card panel"><h3>Report Type Mix</h3>${typeGroups.length ? `<div class="bar-list">${typeGroups.map(group => `<div class="bar-row"><span>${esc(group.type)}</span><div class="bar-track"><div class="bar-fill" style="width:${group.count / Math.max(list.length, 1) * 100}%"></div></div><strong>${group.count}</strong></div>`).join('')}</div>` : emptyState('No analytics yet', 'Add or adjust report filters to see activity totals.')}</section></div>
+    <section class="card table-wrap report-table">${list.length ? `<table class="data-table"><thead><tr><th>Date</th><th>Report Title</th><th>Chapter</th><th>Type</th><th>Participants</th><th>Location</th><th>Prepared By</th><th>Actions</th></tr></thead><tbody>${list.map(report => `<tr><td>${fmtDate(report.date)}</td><td><strong>${esc(report.title)}</strong><div class="muted">${esc(report.activity || '—')}</div></td><td>${esc(report.chapter || '—')}</td><td>${esc(report.type || '—')}</td><td>${Number(report.participants || 0)}</td><td>${esc(report.location || '—')}</td><td>${esc(report.preparedBy || '—')}</td><td class="actions-cell"><button class="btn" onclick="reportModal(${report.id})">Edit</button><button class="btn red" onclick="deleteReport(${report.id})">Delete</button></td></tr>`).join('')}</tbody></table>` : emptyState('No activity reports', data.reports.length ? 'No records match the selected filters.' : 'Add a report to start your analytics.')}</section>`;
+
+  document.getElementById('addReport').onclick = () => reportModal();
+  document.getElementById('printReports').onclick = () => printReportSummary(data);
+  document.getElementById('exportPdfBtn').onclick = () => exportReportsPdf(data);
+  document.getElementById('reportSearch').oninput = event => { reportFilters.search = event.target.value; renderReports(); };
+  document.getElementById('reportChapter').onchange = event => { reportFilters.chapter = event.target.value; renderReports(); };
+  document.getElementById('reportType').onchange = event => { reportFilters.type = event.target.value; renderReports(); };
+  document.getElementById('reportFrom').onchange = event => { reportFilters.from = event.target.value; if (reportFilters.to && reportFilters.from > reportFilters.to) reportFilters.to = reportFilters.from; renderReports(); };
+  document.getElementById('reportTo').onchange = event => { reportFilters.to = event.target.value; if (reportFilters.from && reportFilters.to < reportFilters.from) reportFilters.from = reportFilters.to; renderReports(); };
+  document.getElementById('clearReportFilters').onclick = () => { reportFilters = { search: '', chapter: 'All', type: 'All', from: '', to: '' }; renderReports(); };
+}
+
+window.reportModal = function (id = null) {
+  const data = db(); const report = id ? data.reports.find(item => item.id === id) : {};
+  const linkedEvent = report?.eventId ? data.events.find(event => event.id === report.eventId) : null;
+  const eventOptions = `<option value="">No Linked Event</option>${data.events.map(event => `<option value="${event.id}" ${report?.eventId === event.id ? 'selected' : ''}>${esc(event.name)} — ${fmtDate(event.date)}</option>`).join('')}`;
+  const body = `<div class="form-grid">${field('Report Title', 'rTitle', 'text', report?.title || '', 'required maxlength="120"')}<div class="form-group"><label for="rChapter">Chapter</label><select class="select-input" id="rChapter"><option value="">No Chapter</option>${data.chapters.map(chapter => `<option ${report?.chapter === chapter.name ? 'selected' : ''}>${esc(chapter.name)}</option>`).join('')}</select></div>${field('Report Type', 'rType', 'text', report?.type || '', 'placeholder="e.g. Household, Assembly" maxlength="80"')}${field('Activity', 'rActivity', 'text', report?.activity || '', 'maxlength="120"')}${field('Report Date', 'rDate', 'date', report?.date || todayISO(), `required max="${todayISO()}"`)}${field('Prepared By', 'rPrepared', 'text', report?.preparedBy || session?.name || '', 'maxlength="100"')}${field('Participants / Attendance', 'rParticipants', 'number', report?.participants ?? '', 'min="0" step="1"')}${field('Location', 'rLocation', 'text', report?.location || linkedEvent?.venue || '', 'maxlength="150"')}<div class="form-group full"><label for="rEvent">Linked Event (optional)</label><select class="select-input" id="rEvent">${eventOptions}</select><small class="field-help">Selecting an event can automatically use its venue and current attendance count.</small></div><div class="form-group full"><label for="rDescription">Description / Remarks</label><textarea class="textarea-input" id="rDescription" maxlength="1000">${esc(report?.description || '')}</textarea></div></div>`;
+
+  openModal(id ? 'Edit Activity Report' : 'Add Activity Report', body, close => {
+    const title = document.getElementById('rTitle').value.trim();
+    const date = document.getElementById('rDate').value;
+    const participants = Number(document.getElementById('rParticipants').value || 0);
+    if (!title || !date) { toast('Report title and date are required.', 'error'); return; }
+    if (date > todayISO()) { toast('Report date cannot be in the future.', 'error'); return; }
+    if (!Number.isInteger(participants) || participants < 0) { toast('Participants must be a whole number of zero or more.', 'error'); return; }
+    const eventId = Number(document.getElementById('rEvent').value) || null;
+    const record = {
+      id: id || uid(),
+      title,
+      chapter: document.getElementById('rChapter').value,
+      type: document.getElementById('rType').value.trim(),
+      activity: document.getElementById('rActivity').value.trim(),
+      date,
+      preparedBy: document.getElementById('rPrepared').value.trim(),
+      participants,
+      location: document.getElementById('rLocation').value.trim(),
+      eventId,
+      description: document.getElementById('rDescription').value.trim()
+    };
+    if (id) Object.assign(data.reports.find(item => item.id === id), record); else data.reports.push(record);
+    save(data); close(); toast(id ? 'Report updated.' : 'Report added.'); renderReports();
+  });
+
+  const eventSelect = document.getElementById('rEvent');
+  eventSelect?.addEventListener('change', () => {
+    const event = data.events.find(item => item.id === Number(eventSelect.value));
+    if (!event) return;
+    const eventParticipants = data.participants.filter(item => item.eventId === event.id);
+    const attended = eventParticipants.filter(item => item.attended).length;
+    document.getElementById('rLocation').value = event.venue || '';
+    document.getElementById('rParticipants').value = attended || eventParticipants.length || Number(event.peopleAttended || 0);
+    if (!document.getElementById('rActivity').value.trim()) document.getElementById('rActivity').value = event.name;
+  });
+};
+
+window.deleteReport = id => {
+  if (!confirm('Delete this activity report?')) return;
+  const data = db(); data.reports = data.reports.filter(report => report.id !== id); save(data); toast('Report deleted.'); renderReports();
+};
+
+function printReportSummary(data) {
+  const reports = filteredReports(data);
+  if (!reports.length) { toast('No report data is available for the selected filters.', 'error'); return; }
+  const summary = calculateReportSummary(reports);
+  const byType = groupActivitiesByType(reports);
+  const byChapter = groupActivitiesByChapter(reports);
+  const insights = generateReportInsights(reports);
+  const win = window.open('', '_blank', 'noopener,noreferrer');
+  if (!win) { toast('Allow pop-ups to open the printable report.', 'error'); return; }
+  const rows = reports.map(report => `<tr><td>${fmtDate(report.date)}</td><td>${esc(report.title)}</td><td>${esc(report.chapter || '—')}</td><td>${esc(report.type || '—')}</td><td>${Number(report.participants || 0)}</td><td>${esc(report.location || '—')}</td></tr>`).join('');
+  win.document.write(`<!doctype html><html><head><title>MFC Youth Activity Summary Report</title><style>body{font-family:Arial,sans-serif;color:#17263a;margin:36px}h1,h2{color:#002847}h1{font-size:20px;margin-bottom:2px}.sub{color:#687386}.meta{margin:18px 0;padding:12px;background:#f4f7fb}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:18px 0}.stat{border:1px solid #dce3eb;padding:10px}.stat strong{display:block;font-size:20px;color:#002847}table{width:100%;border-collapse:collapse;margin:10px 0 22px;font-size:12px}th,td{border:1px solid #dce3eb;padding:7px;text-align:left}th{background:#eef4f8}li{margin-bottom:6px}@media print{body{margin:18mm}.no-print{display:none}}</style></head><body><h1>MFC YOUTH</h1><div class="sub">Area Management System</div><h2>Activity Summary Report</h2><div class="meta"><strong>Scope:</strong> ${esc(reportScopeText())}<br><strong>Generated:</strong> ${esc(new Date().toLocaleString('en-PH'))}</div><div class="stats"><div class="stat">Activities<strong>${summary.totalActivities}</strong></div><div class="stat">Participants<strong>${summary.totalParticipants}</strong></div><div class="stat">Average<strong>${summary.averageAttendance}</strong></div><div class="stat">Chapters<strong>${summary.chaptersInvolved}</strong></div><div class="stat">Types<strong>${summary.activityTypes}</strong></div></div><h2>Activity Breakdown</h2><table><thead><tr><th>Type</th><th>Activities</th><th>Participants</th></tr></thead><tbody>${byType.map(item => `<tr><td>${esc(item.type)}</td><td>${item.count}</td><td>${item.participants}</td></tr>`).join('')}</tbody></table><h2>Chapter Summary</h2><table><thead><tr><th>Chapter</th><th>Activities</th><th>Participants</th></tr></thead><tbody>${byChapter.map(item => `<tr><td>${esc(item.chapter)}</td><td>${item.count}</td><td>${item.participants}</td></tr>`).join('')}</tbody></table><h2>Activity Details</h2><table><thead><tr><th>Date</th><th>Activity</th><th>Chapter</th><th>Type</th><th>Participants</th><th>Location</th></tr></thead><tbody>${rows}</tbody></table><h2>Report Insights</h2><ul>${insights.map(insight => `<li>${esc(insight)}</li>`).join('')}</ul><p class="sub">Generated by MFC Youth Area Management System</p><script>window.onload=()=>window.print()<\/script></body></html>`);
+  win.document.close();
 }
 
 function exportReportsPdf(data) {
   const reports = filteredReports(data);
-  if (!reports.length) { alert('No report data is available for the selected filters.'); return; }
-  const summary = calculateReportSummary(reports, data);
-  const byType = groupActivitiesByType(reports, data);
-  const byChapter = groupActivitiesByChapter(reports, data);
-  const details = reports.map(r => ({ date: r.date ? fmtDate(r.date) : '—', title: r.title || '—', chapter: r.chapter || '—', type: r.type || '—', participants: (typeof r.participants === 'number' ? r.participants : (typeof r.attendance === 'number' ? r.attendance : (r.eventId ? data.participants.filter(p => p.eventId === r.eventId).length : '—'))), location: r.location || r.venue || '—' }));
-
+  if (!reports.length) { toast('No report data is available for the selected filters.', 'error'); return; }
+  if (!window.jspdf?.jsPDF) { toast('PDF library failed to load. Check your internet connection and try again.', 'error'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-  let y = 40;
-  doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('MFC YOUTH', 40, y); y += 18;
-  doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text('Area Management System', 40, y); y += 24;
-  doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY SUMMARY REPORT', 40, y); y += 18;
+  if (typeof doc.autoTable !== 'function') { toast('PDF table library failed to load. Please try again.', 'error'); return; }
 
-  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  const summary = calculateReportSummary(reports);
+  const byType = groupActivitiesByType(reports);
+  const byChapter = groupActivitiesByChapter(reports);
+  const insights = generateReportInsights(reports);
   const now = new Date();
-  doc.text(`Generated: ${now.toLocaleString()}`, 40, y); y += 14;
-  const scope = (reportFilters.chapter !== 'All' || reportFilters.type !== 'All' || reportFilters.period !== 'All' || reportFilters.search) ? 'Filtered' : 'All Recorded Activities';
-  doc.text(`Report Scope: ${scope}`, 40, y); y += 18;
+  let y = 44;
+  const left = 42;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
 
-  doc.setFont('helvetica', 'bold'); doc.text('EXECUTIVE SUMMARY', 40, y); y += 14;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('MFC YOUTH', left, y); y += 18;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Area Management System', left, y); y += 24;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('ACTIVITY SUMMARY REPORT', left, y); y += 18;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(`Generated: ${now.toLocaleString('en-PH')}`, left, y); y += 13;
+  const scopeLines = doc.splitTextToSize(`Report Scope: ${reportScopeText()}`, pageWidth - 84); doc.text(scopeLines, left, y); y += scopeLines.length * 11 + 10;
+
+  doc.setFont('helvetica', 'bold'); doc.text('EXECUTIVE SUMMARY', left, y); y += 13;
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Activities: ${summary.totalActivities}`, 60, y); y += 12;
-  doc.text(`Total Participants: ${summary.totalParticipants}`, 60, y); y += 12;
-  doc.text(`Average Attendance: ${summary.averageAttendance}`, 60, y); y += 12;
-  doc.text(`Chapters Involved: ${summary.chaptersInvolved}`, 60, y); y += 12;
-  doc.text(`Activity Types: ${summary.activityTypes}`, 60, y); y += 18;
+  const summaryLines = [
+    `Total Activities: ${summary.totalActivities}`,
+    `Total Participants: ${summary.totalParticipants}`,
+    `Average Attendance: ${summary.averageAttendance}`,
+    `Chapters Involved: ${summary.chaptersInvolved}`,
+    `Activity Types: ${summary.activityTypes}`
+  ];
+  summaryLines.forEach(line => { doc.text(line, left + 18, y); y += 12; }); y += 8;
 
-  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY BREAKDOWN', 40, y); y += 12;
+  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY BREAKDOWN', left, y);
+  doc.autoTable({ startY: y + 8, margin: { left, right: left }, head: [['Activity Type', 'Activities', 'Participants']], body: byType.map(item => [item.type, String(item.count), String(item.participants)]), theme: 'grid', styles: { fontSize: 8.5 }, headStyles: { fillColor: [0, 40, 71] } });
+  y = doc.lastAutoTable.finalY + 16;
+
+  doc.setFont('helvetica', 'bold'); doc.text('CHAPTER SUMMARY', left, y);
+  doc.autoTable({ startY: y + 8, margin: { left, right: left }, head: [['Chapter', 'Activities', 'Participants']], body: byChapter.map(item => [item.chapter, String(item.count), String(item.participants)]), theme: 'grid', styles: { fontSize: 8.5 }, headStyles: { fillColor: [8, 120, 189] } });
+  y = doc.lastAutoTable.finalY + 16;
+
+  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY DETAILS', left, y);
+  doc.autoTable({ startY: y + 8, margin: { left, right: left, bottom: 50 }, head: [['Date', 'Activity', 'Chapter', 'Type', 'Participants', 'Location']], body: reports.map(report => [fmtDate(report.date), report.title || report.activity || '—', report.chapter || '—', report.type || '—', String(Number(report.participants || 0)), report.location || '—']), theme: 'striped', styles: { fontSize: 7.5, cellPadding: 4 }, headStyles: { fillColor: [47, 140, 90] }, columnStyles: { 0: { cellWidth: 62 }, 4: { cellWidth: 52 } } });
+
+  y = doc.lastAutoTable.finalY + 18;
+  if (y > pageHeight - 120) { doc.addPage(); y = 48; }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text('REPORT INSIGHTS', left, y); y += 13;
   doc.setFont('helvetica', 'normal');
-  const typeBody = byType.map(t => [t.type, String(t.count), String(t.participants || 0)]);
-  doc.autoTable({ startY: y, head: [['Activity Type', 'Number of Activities', 'Participants']], body: typeBody, theme: 'grid', styles: { fontSize: 9 } });
-  y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : y + 80;
+  insights.forEach(insight => {
+    const lines = doc.splitTextToSize(`• ${insight}`, pageWidth - 100);
+    if (y + lines.length * 11 > pageHeight - 55) { doc.addPage(); y = 48; }
+    doc.text(lines, left + 12, y); y += lines.length * 11 + 3;
+  });
 
-  doc.setFont('helvetica', 'bold'); doc.text('CHAPTER SUMMARY', 40, y); y += 12;
-  const chapBody = byChapter.map(c => [c.chapter, String(c.count), String(c.participants || 0)]);
-  doc.autoTable({ startY: y, head: [['Chapter', 'Activities', 'Participants']], body: chapBody, theme: 'grid', styles: { fontSize: 9 } });
-  y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : y + 80;
+  const totalPages = doc.getNumberOfPages();
+  for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+    doc.setPage(pageNumber); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90);
+    doc.text('MFC Youth Area Management System', left, pageHeight - 24);
+    doc.text(`Generated ${now.toLocaleDateString('en-PH')}`, pageWidth - 170, pageHeight - 24);
+    doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth / 2 - 22, pageHeight - 24);
+    doc.setTextColor(0);
+  }
 
-  doc.setFont('helvetica', 'bold'); doc.text('ACTIVITY DETAILS', 40, y); y += 12;
-  const detailBody = details.map(d => [d.date, d.title, d.chapter, d.type, String(d.participants), d.location]);
-  doc.autoTable({ startY: y, head: [['Date', 'Activity Name', 'Chapter', 'Type', 'Participants', 'Location']], body: detailBody, theme: 'striped', styles: { fontSize: 8 }, headStyles: { fillColor: [34, 139, 34] }, didDrawPage: function (data) {
-      const pageCount = doc.internal.getNumberOfPages();
-      const str = 'Page ' + doc.internal.getCurrentPageInfo().pageNumber + ' of ' + pageCount;
-      doc.setFontSize(9);
-      doc.text('MFC Youth Area Management System', 40, doc.internal.pageSize.getHeight() - 30);
-      doc.text(`Generated ${now.toLocaleDateString()}`, doc.internal.pageSize.getWidth() - 200, doc.internal.pageSize.getHeight() - 30);
-      doc.text(str, doc.internal.pageSize.getWidth() / 2 - 20, doc.internal.pageSize.getHeight() - 30);
-    } });
-
-  const insights = generateReportInsights(reports, data);
-  let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 18 : 40;
-  doc.setFont('helvetica', 'bold'); doc.text('REPORT INSIGHTS', 40, finalY); finalY += 12;
-  doc.setFont('helvetica', 'normal');
-  insights.forEach(ins => { doc.text(`• ${ins}`, 60, finalY); finalY += 12; });
-
-  const dateTag = now.toISOString().slice(0, 10);
-  const filename = `MFCYouth_Activity_Report_${dateTag}.pdf`;
-  doc.save(filename);
+  const suffix = reportFilters.from || reportFilters.to ? `${reportFilters.from || 'start'}_to_${reportFilters.to || todayISO()}` : now.toISOString().slice(0, 10);
+  doc.save(`MFCYouth_Activity_Report_${suffix}.pdf`);
+  toast('PDF report generated.');
 }
 
-// Render the page selected by the HTML file.
-({ dashboard: renderDashboard, members: renderMembers, chapters: renderChapters, services: renderServices, reports: renderReports, events: renderEvents }[page] || renderDashboard)();
+// ---------------- EVENTS ----------------
+let eventFilters = { search: '', timing: 'All' };
+function filteredEvents(data) {
+  const now = Date.now();
+  return data.events.filter(event => {
+    const match = `${event.name || ''} ${event.venue || ''} ${event.description || ''}`.toLowerCase().includes(eventFilters.search.toLowerCase());
+    if (!match) return false;
+    const time = new Date(event.date).getTime();
+    if (eventFilters.timing === 'Upcoming' && time < now) return false;
+    if (eventFilters.timing === 'Past' && time >= now) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+function eventAttendance(data, event) {
+  const participants = data.participants.filter(participant => participant.eventId === event.id);
+  const attended = participants.filter(participant => participant.attended).length;
+  return participants.length ? attended : Number(event.peopleAttended || 0);
+}
+function renderEvents() {
+  const data = db(); const list = filteredEvents(data); const now = Date.now();
+  content.innerHTML = pageHeader('Events', 'Manage Area events, participant registration, payment status, and attendance.', '<button class="btn blue" id="addEvent">+ Add Event</button>') +
+    `<div class="toolbar"><div class="grow"><input class="search-input" id="eventSearch" placeholder="Search events or venues..." value="${esc(eventFilters.search)}"></div><select class="select-input compact-filter" id="eventTiming"><option>All</option><option ${eventFilters.timing === 'Upcoming' ? 'selected' : ''}>Upcoming</option><option ${eventFilters.timing === 'Past' ? 'selected' : ''}>Past</option></select><button class="btn" id="clearEventFilters">Clear</button></div><div class="result-count">Showing ${list.length} of ${data.events.length} event${data.events.length === 1 ? '' : 's'}</div><section class="card table-wrap">${list.length ? `<table class="data-table"><thead><tr><th>Date & Time</th><th>Event</th><th>Venue</th><th>Status</th><th>Fee</th><th>Registered</th><th>Attended</th><th>Actions</th></tr></thead><tbody>${list.map(event => { const participants = data.participants.filter(participant => participant.eventId === event.id); const upcoming = new Date(event.date).getTime() >= now; return `<tr><td>${fmtDateTime(event.date)}</td><td><strong>${esc(event.name)}</strong></td><td>${esc(event.venue || '—')}</td><td><span class="badge ${upcoming ? 'pending' : 'active'}">${upcoming ? 'Upcoming' : 'Completed'}</span></td><td>${Number(event.fee) > 0 ? money(event.fee) : 'Free'}</td><td>${participants.length}</td><td>${eventAttendance(data, event)}</td><td class="actions-cell"><button class="btn" onclick="viewEvent(${event.id})">View</button><button class="btn" onclick="eventModal(${event.id})">Edit</button><button class="btn red" onclick="deleteEvent(${event.id})">Delete</button></td></tr>`; }).join('')}</tbody></table>` : emptyState('No matching events', data.events.length ? 'Change or clear the event filters.' : 'Add your first Area event.')}</section>`;
+  document.getElementById('addEvent').onclick = () => eventModal();
+  document.getElementById('eventSearch').oninput = event => { eventFilters.search = event.target.value; renderEvents(); };
+  document.getElementById('eventTiming').onchange = event => { eventFilters.timing = event.target.value; renderEvents(); };
+  document.getElementById('clearEventFilters').onclick = () => { eventFilters = { search: '', timing: 'All' }; renderEvents(); };
+}
+window.eventModal = function (id = null) {
+  const data = db(); const event = id ? data.events.find(item => item.id === id) : {};
+  const body = `<div class="form-grid">${field('Event Name', 'eName', 'text', event?.name || '', 'required maxlength="120"')}${field('Date & Time', 'eDate', 'datetime-local', event?.date || '', 'required')}${field('Registration Fee', 'eFee', 'number', event?.fee || 0, 'min="0" step="0.01"')}${field('Venue', 'eVenue', 'text', event?.venue || '', 'maxlength="150"')}${field('Manual Attendance (fallback)', 'eAttended', 'number', event?.peopleAttended || 0, 'min="0" step="1"')}<div class="form-group full"><label for="eDescription">Event Description</label><textarea class="textarea-input" id="eDescription" maxlength="1000">${esc(event?.description || '')}</textarea><small class="field-help">Manual attendance is used only when the event has no registered participant records.</small></div></div>`;
+  openModal(id ? 'Edit Event' : 'Add Event', body, close => {
+    const name = document.getElementById('eName').value.trim(); const date = document.getElementById('eDate').value; const attendance = Number(document.getElementById('eAttended').value || 0);
+    if (!name || !date) { toast('Event name and date are required.', 'error'); return; }
+    if (!Number.isInteger(attendance) || attendance < 0) { toast('Manual attendance must be a whole number of zero or more.', 'error'); return; }
+    const record = { id: id || uid(), name, date, fee: Number(document.getElementById('eFee').value || 0), venue: document.getElementById('eVenue').value.trim(), peopleAttended: attendance, description: document.getElementById('eDescription').value.trim() };
+    if (id) Object.assign(data.events.find(item => item.id === id), record); else data.events.push(record);
+    save(data); close(); toast(id ? 'Event updated.' : 'Event added.'); renderEvents();
+  });
+};
+window.deleteEvent = id => {
+  if (!confirm('Delete this event and all of its participant records?')) return;
+  const data = db(); data.events = data.events.filter(event => event.id !== id); data.participants = data.participants.filter(participant => participant.eventId !== id); data.reports.forEach(report => { if (report.eventId === id) report.eventId = null; }); save(data); toast('Event deleted.'); renderEvents();
+};
+window.viewEvent = id => {
+  const data = db(); const event = data.events.find(item => item.id === id); if (!event) return;
+  const participants = data.participants.filter(participant => participant.eventId === id);
+  const paid = participants.filter(participant => participant.paymentStatus === 'Paid').length;
+  const attended = participants.filter(participant => participant.attended).length;
+  const participantTable = participants.length ? `<div class="table-wrap"><table class="data-table compact-table"><thead><tr><th>Name</th><th>Age</th><th>Chapter</th><th>Service</th><th>Payment</th><th>Attendance</th><th>Actions</th></tr></thead><tbody>${participants.map(participant => `<tr><td>${esc([participant.first, participant.mi, participant.last].filter(Boolean).join(' '))}</td><td>${participant.age || '—'}</td><td>${esc(participant.chapter || '—')}</td><td>${esc(participant.service || '—')}</td><td><span class="badge ${participant.paymentStatus === 'Paid' ? 'paid' : 'unpaid'}">${esc(participant.paymentStatus)}</span></td><td><span class="badge ${participant.attended ? 'attended' : 'pending'}">${participant.attended ? 'Attended' : 'Not Yet'}</span></td><td class="actions-cell"><button class="btn" onclick="participantModal(${id},${participant.id})">Edit</button><button class="btn red" onclick="deleteParticipant(${id},${participant.id})">Delete</button></td></tr>`).join('')}</tbody></table></div>` : emptyState('No participants yet', 'Register the first participant for this event.');
+  const body = `<div class="event-summary"><div><span>Date & Time</span><strong>${fmtDateTime(event.date)}</strong></div><div><span>Venue</span><strong>${esc(event.venue || '—')}</strong></div><div><span>Registration Fee</span><strong>${Number(event.fee) > 0 ? money(event.fee) : 'Free'}</strong></div><div><span>Registered</span><strong>${participants.length}</strong></div><div><span>Paid</span><strong>${paid}</strong></div><div><span>Attended</span><strong>${participants.length ? attended : Number(event.peopleAttended || 0)}</strong></div></div>${event.description ? `<p class="event-description">${esc(event.description)}</p>` : ''}<div class="modal-section-heading"><h3>Participants (${participants.length})</h3><button class="btn blue" type="button" onclick="participantModal(${id})">+ Register Participant</button></div>${participantTable}`;
+  openModal(esc(event.name), body);
+};
+window.participantModal = (eventId, id = null) => {
+  const data = db(); const participant = id ? data.participants.find(item => item.id === id) : {};
+  const body = `<div class="form-grid">${field('First Name', 'pFirst', 'text', participant?.first || '', 'required maxlength="60"')}${field('Last Name', 'pLast', 'text', participant?.last || '', 'required maxlength="60"')}${field('Middle Initial (optional)', 'pMI', 'text', participant?.mi || '', 'maxlength="2"')}${field('Age', 'pAge', 'number', participant?.age || '', 'min="1" max="120"')}${field('Contact Number', 'pContact', 'tel', participant?.contact || '', 'maxlength="11" inputmode="numeric"')} ${field('Address', 'pAddress', 'text', participant?.address || '', 'maxlength="250"')}<div class="form-group"><label for="pChapter">Chapter</label><select class="select-input" id="pChapter"><option value="">No Chapter</option>${data.chapters.map(chapter => `<option ${participant?.chapter === chapter.name ? 'selected' : ''}>${esc(chapter.name)}</option>`).join('')}</select></div><div class="form-group"><label for="pService">Service</label><select class="select-input" id="pService"><option value="">No Service</option>${data.services.map(service => `<option ${participant?.service === service ? 'selected' : ''}>${esc(service)}</option>`).join('')}</select></div>${selectField('Mode of Payment', 'pMode', ['Cash', 'GCash', 'Bank Transfer', 'Other'], participant?.paymentMode || 'Cash')}${selectField('Payment Status', 'pPay', ['Unpaid', 'Paid'], participant?.paymentStatus || 'Unpaid')}<div class="form-group full"><label class="check-row"><input type="checkbox" id="pAttended" ${participant?.attended ? 'checked' : ''}> Mark as attended</label></div></div>`;
+  openModal(id ? 'Edit Participant' : 'Register Participant', body, close => {
+    const first = document.getElementById('pFirst').value.trim(); const last = document.getElementById('pLast').value.trim(); const contact = document.getElementById('pContact').value.trim(); const age = Number(document.getElementById('pAge').value || 0);
+    if (!first || !last) { toast('First and last name are required.', 'error'); return; }
+    if (contact && !/^\d{11}$/.test(contact)) { toast('Contact number must be exactly 11 digits.', 'error'); return; }
+    if (age && (!Number.isInteger(age) || age < 1 || age > 120)) { toast('Enter a valid age.', 'error'); return; }
+    if (contact && data.participants.some(item => item.eventId === eventId && item.id !== id && item.contact === contact)) { toast('That contact number is already registered for this event.', 'error'); return; }
+    const record = { id: id || uid(), eventId, first, last, mi: document.getElementById('pMI').value.trim().toUpperCase(), age, contact, address: document.getElementById('pAddress').value.trim(), chapter: document.getElementById('pChapter').value, service: document.getElementById('pService').value, paymentMode: document.getElementById('pMode').value, paymentStatus: document.getElementById('pPay').value, attended: document.getElementById('pAttended').checked };
+    if (id) Object.assign(data.participants.find(item => item.id === id), record); else data.participants.push(record);
+    save(data); close(); toast(id ? 'Participant updated.' : 'Participant registered.'); window.viewEvent(eventId);
+  });
+};
+window.deleteParticipant = (eventId, id) => {
+  if (!confirm('Delete this participant?')) return;
+  const data = db(); data.participants = data.participants.filter(participant => participant.id !== id); save(data); toast('Participant deleted.'); activeModalCleanup?.(); window.viewEvent(eventId);
+};
+
+// ---------------- PAGE RENDER ----------------
+const renderers = { dashboard: renderDashboard, members: renderMembers, chapters: renderChapters, services: renderServices, reports: renderReports, events: renderEvents };
+(renderers[page] || renderDashboard)();
