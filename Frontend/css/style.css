@@ -1683,3 +1683,46 @@ button:disabled {
   color: var(--muted);
   font-size: .72rem;
 }
+
+/* Chapter member assignment */
+.assignment-help {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.assignment-search {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.assignment-list .member-check-row {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.assignment-list .member-check-row:hover {
+  border-color: #b9cfdf;
+  background: #f3f8fc;
+}
+
+.assignment-list .member-check-row input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.assignment-empty {
+  margin: 12px 0 0;
+  text-align: center;
+}

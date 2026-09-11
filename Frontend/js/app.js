@@ -5,7 +5,7 @@
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let activeModalCleanup = null;
 
 const SERVICES = [
@@ -36,73 +36,121 @@ function getSession() {
 function normalizeDatabase(input) {
   const data = input && typeof input === 'object' ? input : {};
 
-  return {
-    version: DB_VERSION,
+  const chapters = Array.isArray(data.chapters)
+    ? data.chapters
+      .filter(chapter =>
+        chapter &&
+        typeof chapter === 'object' &&
+        String(chapter.name || '').trim()
+      )
+      .map(chapter => ({
+        ...chapter,
+        name: String(chapter.name).trim()
+      }))
+    : [];
 
-    members: Array.isArray(data.members)
-      ? data.members
-      : [],
+  const chapterById = new Map(
+    chapters.map(chapter => [String(chapter.id), chapter])
+  );
 
-    chapters: Array.isArray(data.chapters)
-      ? data.chapters
-      : [],
+  const chapterByName = new Map(
+    chapters.map(chapter => [chapter.name.toLowerCase(), chapter])
+  );
 
-    services:
-      Array.isArray(data.services) && data.services.length
-        ? data.services
-        : [...SERVICES],
+  const members = Array.isArray(data.members)
+    ? data.members
+      .filter(member => member && typeof member === 'object')
+      .map(member => {
+        const normalized = {
+          ...member,
+          services: Array.isArray(member.services)
+            ? member.services.filter(Boolean).map(String)
+            : []
+        };
 
-    reports: Array.isArray(data.reports)
-      ? data.reports.map(report => {
+        const rawId = member.chapterId;
+        const rawName = String(member.chapterName || '').trim();
+        const chapterFromId =
+          rawId !== null &&
+          rawId !== undefined &&
+          String(rawId).trim() !== ''
+            ? chapterById.get(String(rawId))
+            : null;
+        const chapterFromName = rawName
+          ? chapterByName.get(rawName.toLowerCase())
+          : null;
+        const chapter = chapterFromId || chapterFromName;
+
+        if (chapter) {
+          normalized.chapterId = chapter.id;
+          normalized.chapterName = chapter.name;
+        } else {
+          normalized.chapterId = null;
+          normalized.chapterName = '';
+        }
+
+        return normalized;
+      })
+    : [];
+
+  const participants = Array.isArray(data.participants)
+    ? data.participants.filter(
+      participant => participant && typeof participant === 'object'
+    )
+    : [];
+
+  const reports = Array.isArray(data.reports)
+    ? data.reports
+      .filter(report => report && typeof report === 'object')
+      .map(report => {
         const eventId = report.eventId
           ? Number(report.eventId)
           : null;
 
-        const linkedParticipants =
-          eventId && Array.isArray(data.participants)
-            ? data.participants.filter(
-              item => item.eventId === eventId
-            )
-            : [];
+        const linkedParticipants = eventId
+          ? participants.filter(
+            item => Number(item.eventId) === eventId
+          )
+          : [];
 
-        const inferredParticipants =
-          linkedParticipants.filter(item => item.attended).length ||
-          linkedParticipants.length;
+        const attendedCount = linkedParticipants.filter(
+          item => item.attended
+        ).length;
 
         const sourceParticipants =
           report.participants ??
           report.attendance ??
-          (eventId ? inferredParticipants : 0);
+          (eventId
+            ? (linkedParticipants.length ? attendedCount : 0)
+            : 0);
 
         return {
           ...report,
-
-          participants: Number.isFinite(
-            Number(sourceParticipants)
-          )
-            ? Number(sourceParticipants)
+          participants: Number.isFinite(Number(sourceParticipants))
+            ? Math.max(0, Math.trunc(Number(sourceParticipants)))
             : 0,
-
-          location:
-            report.location ||
-            report.venue ||
-            '',
-
-          eventId
+          location: String(report.location || report.venue || '').trim(),
+          eventId: Number.isFinite(eventId) ? eventId : null
         };
       })
-      : [],
+    : [];
 
+  const services = Array.isArray(data.services)
+    ? [...new Set(data.services.filter(Boolean).map(String))]
+    : [];
+
+  return {
+    version: DB_VERSION,
+    members,
+    chapters,
+    services: services.length ? services : [...SERVICES],
+    reports,
     events: Array.isArray(data.events)
-      ? data.events
+      ? data.events.filter(event => event && typeof event === 'object')
       : [],
-
-    participants: Array.isArray(data.participants)
-      ? data.participants
-      : [],
-
+    participants,
     gig: Array.isArray(data.gig)
-      ? data.gig
+      ? data.gig.filter(item => item && typeof item === 'object')
       : []
   };
 }
@@ -192,7 +240,11 @@ function fmtDateTime(value) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function fullName(member) {
@@ -251,7 +303,7 @@ function isUnassignedMember(member) {
     !chapterName ||
     String(chapterName).trim() === '';
 
-  return hasEmptyId || hasEmptyName;
+  return hasEmptyId && hasEmptyName;
 }
 
 function validEmail(value) {
@@ -1413,10 +1465,6 @@ window.viewMember = function(id) {
     ? member.chapterName
     : 'No Chapter Assigned';
 
-  const emailLabel = member.email && String(member.email).trim()
-    ? member.email
-    : 'No Email Provided';
-
   const addressLabel = member.address && String(member.address).trim()
     ? member.address
     : 'No Address Provided';
@@ -2475,6 +2523,17 @@ function chapterModal(id = null) {
             report.chapter =
               name;
           });
+
+        data.participants
+          .filter(
+            participant =>
+              participant.chapter ===
+              oldName
+          )
+          .forEach(participant => {
+            participant.chapter =
+              name;
+          });
       } else {
         data.chapters.push({
           id: uid(),
@@ -2594,6 +2653,161 @@ window.viewChapter = id => {
         'This chapter has no assigned members yet.'
       )
   );
+};
+
+
+window.addMembersToChapter = id => {
+  const data = db();
+
+  const chapter = data.chapters.find(
+    item => item.id === id
+  );
+
+  if (!chapter) {
+    toast('Chapter could not be found.', 'error');
+    return;
+  }
+
+  const unassigned = data.members
+    .filter(isUnassignedMember)
+    .sort((a, b) =>
+      fullName(a).localeCompare(fullName(b))
+    );
+
+  if (!unassigned.length) {
+    openModal(
+      `Add Members to ${esc(chapter.name)}`,
+      emptyState(
+        'No unassigned members',
+        'All registered members are already assigned to a chapter.'
+      )
+    );
+    return;
+  }
+
+  const memberRows = unassigned
+    .map(member => {
+      const searchable = [
+        member.firstName,
+        member.middleName,
+        member.lastName,
+        member.email,
+        member.contact
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return `
+        <label
+          class="check-row member-check-row"
+          data-member-search="${esc(searchable)}"
+        >
+          <input
+            type="checkbox"
+            name="chapterMember"
+            value="${member.id}"
+          >
+
+          <span>
+            <strong>${esc(fullName(member) || 'Unnamed Member')}</strong>
+            <small>
+              ${esc(member.email || 'No email')}
+              ${member.contact ? ` · ${esc(member.contact)}` : ''}
+            </small>
+          </span>
+        </label>
+      `;
+    })
+    .join('');
+
+  openModal(
+    `Add Members to ${esc(chapter.name)}`,
+    `
+      <p class="muted assignment-help">
+        Select one or more unassigned members to add to ${esc(chapter.name)} Chapter.
+      </p>
+
+      <input
+        class="search-input assignment-search"
+        id="chapterMemberSearch"
+        type="search"
+        placeholder="Search unassigned members..."
+        autocomplete="off"
+      >
+
+      <div class="assignment-list" id="chapterMemberList">
+        ${memberRows}
+      </div>
+
+      <p class="muted assignment-empty hidden" id="chapterMemberEmpty">
+        No unassigned members match your search.
+      </p>
+    `,
+    close => {
+      const selectedIds = [
+        ...document.querySelectorAll(
+          'input[name="chapterMember"]:checked'
+        )
+      ]
+        .map(input => Number(input.value))
+        .filter(Number.isFinite);
+
+      if (!selectedIds.length) {
+        toast('Select at least one member.', 'error');
+        return;
+      }
+
+      let assignedCount = 0;
+
+      data.members.forEach(member => {
+        if (
+          selectedIds.includes(member.id) &&
+          isUnassignedMember(member)
+        ) {
+          member.chapterId = chapter.id;
+          member.chapterName = chapter.name;
+          assignedCount += 1;
+        }
+      });
+
+      if (!assignedCount) {
+        toast('The selected members are no longer available for assignment.', 'error');
+        return;
+      }
+
+      save(data);
+      close();
+
+      toast(
+        `${assignedCount} member${assignedCount === 1 ? '' : 's'} added to ${chapter.name} Chapter.`
+      );
+
+      renderChapters();
+    },
+    'Add Selected Members'
+  );
+
+  const searchInput = document.getElementById('chapterMemberSearch');
+  const emptyMessage = document.getElementById('chapterMemberEmpty');
+  const rows = [
+    ...document.querySelectorAll('[data-member-search]')
+  ];
+
+  searchInput?.addEventListener('input', () => {
+    const query = searchInput.value.trim().toLowerCase();
+    let visible = 0;
+
+    rows.forEach(row => {
+      const matches = !query ||
+        (row.dataset.memberSearch || '').includes(query);
+
+      row.classList.toggle('hidden', !matches);
+      if (matches) visible += 1;
+    });
+
+    emptyMessage?.classList.toggle('hidden', visible !== 0);
+  });
 };
 
 // =========================================================
@@ -2758,6 +2972,24 @@ function reportTypes(data) {
 
   // Return standard types first, then legacy types
   return [...standardTypes, ...legacyTypes];
+}
+
+function reportChapters(data) {
+  const current = data.chapters
+    .map(chapter => chapter.name)
+    .filter(Boolean);
+
+  const historical = [
+    ...new Set(
+      data.reports
+        .map(report => report.chapter)
+        .filter(Boolean)
+    )
+  ]
+    .filter(name => !current.includes(name))
+    .sort();
+
+  return { current, historical };
 }
 
 function filteredReports(data) {
@@ -3064,6 +3296,9 @@ function renderReports() {
   const types =
     reportTypes(data);
 
+  const chapters =
+    reportChapters(data);
+
   const summary =
     calculateReportSummary(
       list
@@ -3226,19 +3461,35 @@ function renderReports() {
           All
         </option>
 
-        ${data.chapters
+        ${chapters.current
       .map(
-        chapter => `
+        chapterName => `
               <option
+                value="${esc(chapterName)}"
                 ${reportFilters.chapter ===
-            chapter.name
+            chapterName
             ? 'selected'
             : ''
           }
               >
-                ${esc(
-            chapter.name
-          )}
+                ${esc(chapterName)}
+              </option>
+            `
+      )
+      .join('')}
+
+        ${chapters.historical
+      .map(
+        chapterName => `
+              <option
+                value="${esc(chapterName)}"
+                ${reportFilters.chapter ===
+            chapterName
+            ? 'selected'
+            : ''
+          }
+              >
+                ${esc(chapterName)} (Historical)
               </option>
             `
       )
@@ -3283,6 +3534,7 @@ function renderReports() {
           .map(
             type => `
               <option
+                value="${esc(type)}"
                 ${reportFilters.type ===
             type
             ? 'selected'
@@ -3365,12 +3617,14 @@ function renderReports() {
                     class="chart-bar"
                     style="
                       height:
-                      ${Math.max(
-          8,
-          (month.count /
-            max) *
-          125
-        )}px
+                      ${month.count === 0
+          ? 0
+          : Math.max(
+            8,
+            (month.count /
+              max) *
+            125
+          )}px
                     "
                   ></div>
 
@@ -3742,6 +3996,7 @@ window.reportModal = function (
       .map(
         chapter => `
                 <option
+                  value="${esc(chapter.name)}"
                   ${report?.chapter ===
             chapter.name
             ? 'selected'
@@ -3755,6 +4010,20 @@ window.reportModal = function (
               `
       )
       .join('')}
+
+          ${(() => {
+        const existingChapter = report?.chapter;
+        const isHistorical = existingChapter &&
+          !data.chapters.some(chapter => chapter.name === existingChapter);
+
+        return isHistorical
+          ? `
+              <option value="${esc(existingChapter)}" selected>
+                ${esc(existingChapter)} (Historical)
+              </option>
+            `
+          : '';
+      })()}
 
         </select>
       </div>
@@ -3816,7 +4085,6 @@ window.reportModal = function (
 
         </select>
       </div>
-      )}
 
       ${field(
         'Activity',
@@ -3951,6 +4219,26 @@ window.reportModal = function (
       if (!reportType) {
         toast(
           'Please select a report type.',
+          'error'
+        );
+
+        return;
+      }
+
+      const isLegacyTypeBeingPreserved =
+        Boolean(
+          id &&
+          report?.type &&
+          !REPORT_TYPES.includes(report.type) &&
+          reportType === report.type
+        );
+
+      if (
+        !REPORT_TYPES.includes(reportType) &&
+        !isLegacyTypeBeingPreserved
+      ) {
+        toast(
+          'Please select one of the available report types.',
           'error'
         );
 
@@ -4111,12 +4399,12 @@ window.reportModal = function (
       document.getElementById(
         'rParticipants'
       ).value =
-        attended ||
-        eventParticipants.length ||
-        Number(
-          event.peopleAttended ||
-          0
-        );
+        eventParticipants.length
+          ? attended
+          : Number(
+            event.peopleAttended ||
+            0
+          );
 
       if (
         !document
@@ -4203,7 +4491,7 @@ function printReportSummary(
     window.open(
       '',
       '_blank',
-      'noopener,noreferrer'
+      'width=1000,height=800'
     );
 
   if (!win) {
@@ -4213,6 +4501,12 @@ function printReportSummary(
     );
 
     return;
+  }
+
+  try {
+    win.opener = null;
+  } catch {
+    // Some browsers do not allow changing opener; printing can still continue.
   }
 
   const rows =
@@ -5136,7 +5430,7 @@ function filteredEvents(data) {
   const now =
     Date.now();
 
-  return data.events
+  const filtered = data.events
     .filter(event => {
       const match = `
         ${event.name || ''}
@@ -5174,12 +5468,16 @@ function filteredEvents(data) {
       }
 
       return true;
-    })
-    .sort(
-      (a, b) =>
-        new Date(b.date) -
-        new Date(a.date)
-    );
+    });
+
+  return filtered.sort((a, b) => {
+    const aTime = new Date(a.date).getTime();
+    const bTime = new Date(b.date).getTime();
+
+    return eventFilters.timing === 'Upcoming'
+      ? aTime - bTime
+      : bTime - aTime;
+  });
 }
 
 function eventAttendance(
@@ -6063,6 +6361,7 @@ window.participantModal = (
       .map(
         chapter => `
                 <option
+                  value="${esc(chapter.name)}"
                   ${participant?.chapter ===
             chapter.name
             ? 'selected'
@@ -6076,6 +6375,16 @@ window.participantModal = (
               `
       )
       .join('')}
+
+          ${(() => {
+        const existingChapter = participant?.chapter;
+        const isHistorical = existingChapter &&
+          !data.chapters.some(chapter => chapter.name === existingChapter);
+
+        return isHistorical
+          ? `<option value="${esc(existingChapter)}" selected>${esc(existingChapter)} (Historical)</option>`
+          : '';
+      })()}
 
         </select>
       </div>
@@ -6099,6 +6408,7 @@ window.participantModal = (
       .map(
         service => `
                 <option
+                  value="${esc(service)}"
                   ${participant?.service ===
             service
             ? 'selected'
@@ -6112,6 +6422,16 @@ window.participantModal = (
               `
       )
       .join('')}
+
+          ${(() => {
+        const existingService = participant?.service;
+        const isLegacy = existingService &&
+          !data.services.includes(existingService);
+
+        return isLegacy
+          ? `<option value="${esc(existingService)}" selected>${esc(existingService)} (Legacy)</option>`
+          : '';
+      })()}
 
         </select>
       </div>
