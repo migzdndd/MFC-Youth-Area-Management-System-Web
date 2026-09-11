@@ -63,10 +63,16 @@ function renderDashboard() {
   const d = db();
   const cards = [['members', 'Total Members', d.members.length, 'People currently on record'], ['chapters', 'Chapters', d.chapters.length, 'Registered chapters'], ['services', 'Services', d.services.length, 'Available service roles'], ['reports', 'Activity Reports', d.reports.length, 'Reports currently filed'], ['events', 'Events', d.events.length, 'Events currently recorded']];
   const chapterCounts = d.chapters.map(c => ({ name: c.name, count: d.members.filter(m => m.chapterId === c.id).length })).sort((a, b) => b.count - a.count);
+  const now = Date.now();
+  const upcomingEvents = [...d.events]
+    .filter(e => e.date && new Date(e.date).getTime() >= now)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 5);
   const recentEvents = [...d.events].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
   content.innerHTML = pageHeader('Dashboard', 'A quick overview of your MFC Youth Area records.') + `<section><div class="section-heading"><h2>Area Summary</h2><p>Current totals across your area records</p><div class="section-line"></div></div><div class="summary-card card">${cards.map(c => `<article class="summary-item ${c[0]}"><div class="summary-label">${c[1]}<div class="label-line"></div></div><strong class="summary-number">${c[2]}</strong><p>${c[3]}</p><span class="tracking">• Monthly tracking started</span></article>`).join('')}</div></section>
  <div class="grid-2"><section class="card panel"><h3>Members by Chapter</h3>${chapterCounts.length ? `<div class="bar-list">${chapterCounts.slice(0, 7).map(x => { const max = Math.max(...chapterCounts.map(y => y.count), 1); return `<div class="bar-row"><span>${esc(x.name)}</span><div class="bar-track"><div class="bar-fill" style="width:${(x.count / max) * 100}%"></div></div><strong>${x.count}</strong></div>` }).join('')}</div>` : '<div class="empty-state"><h3>No chapter data yet</h3><p>Add chapters and members to see distribution.</p></div>'}</section>
- <section class="card panel"><h3>Recent Events</h3>${recentEvents.length ? `<div class="mini-list">${recentEvents.map(e => `<div class="mini-row"><div><strong>${esc(e.name)}</strong><div class="muted">${esc(e.venue || 'No venue')}</div></div><span>${fmtDate(e.date)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No events yet</h3><p>Your newest events will appear here.</p></div>'}</section></div>`;
+ <section class="card panel"><h3>Upcoming Events</h3>${upcomingEvents.length ? `<div class="mini-list">${upcomingEvents.map(e => `<div class="mini-row"><div><strong>${esc(e.name)}</strong><div class="muted">${esc(e.venue || 'No venue')}</div></div><span>${fmtDateTime(e.date)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No upcoming events</h3><p>Any event you add will appear here automatically.</p></div>'}</section></div>
+ <div class="grid-2" style="margin-top:18px;"><section class="card panel"><h3>Recent Events</h3>${recentEvents.length ? `<div class="mini-list">${recentEvents.map(e => `<div class="mini-row"><div><strong>${esc(e.name)}</strong><div class="muted">${esc(e.venue || 'No venue')}</div></div><span>${fmtDate(e.date)}</span></div>`).join('')}</div>` : '<div class="empty-state"><h3>No events yet</h3><p>Your newest events will appear here.</p></div>'}</section></div>`;
 }
 
 // ---------------- MEMBERS ----------------
