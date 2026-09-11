@@ -43,11 +43,13 @@ const registerForm = document.getElementById('registerForm');
 if (registerForm) {
   registerForm.addEventListener('submit', e => {
     e.preventDefault();
-    const name = document.getElementById('regName').value.trim();
+    const firstName = document.getElementById('regFirst').value.trim();
+    const lastName = document.getElementById('regLast').value.trim();
+    const name = (firstName + ' ' + lastName).trim();
     const email = document.getElementById('regEmail').value.trim().toLowerCase();
     const password = document.getElementById('regPassword').value;
     const confirm = document.getElementById('regConfirm').value;
-    if (!name || !email || !password) {
+    if (!firstName || !lastName || !email || !password) {
       showMessage('registerMessage', 'Please complete all required fields.');
       return;
     }
@@ -59,6 +61,8 @@ if (registerForm) {
     const verificationCode = generateVerificationCode();
     const pending = {
       id: Date.now(),
+      firstName,
+      lastName,
       name,
       email,
       password,
@@ -110,6 +114,8 @@ if (confirmForm) {
 
       users.push({
         id: pending.id,
+        firstName: pending.firstName,
+        lastName: pending.lastName,
         name: pending.name,
         email: pending.email,
         password: pending.password
