@@ -54,13 +54,23 @@ a {
 
 .auth-page {
   min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 30px clamp(20px, 5vw, 80px);
+}
+
+.auth-layout {
+  width: min(1180px, 100%);
   display: grid;
-  place-items: center;
-  padding: 30px 16px;
+  grid-template-columns: minmax(360px, 460px) minmax(300px, 1fr);
+  gap: clamp(20px, 4vw, 56px);
+  align-items: center;
+  margin-left: clamp(0px, 3vw, 50px);
 }
 
 .login-card {
-  width: min(460px, 100%);
+  width: 100%;
   padding: 28px;
   border-radius: 30px;
   background: rgba(9, 22, 33, .9);
@@ -1577,7 +1587,7 @@ button:disabled {
 .detail-label {
   font-size: .76rem;
   font-weight: 800;
-  color: #59667a;
+  color: #59667a
 }
 
 .detail-value {

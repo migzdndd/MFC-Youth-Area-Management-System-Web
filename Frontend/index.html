@@ -1,49 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#002847">
   <meta name="description" content="MFC Youth Area Management System web application.">
   <title>Sign In - MFC Youth Area Management System</title>
-  <style>@import url('https://fonts.cdnfonts.com/css/visby');</style>
+  <style>
+    @import url('https://fonts.cdnfonts.com/css/visby');
+  </style>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
+
 <body class="auth-body">
   <main class="auth-page">
-    <section class="login-card" aria-labelledby="loginTitle">
-      <div class="login-header">
-        <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
-        <h1 id="loginTitle">MFC Youth Area Management System</h1>
-        <p>Manage your Area with just a few clicks of a button.</p>
-      </div>
-      <form class="login-form" id="loginForm" novalidate>
-        <p class="login-heading">Sign In</p>
-        <div id="loginMessage"></div>
-        <label class="login-field" for="loginEmail">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z"/></svg>
-          <input class="login-input" id="loginEmail" type="email" placeholder="Email Address" autocomplete="email" required>
-        </label>
-        <div class="login-field">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z"/></svg>
-          <input class="login-input" id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" required aria-label="Password">
-          <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button>
+    <div class="auth-layout">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <div class="login-header">
+          <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
+          <h1 id="loginTitle">MFC Youth Area Management System</h1>
+          <p>Manage your Area with just a few clicks of a button.</p>
         </div>
-        <div class="form-options">
-          <label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember me</span></label>
-          <a href="/recover">Forgot Password?</a>
+        <form class="login-form" id="loginForm" novalidate>
+          <p class="login-heading">Sign In</p>
+          <div id="loginMessage"></div>
+          <label class="login-field" for="loginEmail">
+            <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+              <path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z" />
+            </svg>
+            <input class="login-input" id="loginEmail" type="email" placeholder="Email Address" autocomplete="email"
+              required>
+          </label>
+          <div class="login-field">
+            <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
+            </svg>
+            <input class="login-input" id="loginPassword" type="password" placeholder="Password"
+              autocomplete="current-password" required aria-label="Password">
+            <button class="password-toggle" type="button" data-password-toggle="loginPassword"
+              aria-label="Show password">Show</button>
+          </div>
+          <div class="form-options">
+            <label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember me</span></label>
+            <a href="/recover">Forgot Password?</a>
+          </div>
+          <div class="login-buttons">
+            <button class="btn-auth btn-primary" type="submit">Sign In</button>
+            <button class="btn-auth btn-dark" type="button" onclick="location.href='/register'">Sign Up</button>
+          </div>
+          <p class="prototype-note">Frontend prototype: account and app data are stored only in this browser.</p>
+        </form>
+        <div class="auth-bottom">Don't have an account? <a href="/register">Sign up here</a></div>
+      </section>
+
+      <aside class="auth-info" aria-label="Database system overview">
+        <span class="info-badge">Database System Web App</span>
+        <h2>Everything your youth area needs in one secure digital hub.</h2>
+        <p>From member records and chapter updates to events, reports, and service tracking, this platform helps leaders manage operations with clarity and speed.</p>
+        <ul class="info-list">
+          <li>Member profiles, membership status, and chapter tracking</li>
+          <li>Event planning with schedules, attendance, and follow-ups</li>
+          <li>Reports and service records for better decision-making</li>
+          <li>Access-controlled dashboard for teams and administrators</li>
+        </ul>
+        <div class="info-stats">
+          <div>
+            <strong>24/7</strong>
+            <span>Access</span>
+          </div>
+          <div>
+            <strong>1 Hub</strong>
+            <span>Operations</span>
+          </div>
+          <div>
+            <strong>Secure</strong>
+            <span>Login</span>
+          </div>
         </div>
-        <div class="login-buttons">
-          <button class="btn-auth btn-primary" type="submit">Sign In</button>
-          <button class="btn-auth btn-dark" type="button" onclick="location.href='/register'">Sign Up</button>
-        </div>
-        <p class="prototype-note">Frontend prototype: account and app data are stored only in this browser.</p>
-      </form>
-      <div class="auth-bottom">Don't have an account? <a href="/register">Sign up here</a></div>
-    </section>
+      </aside>
+    </div>
   </main>
-  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank" rel="noopener noreferrer">mfcyouth.org</a></footer>
+  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank"
+      rel="noopener noreferrer">mfcyouth.org</a></footer>
   <script src="/js/auth.js"></script>
 </body>
+
 </html>
