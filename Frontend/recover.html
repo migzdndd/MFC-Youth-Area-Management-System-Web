@@ -1,73 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#002847">
   <title>Recover Account - MFC Youth Area Management System</title>
-  <style>
-    @import url('https://fonts.cdnfonts.com/css/visby');
-  </style>
+  <style>@import url('https://fonts.cdnfonts.com/css/visby');</style>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
-
-<body class="auth-body" data-allow-authenticated="true">
+<body class="auth-body">
   <main class="auth-page">
     <section class="login-card auth-card" aria-labelledby="recoverTitle">
       <div class="login-header">
         <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
-        <h1 id="recoverTitle">Recover Your Account</h1>
-        <p>Use the frontend recovery demo to reset a locally stored prototype account.</p>
+        <h1 id="recoverTitle">Reset Your Member Login</h1>
+        <p>For this frontend prototype, password resets are issued by an Area Admin.</p>
       </div>
-
-      <form class="login-form" id="recoverLookupForm" novalidate>
-        <p class="login-heading">Find Your Account</p>
-        <div id="recoverMessage"></div>
-        <label class="login-field" for="recoverEmail">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M1.5 3.5A1.5 1.5 0 0 1 3 2h10a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-9zm2.1 1.2L8 7.7l4.4-3.0a.6.6 0 0 1 .7.98L8.4 8.8a1.2 1.2 0 0 1-1.6 0L3.8 5.7a.6.6 0 0 1 .8-.98z" />
-          </svg>
-          <input class="login-input" id="recoverEmail" type="email" placeholder="Email Address" autocomplete="email"
-            required>
-        </label>
-        <div class="login-buttons"><button class="btn-auth btn-primary" type="submit">Continue</button></div>
-        <p class="prototype-note">No real recovery email is sent in this frontend-only version.</p>
-      </form>
-
-      <form class="login-form hidden" id="resetPasswordForm" novalidate>
-        <p class="login-heading">Set New Password</p>
-        <div id="resetMessage"></div>
-        <div class="verification-badge"><span>Resetting local account</span><strong id="resetEmail">-</strong></div>
-        <div class="login-field">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
-          </svg>
-          <input class="login-input" id="resetPassword" type="password" minlength="8" placeholder="New Password"
-            autocomplete="new-password" required aria-label="New password">
-          <button class="password-toggle" type="button" data-password-toggle="resetPassword"
-            aria-label="Show password">Show</button>
+      <div class="login-form account-provision-info">
+        <div class="verification-badge">
+          <span>Forgot your password?</span>
+          <strong>Ask your Area Admin to reset your member login.</strong>
         </div>
-        <div class="login-field">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
-          </svg>
-          <input class="login-input" id="resetConfirm" type="password" minlength="8" placeholder="Confirm New Password"
-            autocomplete="new-password" required aria-label="Confirm new password">
-          <button class="password-toggle" type="button" data-password-toggle="resetConfirm"
-            aria-label="Show password">Show</button>
-        </div>
-        <div class="login-buttons"><button class="btn-auth btn-primary" type="submit">Update Password</button></div>
-      </form>
-
-      <div class="auth-bottom">Remember your password? <a href="/">Sign in here</a></div>
+        <p class="prototype-note">The admin can open Members → Login and issue a new temporary password. You will be required to change it after signing in.</p>
+        <div class="login-buttons"><button class="btn-auth btn-primary" type="button" onclick="location.href='/'">Back to Sign In</button></div>
+      </div>
     </section>
   </main>
   <script src="/js/auth.js"></script>
 </body>
-
 </html>

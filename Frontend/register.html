@@ -1,84 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#002847">
-  <meta name="description" content="Create an MFC Youth Area Management System prototype account.">
-  <title>Sign Up - MFC Youth Area Management System</title>
-  <style>
-    @import url('https://fonts.cdnfonts.com/css/visby');
-  </style>
+  <meta name="description" content="MFC Youth member account access information.">
+  <title>Account Access - MFC Youth Area Management System</title>
+  <style>@import url('https://fonts.cdnfonts.com/css/visby');</style>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
-
 <body class="auth-body">
   <main class="auth-page">
     <section class="login-card auth-card" aria-labelledby="registerTitle">
       <div class="login-header">
         <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
-        <h1 id="registerTitle">Create Your Account</h1>
-        <p>Register to access the MFC Youth Area Management System.</p>
+        <h1 id="registerTitle">Accounts Are Created by Your Area Admin</h1>
+        <p>Member accounts are linked directly to the official Members database.</p>
       </div>
-      <form class="login-form" id="registerForm" novalidate>
-        <p class="login-heading">Sign Up</p>
-        <div id="registerMessage"></div>
-        <label class="login-field" for="regFirst">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-            <path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z" />
-          </svg>
-          <input class="login-input" id="regFirst" name="firstName" type="text" placeholder="First Name"
-            autocomplete="given-name" required maxlength="60">
-        </label>
-        <label class="login-field" for="regLast">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-            <path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z" />
-          </svg>
-          <input class="login-input" id="regLast" name="lastName" type="text" placeholder="Last Name"
-            autocomplete="family-name" required maxlength="60">
-        </label>
-        <label class="login-field" for="regEmail">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M1.5 3.5A1.5 1.5 0 0 1 3 2h10a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-9zm2.1 1.2L8 7.7l4.4-3.0a.6.6 0 0 1 .7.98L8.4 8.8a1.2 1.2 0 0 1-1.6 0L3.8 5.7a.6.6 0 0 1 .8-.98z" />
-          </svg>
-          <input class="login-input" id="regEmail" type="email" placeholder="Email Address" autocomplete="email"
-            required>
-        </label>
-        <div class="login-field">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
-          </svg>
-          <input class="login-input" id="regPassword" type="password" minlength="8" placeholder="Password"
-            autocomplete="new-password" required aria-label="Password">
-          <button class="password-toggle" type="button" data-password-toggle="regPassword"
-            aria-label="Show password">Show</button>
+      <div class="login-form account-provision-info">
+        <div class="verification-badge">
+          <span>How first-time access works</span>
+          <strong>Admin adds member → account is created automatically</strong>
         </div>
-        <div class="login-field">
-          <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
-          </svg>
-          <input class="login-input" id="regConfirm" type="password" minlength="8" placeholder="Confirm Password"
-            autocomplete="new-password" required aria-label="Confirm password">
-          <button class="password-toggle" type="button" data-password-toggle="regConfirm"
-            aria-label="Show password">Show</button>
-        </div>
-        <p class="field-help auth-help">Use at least 8 characters with at least one letter and one number.</p>
-        <div class="login-buttons"><button class="btn-auth btn-primary" type="submit">Create Account</button></div>
-        <p class="prototype-note">Verification is simulated in-browser until a backend email service is connected.</p>
-      </form>
-      <div class="auth-bottom">Already have an account? <a href="/">Sign in here</a></div>
+        <ol class="account-steps">
+          <li>Your Area Admin adds you to the Members database using your email address.</li>
+          <li>The system generates a temporary password for your new member account.</li>
+          <li>Sign in using your registered email and temporary password.</li>
+          <li>You will be required to create your own password before entering the Member Portal.</li>
+        </ol>
+        <p class="prototype-note">Self-registration has been disabled to prevent duplicate or unlinked member accounts.</p>
+        <div class="login-buttons"><button class="btn-auth btn-primary" type="button" onclick="location.href='/'">Go to Sign In</button></div>
+      </div>
+      <div class="auth-bottom">Not yet in the database? Contact your Area Admin.</div>
     </section>
   </main>
-  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank"
-      rel="noopener noreferrer">mfcyouth.org</a></footer>
+  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank" rel="noopener noreferrer">mfcyouth.org</a></footer>
   <script src="/js/auth.js"></script>
 </body>
-
 </html>

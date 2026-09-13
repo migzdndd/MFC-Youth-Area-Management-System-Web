@@ -5,7 +5,8 @@
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const DB_VERSION = 4;
+const USER_KEY = 'mfc_demo_users';
+const DB_VERSION = 5;
 let activeModalCleanup = null;
 
 const SERVICES = [
@@ -31,6 +32,174 @@ function getSession() {
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
   );
+}
+
+
+// =========================================================
+// FRONTEND ACCOUNT PROVISIONING
+// Member records are the source of truth. Adding a member creates a linked
+// member login with a one-time temporary password. In production this must be
+// moved to the backend and passwords must be hashed, never stored in plaintext.
+// =========================================================
+
+function getAuthUsers() {
+  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
+  return Array.isArray(users) ? users : [];
+}
+
+function saveAuthUsers(users) {
+  localStorage.setItem(USER_KEY, JSON.stringify(users));
+}
+
+function authEmail(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+function findMemberAccount(member, users = getAuthUsers()) {
+  if (!member) return null;
+
+  const byMemberId = users.find(
+    user => user.memberId !== null && user.memberId !== undefined && String(user.memberId) === String(member.id)
+  );
+  if (byMemberId) return byMemberId;
+
+  const email = authEmail(member.email);
+  if (!email) return null;
+
+  return users.find(
+    user => authEmail(user.email) === email && ['member', 'legacy'].includes(user.role || 'legacy')
+  ) || null;
+}
+
+function accountEmailConflict(email, memberId = null) {
+  const normalized = authEmail(email);
+  if (!normalized) return null;
+
+  if (normalized === 'admin@mfcyouth.local') {
+    return 'That email is reserved for the built-in administrator account.';
+  }
+
+  const conflict = getAuthUsers().find(user => {
+    if (authEmail(user.email) !== normalized) return false;
+
+    // The account already linked to this member is allowed.
+    if (
+      memberId !== null &&
+      memberId !== undefined &&
+      user.memberId !== null &&
+      user.memberId !== undefined &&
+      String(user.memberId) === String(memberId)
+    ) {
+      return false;
+    }
+
+    // Old unlinked public-signup accounts can be claimed by an administrator
+    // when the matching member is added. Their password will be reset.
+    if ((user.role || 'legacy') === 'legacy' && (user.memberId === null || user.memberId === undefined)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return conflict ? 'That email address is already being used by another login account.' : null;
+}
+
+function generateTemporaryPassword() {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const all = letters + digits;
+  const randomInt = max => {
+    if (window.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      window.crypto.getRandomValues(values);
+      return values[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  };
+
+  let password = `M${letters[randomInt(letters.length)]}${digits[randomInt(digits.length)]}`;
+  for (let i = 0; i < 7; i += 1) {
+    password += all[randomInt(all.length)];
+  }
+  return password;
+}
+
+function provisionMemberAccount(member, { resetPassword = false } = {}) {
+  if (!member?.email) {
+    throw new Error('A valid email address is required to create a member login.');
+  }
+
+  const users = getAuthUsers();
+  let account = findMemberAccount(member, users);
+  const wasUnlinked = !account || account.memberId === null || account.memberId === undefined || account.role === 'legacy';
+  const issueTemporaryPassword = resetPassword || wasUnlinked;
+  const temporaryPassword = issueTemporaryPassword ? generateTemporaryPassword() : null;
+  const now = new Date().toISOString();
+
+  if (!account) {
+    account = {
+      id: uid(),
+      createdAt: now
+    };
+    users.push(account);
+  }
+
+  Object.assign(account, {
+    memberId: member.id,
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    name: fullName(member),
+    email: authEmail(member.email),
+    role: 'member',
+    isActive: String(member.status || 'Active') !== 'Inactive',
+    updatedAt: now
+  });
+
+  if (temporaryPassword) {
+    account.password = temporaryPassword;
+    account.mustChangePassword = true;
+    account.temporaryPasswordIssuedAt = now;
+  } else if (account.mustChangePassword === undefined) {
+    account.mustChangePassword = false;
+  }
+
+  saveAuthUsers(users);
+  return { account, temporaryPassword, created: wasUnlinked };
+}
+
+function syncMemberAccount(member) {
+  const users = getAuthUsers();
+  const account = findMemberAccount(member, users);
+  if (!account) return false;
+
+  Object.assign(account, {
+    memberId: member.id,
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    name: fullName(member),
+    email: authEmail(member.email),
+    role: 'member',
+    isActive: String(member.status || 'Active') !== 'Inactive',
+    updatedAt: new Date().toISOString()
+  });
+  saveAuthUsers(users);
+  return true;
+}
+
+function removeMemberAccount(memberId) {
+  const users = getAuthUsers().filter(
+    user => String(user.memberId) !== String(memberId)
+  );
+  saveAuthUsers(users);
+}
+
+function memberAccountState(member) {
+  const account = findMemberAccount(member);
+  if (!account) return { label: 'Not Provisioned', className: 'inactive' };
+  if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
+  if (account.mustChangePassword) return { label: 'Temporary Password', className: 'pending' };
+  return { label: 'Active', className: 'active' };
 }
 
 function normalizeDatabase(input) {
@@ -555,6 +724,91 @@ function openModal(
   );
 }
 
+function showTemporaryCredentials(member, temporaryPassword) {
+  if (!member || !temporaryPassword) return;
+
+  openModal(
+    'Member Login Created',
+    `
+      <div class="credential-panel">
+        <div class="credential-notice">
+          <strong>Give these temporary credentials to ${esc(fullName(member))}.</strong>
+          <p>The member must change this password immediately after the first successful login.</p>
+        </div>
+
+        <div class="credential-row">
+          <span>Email</span>
+          <code>${esc(member.email)}</code>
+        </div>
+
+        <div class="credential-row">
+          <span>Temporary Password</span>
+          <code>${esc(temporaryPassword)}</code>
+        </div>
+
+        <button class="btn blue" id="copyMemberCredentials" type="button">
+          Copy Credentials
+        </button>
+
+        <p class="field-help">
+          Frontend prototype only: credentials are stored locally in this browser. Production authentication must use a secure backend and hashed passwords.
+        </p>
+      </div>
+    `
+  );
+
+  const copyButton = document.getElementById('copyMemberCredentials');
+  if (copyButton) {
+    copyButton.onclick = async () => {
+      const text = `MFC Youth Member Login\nEmail: ${member.email}\nTemporary Password: ${temporaryPassword}\n\nPlease change your password after signing in.`;
+      try {
+        await navigator.clipboard.writeText(text);
+        copyButton.textContent = 'Copied!';
+      } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+        copyButton.textContent = 'Copied!';
+      }
+    };
+  }
+}
+
+window.manageMemberLogin = id => {
+  const data = db();
+  const member = data.members.find(item => item.id === id);
+  if (!member) return;
+
+  if (!member.email || !validEmail(member.email)) {
+    toast('Add a valid email address to this member before creating a login.', 'error');
+    return;
+  }
+
+  const conflict = accountEmailConflict(member.email, member.id);
+  if (conflict) {
+    toast(conflict, 'error');
+    return;
+  }
+
+  const existing = findMemberAccount(member);
+  const action = existing ? 'reset' : 'create';
+  const prompt = existing
+    ? `Reset the login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`
+    : `Create a member login for ${fullName(member)}? A temporary password will be issued.`;
+
+  if (!confirm(prompt)) return;
+
+  const result = provisionMemberAccount(member, { resetPassword: true });
+  renderMembers();
+  toast(action === 'reset' ? 'Member login reset.' : 'Member login created.');
+  showTemporaryCredentials(member, result.temporaryPassword);
+};
+
 function field(
   label,
   id,
@@ -649,6 +903,10 @@ const session = getSession();
 
 if (!session) {
   location.replace('/');
+} else if (session.mustChangePassword) {
+  location.replace('/change-password');
+} else if (session.role === 'member') {
+  location.replace('/member');
 }
 
 const page =
@@ -1360,6 +1618,7 @@ function renderMembers() {
                   <th>Chapter</th>
                   <th>Status</th>
                   <th>Services</th>
+                  <th>Account</th>
                   <th>Contact Number</th>
                   <th>Actions</th>
                 </tr>
@@ -1425,6 +1684,12 @@ function renderMembers() {
                         </td>
 
                         <td>
+                          <span class="badge ${memberAccountState(member).className}">
+                            ${esc(memberAccountState(member).label)}
+                          </span>
+                        </td>
+
+                        <td>
                           ${esc(
               member.contact ||
               '—'
@@ -1460,6 +1725,13 @@ function renderMembers() {
                             onclick="gigMember(${member.id})"
                           >
                             GIG
+                          </button>
+
+                          <button
+                            class="btn"
+                            onclick="manageMemberLogin(${member.id})"
+                          >
+                            Login
                           </button>
 
                           <button
@@ -1657,6 +1929,13 @@ window.viewMember = function(id) {
         </div>
 
         <div class="detail-item">
+          <span class="detail-label">Login Account</span>
+          <div class="detail-value">
+            <span class="badge ${memberAccountState(member).className}">${esc(memberAccountState(member).label)}</span>
+          </div>
+        </div>
+
+        <div class="detail-item">
           <span class="detail-label">Chapter</span>
           <div class="detail-value">${esc(chapterLabel)}</div>
         </div>
@@ -1745,10 +2024,11 @@ function memberModal(id = null) {
   )}
 
       ${field(
-    'Email Address (optional)',
+    'Email Address',
     'mEmail',
     'email',
-    member.email || ''
+    member.email || '',
+    'required autocomplete="email"'
   )}
 
       ${selectField(
@@ -1858,10 +2138,11 @@ function memberModal(id = null) {
       if (
         !firstName ||
         !lastName ||
-        !birthDate
+        !birthDate ||
+        !email
       ) {
         toast(
-          'First name, last name, and birth date are required.',
+          'First name, last name, birth date, and email address are required.',
           'error'
         );
 
@@ -1917,6 +2198,13 @@ function memberModal(id = null) {
           'error'
         );
 
+        return;
+      }
+
+      const loginConflict = accountEmailConflict(email, id);
+
+      if (loginConflict) {
+        toast(loginConflict, 'error');
         return;
       }
 
@@ -2012,6 +2300,8 @@ function memberModal(id = null) {
           member.services || []
       };
 
+      let provisionResult = null;
+
       if (id) {
         Object.assign(
           data.members.find(
@@ -2020,10 +2310,23 @@ function memberModal(id = null) {
           ),
           record
         );
+
+        // Existing linked accounts follow member profile/email/status changes.
+        // Older member records without an account are provisioned the first
+        // time an administrator saves them.
+        if (findMemberAccount(record)) {
+          syncMemberAccount(record);
+        } else {
+          provisionResult = provisionMemberAccount(record);
+        }
       } else {
         data.members.push(
           record
         );
+
+        // New member = new login account. This removes the old conflict where
+        // a person could exist separately in Members and public registration.
+        provisionResult = provisionMemberAccount(record);
       }
 
       save(data);
@@ -2033,10 +2336,14 @@ function memberModal(id = null) {
       toast(
         id
           ? 'Member updated.'
-          : 'Member added.'
+          : 'Member added and login account created.'
       );
 
       renderMembers();
+
+      if (provisionResult?.temporaryPassword) {
+        showTemporaryCredentials(record, provisionResult.temporaryPassword);
+      }
     }
   );
 }
@@ -2047,7 +2354,7 @@ window.editMember =
 window.deleteMember = id => {
   if (
     !confirm(
-      'Delete this member and their GIG contribution records?'
+      'Delete this member, their linked login account, and their GIG contribution records?'
     )
   ) {
     return;
@@ -2065,6 +2372,8 @@ window.deleteMember = id => {
       item =>
         item.memberId !== id
     );
+
+  removeMemberAccount(id);
 
   save(data);
 

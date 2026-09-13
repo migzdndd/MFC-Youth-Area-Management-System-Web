@@ -1,21 +1,67 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Auth Prototype
-// Browser-only authentication flow. Replace with server auth later.
+// Accounts are provisioned by administrators from the Members database.
+// Browser-only prototype: replace plaintext/localStorage auth with server-side
+// authentication + password hashing before production.
 // =========================================================
 
 const USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
-const PENDING_VERIFICATION_KEY = 'mfc_pending_verification';
-const RECOVERY_KEY = 'mfc_recovery_email';
-const VERIFICATION_TTL_MS = 10 * 60 * 1000;
+const DB_KEY = 'mfc_web_database_v1';
 
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
 
+function normalizeEmail(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+function getMembers() {
+  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  return Array.isArray(data.members) ? data.members : [];
+}
+
 function getUsers() {
   const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
-  return Array.isArray(users) ? users : [];
+  if (!Array.isArray(users)) return [];
+
+  // Best-effort migration for accounts created by the old public sign-up flow.
+  // If an old account matches exactly one member by email, convert it to a
+  // member account. Unlinked legacy accounts are intentionally not granted
+  // management access.
+  const members = getMembers();
+  let changed = false;
+  const normalized = users.map(raw => {
+    const user = { ...raw, email: normalizeEmail(raw.email) };
+
+    if (!user.role) {
+      const matches = members.filter(
+        member => normalizeEmail(member.email) && normalizeEmail(member.email) === user.email
+      );
+
+      if (matches.length === 1) {
+        user.role = 'member';
+        user.memberId = matches[0].id;
+        user.isActive = String(matches[0].status || 'Active') !== 'Inactive';
+        if (user.mustChangePassword === undefined) user.mustChangePassword = true;
+      } else {
+        user.role = 'legacy';
+      }
+      changed = true;
+    }
+
+    if (user.role === 'member' && user.isActive === undefined) {
+      const member = members.find(item => String(item.id) === String(user.memberId));
+      user.isActive = member ? String(member.status || 'Active') !== 'Inactive' : true;
+      changed = true;
+    }
+
+    return user;
+  });
+
+  if (changed) saveUsers(normalized);
+  return normalized;
 }
 
 function saveUsers(users) {
@@ -32,12 +78,18 @@ function saveSession(session, remember) {
   (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session));
 }
 
-function getPendingVerification() {
-  return safeParse(localStorage.getItem(PENDING_VERIFICATION_KEY) || 'null', null);
+function updateSession(session) {
+  if (localStorage.getItem(SESSION_KEY)) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } else {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  }
 }
 
-function generateVerificationCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+function destinationFor(session) {
+  if (session?.mustChangePassword) return '/change-password';
+  if (session?.role === 'member') return '/member';
+  return '/dashboard';
 }
 
 function showMessage(id, text, type = 'error') {
@@ -50,10 +102,6 @@ function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char]));
-}
-
-function normalizeEmail(value) {
-  return value.trim().toLowerCase();
 }
 
 function isValidEmail(value) {
@@ -91,9 +139,10 @@ function attachPasswordToggles() {
   });
 }
 
-// Signed-in users who revisit auth pages go straight to the dashboard.
-if (getSession() && document.body.dataset.allowAuthenticated !== 'true') {
-  location.replace('/dashboard');
+// Signed-in users who revisit the sign-in page go to the correct portal.
+const currentSession = getSession();
+if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
+  location.replace(destinationFor(currentSession));
 }
 
 // ---------------- LOGIN ----------------
@@ -112,235 +161,122 @@ if (loginForm) {
     }
 
     setButtonBusy(submit, true, 'Signing In…');
+
+    // Built-in management demo account remains available for the prototype.
+    const demoOk = email === 'admin@mfcyouth.local' && password === 'admin123';
+    if (demoOk) {
+      const session = {
+        email,
+        name: 'Area Administrator',
+        role: 'area_admin',
+        loginAt: new Date().toISOString(),
+        mustChangePassword: false,
+        demo: true
+      };
+      saveSession(session, remember);
+      location.href = '/dashboard';
+      return;
+    }
+
     const users = getUsers();
     const user = users.find(item => item.email === email && item.password === password);
-    const demoOk = email === 'admin@mfcyouth.local' && password === 'admin123';
 
-    if (!user && !demoOk) {
+    if (!user) {
       setButtonBusy(submit, false);
       showMessage('loginMessage', 'Account not found or password is incorrect.');
       return;
     }
 
+    if (user.role === 'legacy') {
+      setButtonBusy(submit, false);
+      showMessage('loginMessage', 'This older account is not linked to a member record. Ask an Area Admin to add or link you from the Members page.');
+      return;
+    }
+
+    if (user.isActive === false) {
+      setButtonBusy(submit, false);
+      showMessage('loginMessage', 'This member account is currently inactive. Contact your Area Admin.');
+      return;
+    }
+
     const session = {
-      email,
-      name: user?.name || 'Area Administrator',
+      userId: user.id,
+      memberId: user.memberId ?? null,
+      email: user.email,
+      name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+      role: user.role || 'member',
       loginAt: new Date().toISOString(),
-      demo: demoOk
+      mustChangePassword: user.mustChangePassword === true,
+      demo: false
     };
+
     saveSession(session, remember);
-    location.href = '/dashboard';
+    location.href = destinationFor(session);
   });
 }
 
-// ---------------- REGISTER ----------------
-const registerForm = document.getElementById('registerForm');
-if (registerForm) {
-  registerForm.addEventListener('submit', event => {
-    event.preventDefault();
-    const firstName = document.getElementById('regFirst').value.trim();
-    const lastName = document.getElementById('regLast').value.trim();
-    const name = `${firstName} ${lastName}`.trim();
-    const email = normalizeEmail(document.getElementById('regEmail').value);
-    const password = document.getElementById('regPassword').value;
-    const confirmation = document.getElementById('regConfirm').value;
+// ---------------- CHANGE PASSWORD ----------------
+const forcePasswordForm = document.getElementById('forcePasswordForm');
+if (forcePasswordForm) {
+  const session = getSession();
+  const accountEmail = document.getElementById('passwordAccountEmail');
+  const pageTitle = document.getElementById('passwordPageTitle');
+  const pageIntro = document.getElementById('passwordPageIntro');
 
-    if (!firstName || !lastName || !email || !password) {
-      showMessage('registerMessage', 'Please complete all required fields.');
-      return;
-    }
-    if (!isValidEmail(email)) {
-      showMessage('registerMessage', 'Enter a valid email address.');
-      return;
-    }
-    if (email === 'admin@mfcyouth.local') {
-      showMessage('registerMessage', 'That email is reserved for the built-in demo account.');
-      return;
-    }
-    const pError = passwordError(password);
-    if (pError) {
-      showMessage('registerMessage', pError);
-      return;
-    }
-    if (password !== confirmation) {
-      showMessage('registerMessage', 'Passwords do not match.');
-      return;
-    }
-    if (getUsers().some(user => user.email === email)) {
-      showMessage('registerMessage', 'That email is already registered.');
-      return;
-    }
-
-    const pending = {
-      id: Date.now(),
-      firstName,
-      lastName,
-      name,
-      email,
-      password,
-      code: generateVerificationCode(),
-      createdAt: new Date().toISOString()
-    };
-
-    localStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify(pending));
-    showMessage('registerMessage', 'Account details saved. Continue to verification.', 'success');
-    setTimeout(() => { location.href = '/confirm'; }, 450);
-  });
-}
-
-// ---------------- CONFIRM ACCOUNT ----------------
-const confirmForm = document.getElementById('confirmForm');
-if (confirmForm) {
-  let pending = getPendingVerification();
-  const emailEl = document.getElementById('confirmEmail');
-  const codeDisplay = document.getElementById('demoVerificationCode');
-  const expiryDisplay = document.getElementById('verificationExpiry');
-  const resendBtn = document.getElementById('resendCodeBtn');
-  const codeInput = document.getElementById('confirmCode');
-
-  function isExpired(item) {
-    return !item?.createdAt || Date.now() - new Date(item.createdAt).getTime() > VERIFICATION_TTL_MS;
-  }
-
-  function refreshConfirmationView() {
-    pending = getPendingVerification();
-    if (!pending) return;
-    if (emailEl) emailEl.textContent = pending.email;
-    if (codeDisplay) codeDisplay.textContent = pending.code;
-    if (expiryDisplay) expiryDisplay.textContent = 'Demo code expires 10 minutes after it is generated.';
-  }
-
-  if (!pending) {
-    showMessage('confirmMessage', 'No pending verification was found. Please register again.');
-    confirmForm.querySelectorAll('input,button').forEach(el => { el.disabled = true; });
-    setTimeout(() => { location.href = '/register'; }, 1200);
+  if (!session) {
+    location.replace('/');
+  } else if (session.demo) {
+    showMessage('passwordMessage', 'The built-in demo administrator password cannot be changed from this prototype.', 'error');
+    forcePasswordForm.querySelectorAll('input,button').forEach(el => { el.disabled = true; });
   } else {
-    refreshConfirmationView();
+    if (accountEmail) accountEmail.textContent = session.email;
+    if (session.mustChangePassword) {
+      if (pageTitle) pageTitle.textContent = 'Secure Your Account';
+      if (pageIntro) pageIntro.textContent = 'Your administrator issued a temporary password. Create your own password before continuing.';
+    }
 
-    codeInput?.addEventListener('input', () => {
-      codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
-    });
-
-    confirmForm.addEventListener('submit', event => {
+    forcePasswordForm.addEventListener('submit', event => {
       event.preventDefault();
-      pending = getPendingVerification();
-      if (!pending) {
-        showMessage('confirmMessage', 'Verification session is missing. Please register again.');
-        return;
-      }
-      if (isExpired(pending)) {
-        showMessage('confirmMessage', 'The verification code expired. Generate a new code and try again.');
-        return;
-      }
+      const currentPassword = document.getElementById('currentPassword').value;
+      const password = document.getElementById('newPassword').value;
+      const confirmation = document.getElementById('newPasswordConfirm').value;
+      const pError = passwordError(password);
 
-      const enteredCode = codeInput.value.trim();
-      if (enteredCode.length !== 6) {
-        showMessage('confirmMessage', 'Enter the complete 6-digit verification code.');
+      if (!currentPassword) {
+        showMessage('passwordMessage', 'Enter your current password.');
         return;
       }
-      if (enteredCode !== pending.code) {
-        showMessage('confirmMessage', 'The verification code is incorrect. Please try again.');
+      if (pError) {
+        showMessage('passwordMessage', pError);
+        return;
+      }
+      if (password !== confirmation) {
+        showMessage('passwordMessage', 'New passwords do not match.');
+        return;
+      }
+      if (password === currentPassword) {
+        showMessage('passwordMessage', 'Choose a new password that is different from your temporary/current password.');
         return;
       }
 
       const users = getUsers();
-      if (users.some(user => user.email === pending.email)) {
-        localStorage.removeItem(PENDING_VERIFICATION_KEY);
-        showMessage('confirmMessage', 'This email is already registered. Please sign in instead.', 'success');
-        setTimeout(() => { location.href = '/'; }, 900);
+      const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
+      if (!user || user.password !== currentPassword) {
+        showMessage('passwordMessage', 'Your current password is incorrect.');
         return;
       }
 
-      users.push({
-        id: pending.id,
-        firstName: pending.firstName,
-        lastName: pending.lastName,
-        name: pending.name,
-        email: pending.email,
-        password: pending.password,
-        createdAt: new Date().toISOString()
-      });
+      user.password = password;
+      user.mustChangePassword = false;
+      user.passwordUpdatedAt = new Date().toISOString();
       saveUsers(users);
-      localStorage.removeItem(PENDING_VERIFICATION_KEY);
-      showMessage('confirmMessage', 'Account verified successfully. Redirecting to sign in…', 'success');
-      setTimeout(() => { location.href = '/'; }, 900);
-    });
 
-    resendBtn?.addEventListener('click', () => {
-      pending = getPendingVerification();
-      if (!pending) {
-        showMessage('confirmMessage', 'Verification session is missing. Please register again.');
-        return;
-      }
-      pending = { ...pending, code: generateVerificationCode(), createdAt: new Date().toISOString() };
-      localStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify(pending));
-      refreshConfirmationView();
-      if (codeInput) codeInput.value = '';
-      showMessage('confirmMessage', 'A new demo verification code was generated.', 'success');
+      const updatedSession = { ...session, mustChangePassword: false };
+      updateSession(updatedSession);
+      showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
+      setTimeout(() => { location.href = destinationFor(updatedSession); }, 650);
     });
   }
-}
-
-// ---------------- RECOVERY / FRONTEND RESET DEMO ----------------
-const recoverLookupForm = document.getElementById('recoverLookupForm');
-const resetPasswordForm = document.getElementById('resetPasswordForm');
-
-if (recoverLookupForm) {
-  recoverLookupForm.addEventListener('submit', event => {
-    event.preventDefault();
-    const email = normalizeEmail(document.getElementById('recoverEmail').value);
-    if (!isValidEmail(email)) {
-      showMessage('recoverMessage', 'Enter a valid email address.');
-      return;
-    }
-    const user = getUsers().find(item => item.email === email);
-    if (!user) {
-      showMessage('recoverMessage', 'No registered demo account was found with that email.');
-      return;
-    }
-
-    sessionStorage.setItem(RECOVERY_KEY, email);
-    recoverLookupForm.classList.add('hidden');
-    resetPasswordForm?.classList.remove('hidden');
-    const resetEmail = document.getElementById('resetEmail');
-    if (resetEmail) resetEmail.textContent = email;
-    showMessage('resetMessage', 'Demo account confirmed. Set a new local password below.', 'success');
-  });
-}
-
-if (resetPasswordForm) {
-  resetPasswordForm.addEventListener('submit', event => {
-    event.preventDefault();
-    const email = sessionStorage.getItem(RECOVERY_KEY);
-    const password = document.getElementById('resetPassword').value;
-    const confirmation = document.getElementById('resetConfirm').value;
-    const pError = passwordError(password);
-    if (!email) {
-      showMessage('resetMessage', 'Recovery session expired. Start the recovery process again.');
-      return;
-    }
-    if (pError) {
-      showMessage('resetMessage', pError);
-      return;
-    }
-    if (password !== confirmation) {
-      showMessage('resetMessage', 'Passwords do not match.');
-      return;
-    }
-
-    const users = getUsers();
-    const user = users.find(item => item.email === email);
-    if (!user) {
-      showMessage('resetMessage', 'Account could not be found. Start recovery again.');
-      return;
-    }
-    user.password = password;
-    user.passwordUpdatedAt = new Date().toISOString();
-    saveUsers(users);
-    sessionStorage.removeItem(RECOVERY_KEY);
-    showMessage('resetMessage', 'Password updated for this browser prototype. Redirecting to sign in…', 'success');
-    setTimeout(() => { location.href = '/'; }, 1000);
-  });
 }
 
 attachPasswordToggles();
