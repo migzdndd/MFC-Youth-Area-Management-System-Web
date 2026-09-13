@@ -5,7 +5,7 @@
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 let activeModalCleanup = null;
 
 const SERVICES = [
@@ -93,10 +93,74 @@ function normalizeDatabase(input) {
       })
     : [];
 
+  const memberById = new Map(
+    members.map(member => [String(member.id), member])
+  );
+
   const participants = Array.isArray(data.participants)
-    ? data.participants.filter(
-      participant => participant && typeof participant === 'object'
-    )
+    ? data.participants
+      .filter(
+        participant => participant && typeof participant === 'object'
+      )
+      .map(participant => {
+        const directMember =
+          participant.memberId !== null &&
+          participant.memberId !== undefined &&
+          String(participant.memberId).trim() !== ''
+            ? memberById.get(String(participant.memberId))
+            : null;
+
+        let linkedMember = directMember || null;
+
+        // Best-effort migration for participant records created before
+        // event registration was linked to the Members database.
+        if (!linkedMember && participant.contact) {
+          const matches = members.filter(
+            member => String(member.contact || '') === String(participant.contact || '')
+          );
+
+          if (matches.length === 1) {
+            linkedMember = matches[0];
+          }
+        }
+
+        if (!linkedMember) {
+          const participantName = [
+            participant.first,
+            participant.mi,
+            participant.last
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+
+          if (participantName) {
+            const matches = members.filter(member =>
+              [
+                member.firstName,
+                member.middleName,
+                member.lastName
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase() === participantName
+            );
+
+            if (matches.length === 1) {
+              linkedMember = matches[0];
+            }
+          }
+        }
+
+        return {
+          ...participant,
+          memberId: linkedMember?.id ?? participant.memberId ?? null
+        };
+      })
     : [];
 
   const reports = Array.isArray(data.reports)
@@ -283,6 +347,38 @@ function calculateAge(birthDate) {
   }
 
   return age >= 0 ? age : null;
+}
+
+function participantMember(data, participant) {
+  if (!participant || !data) return null;
+
+  if (participant.memberId !== null && participant.memberId !== undefined) {
+    const linked = data.members.find(
+      member => String(member.id) === String(participant.memberId)
+    );
+
+    if (linked) return linked;
+  }
+
+  if (participant.contact) {
+    const matches = data.members.filter(
+      member => String(member.contact || '') === String(participant.contact || '')
+    );
+
+    if (matches.length === 1) return matches[0];
+  }
+
+  return null;
+}
+
+function participantName(data, participant) {
+  const member = participantMember(data, participant);
+
+  return member
+    ? fullName(member)
+    : [participant?.first, participant?.mi, participant?.last]
+      .filter(Boolean)
+      .join(' ');
 }
 
 function isUnassignedMember(member) {
@@ -1542,6 +1638,11 @@ window.viewMember = function(id) {
         </div>
 
         <div class="detail-item">
+          <span class="detail-label">First Attended Youth Camp</span>
+          <div class="detail-value">${esc(fmtDate(member.firstAttendedYouthCamp))}</div>
+        </div>
+
+        <div class="detail-item">
           <span class="detail-label">Contact Number</span>
           <div class="detail-value">${esc(member.contact || '—')}</div>
         </div>
@@ -1625,6 +1726,14 @@ function memberModal(id = null) {
     'date',
     member.birthDate || '',
     `required max="${todayISO()}"`
+  )}
+
+      ${field(
+    'First Attended Youth Camp',
+    'mFirstYouthCamp',
+    'date',
+    member.firstAttendedYouthCamp || '',
+    `max="${todayISO()}"`
   )}
 
       ${field(
@@ -1770,6 +1879,23 @@ function memberModal(id = null) {
         return;
       }
 
+      const firstAttendedYouthCamp =
+        document.getElementById(
+          'mFirstYouthCamp'
+        ).value;
+
+      if (
+        firstAttendedYouthCamp &&
+        firstAttendedYouthCamp > todayISO()
+      ) {
+        toast(
+          'First Attended Youth Camp cannot be in the future.',
+          'error'
+        );
+
+        return;
+      }
+
       if (
         !/^\d{11}$/.test(
           contact
@@ -1858,6 +1984,8 @@ function memberModal(id = null) {
         lastName,
 
         birthDate,
+
+        firstAttendedYouthCamp,
 
         contact,
 
@@ -6062,39 +6190,37 @@ window.viewEvent = id => {
 
               ${participants
         .map(
-          participant => `
+          participant => {
+            const member = participantMember(data, participant);
+            const age = member
+              ? calculateAge(member.birthDate)
+              : participant.age || null;
+            const chapter = member
+              ? member.chapterName
+              : participant.chapter;
+            const services = member
+              ? (member.services || []).join(', ')
+              : participant.service;
+
+            return `
                     <tr>
 
                       <td>
-                        ${esc(
-            [
-              participant.first,
-              participant.mi,
-              participant.last
-            ]
-              .filter(Boolean)
-              .join(' ')
-          )}
+                        ${esc(participantName(data, participant) || '—')}
                       </td>
 
                       <td>
-                        ${participant.age ||
-            '—'
-            }
+                        ${age === null || age === undefined || age === ''
+              ? '—'
+              : esc(String(age))}
                       </td>
 
                       <td>
-                        ${esc(
-              participant.chapter ||
-              '—'
-            )}
+                        ${esc(chapter || '—')}
                       </td>
 
                       <td>
-                        ${esc(
-              participant.service ||
-              '—'
-            )}
+                        ${esc(services || '—')}
                       </td>
 
                       <td>
@@ -6106,7 +6232,7 @@ window.viewEvent = id => {
             }"
                         >
                           ${esc(
-              participant.paymentStatus
+              participant.paymentStatus || 'Unpaid'
             )}
                         </span>
                       </td>
@@ -6144,7 +6270,8 @@ window.viewEvent = id => {
                       </td>
 
                     </tr>
-                  `
+                  `;
+          }
         )
         .join('')}
 
@@ -6289,152 +6416,125 @@ window.participantModal = (
     ? data.participants.find(
       item => item.id === id
     )
-    : {};
+    : null;
+
+  const linkedMember = participant
+    ? participantMember(data, participant)
+    : null;
+
+  const registeredMemberIds = new Set(
+    data.participants
+      .filter(item =>
+        item.eventId === eventId &&
+        item.id !== id &&
+        item.memberId !== null &&
+        item.memberId !== undefined
+      )
+      .map(item => String(item.memberId))
+  );
+
+  const availableMembers = data.members
+    .filter(member => !registeredMemberIds.has(String(member.id)))
+    .sort((a, b) =>
+      fullName(a).localeCompare(fullName(b), undefined, { sensitivity: 'base' })
+    );
+
+  const memberSummary = member => `
+    <div class="participant-member-summary">
+      <strong>${esc(fullName(member) || 'Unnamed Member')}</strong>
+      <span>${esc(member.chapterName || 'No Chapter')} · ${esc(member.contact || 'No Contact')}</span>
+      <small>${esc(member.status || 'Active')}${(member.services || []).length
+        ? ` · ${esc((member.services || []).join(', '))}`
+        : ''}</small>
+    </div>
+  `;
+
+  let memberSection = '';
+
+  if (id) {
+    if (linkedMember) {
+      memberSection = `
+        <div class="form-group full">
+          <label>Registered Member</label>
+          <div class="participant-selected-member">
+            ${memberSummary(linkedMember)}
+          </div>
+        </div>
+      `;
+    } else {
+      memberSection = `
+        <div class="form-group full">
+          <label>Registered Member</label>
+          <div class="participant-selected-member legacy">
+            <div class="participant-member-summary">
+              <strong>${esc(participantName(data, participant) || 'Legacy Participant')}</strong>
+              <span>Historical participant record</span>
+              <small>The original member record is no longer available. Payment and attendance can still be updated.</small>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  } else if (availableMembers.length) {
+    memberSection = `
+      <div class="form-group full">
+        <label for="participantMemberSearch">Registered Member</label>
+        <input
+          class="search-input participant-member-search"
+          id="participantMemberSearch"
+          type="search"
+          placeholder="Search registered members..."
+          autocomplete="off"
+        >
+
+        <div class="participant-member-list" id="participantMemberList">
+          ${availableMembers
+            .map(
+              member => `
+                <label
+                  class="participant-member-option"
+                  data-participant-member-search="${esc(`
+                    ${fullName(member)}
+                    ${member.chapterName || ''}
+                    ${member.contact || ''}
+                    ${(member.services || []).join(' ')}
+                    ${member.status || ''}
+                  `.toLowerCase().replace(/\s+/g, ' ').trim())}"
+                >
+                  <input
+                    type="radio"
+                    name="pMember"
+                    value="${member.id}"
+                  >
+                  ${memberSummary(member)}
+                </label>
+              `
+            )
+            .join('')}
+        </div>
+
+        <p class="muted participant-member-empty hidden" id="participantMemberEmpty">
+          No registered members match your search.
+        </p>
+      </div>
+    `;
+  } else {
+    memberSection = `
+      <div class="form-group full">
+        <label>Registered Member</label>
+        <div class="participant-member-notice">
+          ${data.members.length
+            ? 'All registered members are already participants in this event.'
+            : 'There are no registered members yet. Add a member in the Members tab first.'}
+        </div>
+      </div>
+    `;
+  }
 
   const body = `
     <div class="form-grid">
 
-      ${field(
-    'First Name',
-    'pFirst',
-    'text',
-    participant?.first || '',
-    'required maxlength="60"'
-  )}
-
-      ${field(
-    'Last Name',
-    'pLast',
-    'text',
-    participant?.last || '',
-    'required maxlength="60"'
-  )}
-
-      ${field(
-    'Middle Initial (optional)',
-    'pMI',
-    'text',
-    participant?.mi || '',
-    'maxlength="2"'
-  )}
-
-      ${field(
-    'Age',
-    'pAge',
-    'number',
-    participant?.age || '',
-    'min="1" max="120"'
-  )}
-
-      ${field(
-    'Contact Number',
-    'pContact',
-    'tel',
-    participant?.contact || '',
-    'maxlength="11" inputmode="numeric"'
-  )}
-
-      ${field(
-    'Address',
-    'pAddress',
-    'text',
-    participant?.address || '',
-    'maxlength="250"'
-  )}
-
-      <div class="form-group">
-
-        <label for="pChapter">
-          Chapter
-        </label>
-
-        <select
-          class="select-input"
-          id="pChapter"
-        >
-
-          <option value="">
-            No Chapter
-          </option>
-
-          ${data.chapters
-      .map(
-        chapter => `
-                <option
-                  value="${esc(chapter.name)}"
-                  ${participant?.chapter ===
-            chapter.name
-            ? 'selected'
-            : ''
-          }
-                >
-                  ${esc(
-            chapter.name
-          )}
-                </option>
-              `
-      )
-      .join('')}
-
-          ${(() => {
-        const existingChapter = participant?.chapter;
-        const isHistorical = existingChapter &&
-          !data.chapters.some(chapter => chapter.name === existingChapter);
-
-        return isHistorical
-          ? `<option value="${esc(existingChapter)}" selected>${esc(existingChapter)} (Historical)</option>`
-          : '';
-      })()}
-
-        </select>
-      </div>
-
-      <div class="form-group">
-
-        <label for="pService">
-          Service
-        </label>
-
-        <select
-          class="select-input"
-          id="pService"
-        >
-
-          <option value="">
-            No Service
-          </option>
-
-          ${data.services
-      .map(
-        service => `
-                <option
-                  value="${esc(service)}"
-                  ${participant?.service ===
-            service
-            ? 'selected'
-            : ''
-          }
-                >
-                  ${esc(
-            service
-          )}
-                </option>
-              `
-      )
-      .join('')}
-
-          ${(() => {
-        const existingService = participant?.service;
-        const isLegacy = existingService &&
-          !data.services.includes(existingService);
-
-        return isLegacy
-          ? `<option value="${esc(existingService)}" selected>${esc(existingService)} (Legacy)</option>`
-          : '';
-      })()}
-
-        </select>
-      </div>
+      ${memberSection}
 
       ${selectField(
         'Mode of Payment',
@@ -6492,91 +6592,52 @@ window.participantModal = (
     body,
 
     close => {
-      const first =
-        document
-          .getElementById('pFirst')
-          .value.trim();
+      let member = linkedMember;
 
-      const last =
-        document
-          .getElementById('pLast')
-          .value.trim();
+      if (!id) {
+        const selectedMember = document.querySelector(
+          'input[name="pMember"]:checked'
+        );
 
-      const contact =
-        document
-          .getElementById(
-            'pContact'
+        if (!selectedMember) {
+          toast(
+            data.members.length
+              ? 'Select a registered member.'
+              : 'Add a member in the Members tab before registering a participant.',
+            'error'
+          );
+
+          return;
+        }
+
+        member = data.members.find(
+          item => String(item.id) === String(selectedMember.value)
+        );
+
+        if (!member) {
+          toast(
+            'The selected member could not be found. Refresh and try again.',
+            'error'
+          );
+
+          return;
+        }
+
+        if (
+          data.participants.some(
+            item =>
+              item.eventId === eventId &&
+              item.id !== id &&
+              String(item.memberId) === String(member.id)
           )
-          .value.trim();
+        ) {
+          toast(
+            'That member is already registered for this event.',
+            'error'
+          );
 
-      const age =
-        Number(
-          document.getElementById(
-            'pAge'
-          ).value || 0
-        );
-
-      if (
-        !first ||
-        !last
-      ) {
-        toast(
-          'First and last name are required.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        contact &&
-        !/^\d{11}$/.test(
-          contact
-        )
-      ) {
-        toast(
-          'Contact number must be exactly 11 digits.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        age &&
-        (
-          !Number.isInteger(
-            age
-          ) ||
-          age < 1 ||
-          age > 120
-        )
-      ) {
-        toast(
-          'Enter a valid age.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        contact &&
-        data.participants.some(
-          item =>
-            item.eventId ===
-            eventId &&
-            item.id !== id &&
-            item.contact ===
-            contact
-        )
-      ) {
-        toast(
-          'That contact number is already registered for this event.',
-          'error'
-        );
-
-        return;
+          return;
+        }
       }
 
       const record = {
@@ -6586,38 +6647,51 @@ window.participantModal = (
 
         eventId,
 
-        first,
+        memberId:
+          member?.id ??
+          participant?.memberId ??
+          null,
 
-        last,
+        // Keep a compact participant snapshot for historical compatibility.
+        first:
+          member?.firstName ??
+          participant?.first ??
+          '',
+
+        last:
+          member?.lastName ??
+          participant?.last ??
+          '',
 
         mi:
-          document
-            .getElementById(
-              'pMI'
-            )
-            .value.trim()
-            .toUpperCase(),
+          member?.middleName
+            ? String(member.middleName).trim().charAt(0).toUpperCase()
+            : participant?.mi ?? '',
 
-        age,
+        age:
+          member
+            ? calculateAge(member.birthDate) || 0
+            : participant?.age || 0,
 
-        contact,
+        contact:
+          member?.contact ??
+          participant?.contact ??
+          '',
 
         address:
-          document
-            .getElementById(
-              'pAddress'
-            )
-            .value.trim(),
+          member?.address ??
+          participant?.address ??
+          '',
 
         chapter:
-          document.getElementById(
-            'pChapter'
-          ).value,
+          member?.chapterName ??
+          participant?.chapter ??
+          '',
 
         service:
-          document.getElementById(
-            'pService'
-          ).value,
+          member
+            ? (member.services || []).join(', ')
+            : participant?.service ?? '',
 
         paymentMode:
           document.getElementById(
@@ -6636,11 +6710,21 @@ window.participantModal = (
       };
 
       if (id) {
+        const target = data.participants.find(
+          item => item.id === id
+        );
+
+        if (!target) {
+          toast(
+            'Participant record could not be found.',
+            'error'
+          );
+
+          return;
+        }
+
         Object.assign(
-          data.participants.find(
-            item =>
-              item.id === id
-          ),
+          target,
           record
         );
       } else {
@@ -6664,6 +6748,29 @@ window.participantModal = (
       );
     }
   );
+
+  if (!id) {
+    const searchInput = document.getElementById('participantMemberSearch');
+    const emptyMessage = document.getElementById('participantMemberEmpty');
+    const rows = [
+      ...document.querySelectorAll('[data-participant-member-search]')
+    ];
+
+    searchInput?.addEventListener('input', () => {
+      const query = searchInput.value.trim().toLowerCase();
+      let visible = 0;
+
+      rows.forEach(row => {
+        const matches = !query ||
+          (row.dataset.participantMemberSearch || '').includes(query);
+
+        row.classList.toggle('hidden', !matches);
+        if (matches) visible += 1;
+      });
+
+      emptyMessage?.classList.toggle('hidden', visible !== 0);
+    });
+  }
 };
 
 window.deleteParticipant = (
