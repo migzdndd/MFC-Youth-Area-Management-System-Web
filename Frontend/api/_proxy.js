@@ -12,20 +12,10 @@ function copyRequestHeaders(req) {
     if (Array.isArray(value)) headers[key] = value.join(', ');
     else if (value != null) headers[key] = String(value);
   }
-  headers['x-mfc-proxy'] = 'vercel-frontend';
   return headers;
 }
 
-function applySecurityHeaders(res) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Cache-Control', 'no-store');
-}
-
 export async function proxyToBackend(req, res, path) {
-  applySecurityHeaders(res);
   const base = backendBaseUrl();
   if (!base) {
     return res.status(503).json({
@@ -34,15 +24,12 @@ export async function proxyToBackend(req, res, path) {
     });
   }
 
-  let search = '';
-  try { search = new URL(req.url || '', 'http://frontend.local').search || ''; } catch { search = ''; }
-  const url = `${base}${path}${path.includes('?') ? '' : search}`;
+  const url = `${base}${path}`;
   const method = String(req.method || 'GET').toUpperCase();
   const options = {
     method,
     headers: copyRequestHeaders(req),
-    redirect: 'manual',
-    signal: AbortSignal.timeout(12000)
+    redirect: 'manual'
   };
 
   if (!['GET', 'HEAD'].includes(method) && req.body !== undefined) {
@@ -60,25 +47,14 @@ export async function proxyToBackend(req, res, path) {
     const upstream = await fetch(url, options);
     const contentType = upstream.headers.get('content-type');
     if (contentType) res.setHeader('Content-Type', contentType);
-
-    // Preserve the backend's HttpOnly session cookie on the Frontend origin.
-    const setCookies = typeof upstream.headers.getSetCookie === 'function'
-      ? upstream.headers.getSetCookie()
-      : [];
-    if (setCookies.length) {
-      res.setHeader('Set-Cookie', setCookies);
-    } else {
-      const singleCookie = upstream.headers.get('set-cookie');
-      if (singleCookie) res.setHeader('Set-Cookie', singleCookie);
-    }
+    res.setHeader('Cache-Control', 'no-store');
 
     const body = await upstream.text();
     return res.status(upstream.status).send(body);
   } catch (error) {
-    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
-    return res.status(timedOut ? 504 : 502).json({
+    return res.status(502).json({
       ok: false,
-      error: timedOut ? 'The backend took too long to respond.' : 'Unable to reach the backend service.',
+      error: 'Unable to reach the backend service.',
       ...(process.env.NODE_ENV !== 'production' ? { detail: error?.message || String(error) } : {})
     });
   }

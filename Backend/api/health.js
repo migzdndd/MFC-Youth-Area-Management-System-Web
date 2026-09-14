@@ -1,51 +1,54 @@
-import { backendConfig, validateDatabaseUrl } from './_lib/env.js';
-import { pingDatabase, queryOne } from './_lib/db.js';
+import { backendConfig, validateSupabaseUrl } from './_lib/env.js';
+import { createSupabaseAdmin } from './_lib/supabase.js';
 import { sendJson, methodNotAllowed } from './_lib/http.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
 
   const config = backendConfig();
-  const urlCheck = validateDatabaseUrl(config.databaseUrl);
-  const configured = urlCheck.valid;
+  const urlCheck = validateSupabaseUrl(config.supabaseUrl);
+  const configured = Boolean(
+    urlCheck.valid &&
+    config.supabaseAnonKey &&
+    config.supabaseServiceRoleKey
+  );
+
   let databaseConnected = false;
-  let schemaReady = false;
   let databaseError = null;
 
   if (configured) {
     try {
-      databaseConnected = await pingDatabase();
-      if (databaseConnected) {
-        const schema = await queryOne(
-          `SELECT
-             to_regclass('public.accounts') IS NOT NULL AS accounts,
-             to_regclass('public.sessions') IS NOT NULL AS sessions,
-             to_regclass('public.rate_limits') IS NOT NULL AS rate_limits,
-             to_regclass('public.members') IS NOT NULL AS members,
-             to_regclass('public.profiles') IS NOT NULL AS profiles`
-        );
-        schemaReady = Boolean(schema?.accounts && schema?.sessions && schema?.rate_limits && schema?.members && schema?.profiles);
+      const admin = createSupabaseAdmin();
+      const { error } = await admin
+        .from('areas')
+        .select('id')
+        .limit(1);
+
+      if (error) {
+        databaseError = error.message || 'Supabase database check failed.';
+      } else {
+        databaseConnected = true;
       }
     } catch (error) {
-      databaseError = error?.message || 'Unable to connect to Neon PostgreSQL.';
+      databaseError = error?.cause?.message || error?.message || 'Unable to connect to Supabase.';
     }
-  } else {
-    databaseError = urlCheck.reason === 'missing' ? 'DATABASE_URL is missing.' : 'DATABASE_URL is invalid.';
+  } else if (!urlCheck.valid) {
+    databaseError = urlCheck.reason === 'missing'
+      ? 'SUPABASE_URL is missing.'
+      : 'SUPABASE_URL is invalid. Copy the Project URL directly from Supabase Connect.';
   }
 
-  const healthy = databaseConnected && schemaReady;
-  return sendJson(res, healthy ? 200 : 503, {
-    ok: healthy,
+  return sendJson(res, databaseConnected ? 200 : 503, {
+    ok: databaseConnected,
     service: 'mfc-youth-web-api',
-    backendPhase: '0.7-neon-auth-migration',
+    backendPhase: '6.2-admin-registration-area-onboarding',
     configured,
     adminRegistrationConfigured: Boolean(config.adminRegistrationCode),
-    databaseUrlConfigured: Boolean(config.databaseUrl),
-    databaseUrlValid: urlCheck.valid,
-    ...(urlCheck.host ? { databaseHost: urlCheck.host } : {}),
-    database: databaseConnected ? 'neon-postgresql' : 'unavailable',
+    supabaseUrlConfigured: Boolean(config.supabaseUrl),
+    supabaseUrlValid: urlCheck.valid,
+    ...(urlCheck.host ? { supabaseHost: urlCheck.host } : {}),
+    database: databaseConnected ? 'supabase-postgres' : 'unavailable',
     databaseConnected,
-    schemaReady,
     ...(databaseError ? { databaseError } : {}),
     timestamp: new Date().toISOString()
   });

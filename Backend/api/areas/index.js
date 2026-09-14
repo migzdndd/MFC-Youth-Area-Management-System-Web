@@ -1,13 +1,22 @@
-import { query, queryOne } from '../_lib/db.js';
 import { requireAuthenticatedProfile } from '../_lib/access.js';
-import { sendJson, methodNotAllowed, apiError, assertReasonableBody, assertTrustedOrigin } from '../_lib/http.js';
+import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
-import { enforceRateLimit } from '../_lib/rate-limit.js';
 
-const LEADERSHIP_ROLES = new Set(['couple_coordinator','area_servant','lit_servant','chapter_servant']);
+const LEADERSHIP_ROLES = new Set([
+  'couple_coordinator',
+  'area_servant',
+  'lit_servant',
+  'chapter_servant'
+]);
+
 const DEFAULT_SERVICES = [
-  'Unit Servant','Household Servant','Chapter Servant','Area Servant',
-  'LIT Servant','Campus Servant','MFC High Servant'
+  'Unit Servant',
+  'Household Servant',
+  'Chapter Servant',
+  'Area Servant',
+  'LIT Servant',
+  'Campus Servant',
+  'MFC High Servant'
 ];
 
 function cleanAreaName(value) {
@@ -16,67 +25,93 @@ function cleanAreaName(value) {
 
 function areaCodeFromName(name) {
   const base = String(name || '')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 44);
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 44);
   return base || `AREA-${Date.now().toString(36).toUpperCase()}`;
 }
 
 async function listAreas(req, res) {
-  const { profile } = await requireAuthenticatedProfile(req);
+  const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
     return sendJson(res, 403, { ok: false, error: 'Area setup is available only to Servant Leader accounts.' });
   }
-  const rows = await query(
-    'SELECT id, name, code, is_active FROM areas WHERE is_active = TRUE ORDER BY name ASC LIMIT 500'
-  );
-  return sendJson(res, 200, { ok: true, areas: rows || [] });
+
+  const { data, error } = await supabase
+    .from('areas')
+    .select('id, name, code, is_active')
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+  if (error) throw error;
+
+  return sendJson(res, 200, { ok: true, areas: data || [] });
 }
 
 async function createArea(req, res) {
-  assertReasonableBody(req, 16 * 1024);
-  assertTrustedOrigin(req);
-  await enforceRateLimit(req, 'area-create', 10, 3600);
-  const { profile, account } = await requireAuthenticatedProfile(req);
+  const { supabase, profile, user } = await requireAuthenticatedProfile(req);
   if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
     return sendJson(res, 403, { ok: false, error: 'You do not have permission to create an Area.' });
   }
-  if (profile.area_id) return sendJson(res, 409, { ok: false, error: 'Your account is already assigned to an Area.' });
+  if (profile.area_id) {
+    return sendJson(res, 409, { ok: false, error: 'Your account is already assigned to an Area.' });
+  }
 
   const name = cleanAreaName(req.body?.name);
-  if (name.length < 3) return sendJson(res, 400, { ok: false, error: 'Enter a valid Area name.' });
+  if (name.length < 3) {
+    return sendJson(res, 400, { ok: false, error: 'Enter a valid Area name.' });
+  }
 
-  const existing = await queryOne(
-    'SELECT id, name, code FROM areas WHERE LOWER(name) = LOWER($1) LIMIT 1',
-    [name]
-  );
-  if (existing) {
+  const { data: existingByName, error: nameError } = await supabase
+    .from('areas')
+    .select('id, name, code')
+    .ilike('name', name)
+    .limit(1)
+    .maybeSingle();
+  if (nameError) throw nameError;
+  if (existingByName) {
     return sendJson(res, 409, {
       ok: false,
       error: 'That Area already exists. Select it from the Area list instead.',
-      existingArea: existing
+      existingArea: existingByName
     });
   }
 
   let code = areaCodeFromName(name);
-  const codeConflict = await queryOne('SELECT id FROM areas WHERE code = $1 LIMIT 1', [code]);
-  if (codeConflict) code = `${code.slice(0, 38)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const { data: codeConflict, error: codeConflictError } = await supabase
+    .from('areas')
+    .select('id')
+    .eq('code', code)
+    .maybeSingle();
+  if (codeConflictError) throw codeConflictError;
+  if (codeConflict) {
+    code = `${code.slice(0, 38)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  }
 
-  let area = null;
+  let createdArea = null;
   try {
-    area = await queryOne(
-      'INSERT INTO areas (name, code, is_active) VALUES ($1,$2,TRUE) RETURNING id,name,code,is_active',
-      [name, code]
-    );
-    for (const serviceName of DEFAULT_SERVICES) {
-      await query(
-        `INSERT INTO services (area_id, name, is_active)
-         VALUES ($1,$2,TRUE)
-         ON CONFLICT (area_id, name) DO NOTHING`,
-        [area.id, serviceName]
-      );
-    }
+    const { data: area, error: areaError } = await supabase
+      .from('areas')
+      .insert({ name, code, is_active: true })
+      .select('id, name, code, is_active')
+      .single();
+    if (areaError) throw areaError;
+    createdArea = area;
 
-    const memberLink = await ensureLeadershipMemberRecord({ account, profile, areaId: area.id });
+    const { error: serviceError } = await supabase
+      .from('services')
+      .insert(DEFAULT_SERVICES.map(serviceName => ({ area_id: area.id, name: serviceName, is_active: true })));
+    if (serviceError) throw serviceError;
+
+    const memberLink = await ensureLeadershipMemberRecord({
+      supabase,
+      user,
+      profile,
+      areaId: area.id
+    });
+
     return sendJson(res, 201, {
       ok: true,
       area,
@@ -87,7 +122,9 @@ async function createArea(req, res) {
       created: true
     });
   } catch (error) {
-    if (area?.id) await query('DELETE FROM areas WHERE id = $1', [area.id]).catch(() => {});
+    if (createdArea?.id) {
+      await supabase.from('areas').delete().eq('id', createdArea.id).catch(() => {});
+    }
     throw error;
   }
 }
@@ -96,7 +133,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') return await listAreas(req, res);
     if (req.method === 'POST') return await createArea(req, res);
-    return methodNotAllowed(res, ['GET','POST']);
+    return methodNotAllowed(res, ['GET', 'POST']);
   } catch (error) {
     return apiError(res, error);
   }

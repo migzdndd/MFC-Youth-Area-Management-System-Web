@@ -1,13 +1,13 @@
 {
   "name": "mfc-youth-area-management-system-backend",
-  "version": "0.7.0-neon.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
-  "description": "Backend API for the MFC Youth Area Management System using Neon PostgreSQL and server-side authentication.",
+  "description": "Backend API for the MFC Youth Area Management System with Servant Leader registration and Area onboarding.",
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.1"
+    "@supabase/supabase-js": "^2.57.0"
   }
 }

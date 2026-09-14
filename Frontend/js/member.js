@@ -14,39 +14,6 @@ function getSession() {
   );
 }
 
-async function backendApi(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: 'same-origin',
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    }
-  });
-  let body;
-  try { body = await response.json(); } catch { body = { ok: false, error: 'The server returned an invalid response.' }; }
-  if (!response.ok) throw new Error(body?.error || 'Request failed.');
-  return body;
-}
-
-function cloudMemberToPortal(member) {
-  if (!member) return null;
-  return {
-    id: member.id,
-    firstName: member.first_name || '',
-    middleName: member.middle_name || '',
-    lastName: member.last_name || '',
-    email: member.email || '',
-    contact: member.contact_number || '',
-    address: member.address || '',
-    status: member.status || 'Active',
-    firstAttendedYouthCamp: member.first_attended_youth_camp || '',
-    chapterId: member.chapter_id || null,
-    chapterName: '',
-    services: []
-  };
-}
-
 function esc(value = '') {
   return String(value).replace(
     /[&<>"']/g,
@@ -156,7 +123,6 @@ function eventCard(event, registration, timing) {
   `;
 }
 
-(async function bootstrapMemberPortal() {
 const session = getSession();
 const previewMode = Boolean(
   session &&
@@ -194,33 +160,11 @@ if (!session) {
 } else {
   const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
   const members = Array.isArray(data.members) ? data.members : [];
-  let linkedMember = members.find(
+  const linkedMember = members.find(
     item => String(item.id) === String(session.memberId)
   ) || members.find(
     item => String(item.email || '').trim().toLowerCase() === String(session.email || '').trim().toLowerCase()
   );
-
-  if (!previewMode && session.backendAuth) {
-    try {
-      const payload = await backendApi('/api/auth/me');
-      const cloudMember = cloudMemberToPortal(payload?.member);
-      if (cloudMember) {
-        const previous = linkedMember || {};
-        linkedMember = {
-          ...previous,
-          ...cloudMember,
-          chapterName: previous.chapterName || '',
-          services: Array.isArray(previous.services) ? previous.services : []
-        };
-      }
-    } catch {
-      localStorage.removeItem(SESSION_KEY);
-      sessionStorage.removeItem(SESSION_KEY);
-      navigateWithLoader('/', true);
-      return;
-    }
-  }
-
   const member = linkedMember || (previewMode ? previewMemberFromSession(session) : null);
 
   const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
@@ -368,10 +312,7 @@ if (!session) {
 }
 
 if (!previewMode) {
-  document.getElementById('memberLogoutBtn')?.addEventListener('click', async () => {
-    if (session?.backendAuth && !session?.demo) {
-      try { await backendApi('/api/auth/logout', { method: 'POST', body: '{}' }); } catch { /* local cleanup still proceeds */ }
-    }
+  document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     navigateWithLoader('/');
@@ -381,4 +322,3 @@ if (!previewMode) {
     navigateWithLoader('/change-password');
   });
 }
-})();

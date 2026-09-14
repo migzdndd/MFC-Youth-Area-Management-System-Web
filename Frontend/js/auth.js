@@ -1,11 +1,13 @@
 // =========================================================
-// MFC Youth Area Management System - Frontend Authentication
-// Production accounts authenticate only through the Vercel Backend.
-// Passwords are hashed server-side and the real session is held in an
-// HttpOnly cookie; local/session storage contains display metadata only.
+// MFC Youth Area Management System - Frontend Auth Prototype
+// Accounts are provisioned by administrators from the Members database.
+// Browser-only prototype: replace plaintext/localStorage auth with server-side
+// authentication + password hashing before production.
 // =========================================================
 
+const USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
+const DB_KEY = 'mfc_web_database_v1';
 
 const ACCESS_ROLE_VALUES = new Set([
   'couple_coordinator',
@@ -31,6 +33,107 @@ function safeParse(raw, fallback) {
 
 function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
+}
+
+function getMembers() {
+  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  return Array.isArray(data.members) ? data.members : [];
+}
+
+function getUsers() {
+  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
+  if (!Array.isArray(users)) return [];
+
+  const members = getMembers();
+  let changed = false;
+
+  const normalized = users.map(raw => {
+    const user = {
+      ...raw,
+      email: normalizeEmail(raw.email)
+    };
+
+    let linkedMember = null;
+
+    if (
+      user.memberId !== null &&
+      user.memberId !== undefined
+    ) {
+      linkedMember = members.find(
+        member => String(member.id) === String(user.memberId)
+      ) || null;
+    }
+
+    if (!linkedMember && user.email) {
+      const matches = members.filter(
+        member =>
+          normalizeEmail(member.email) &&
+          normalizeEmail(member.email) === user.email
+      );
+
+      if (matches.length === 1) {
+        linkedMember = matches[0];
+      }
+    }
+
+    if (!user.role) {
+      if (linkedMember) {
+        user.role = roleForMember(linkedMember);
+        user.memberId = linkedMember.id;
+        user.mustChangePassword = user.mustChangePassword !== false;
+      } else {
+        user.role = 'legacy';
+      }
+      changed = true;
+    }
+
+    if (linkedMember && user.role !== 'legacy') {
+      const desiredRole = roleForMember(linkedMember);
+      const desiredChapterId = linkedMember.chapterId ?? null;
+      const desiredActive = String(linkedMember.status || 'Active') !== 'Inactive';
+      const desiredName = [
+        linkedMember.firstName,
+        linkedMember.middleName,
+        linkedMember.lastName
+      ].filter(Boolean).join(' ');
+
+      if (user.role !== desiredRole) {
+        user.role = desiredRole;
+        changed = true;
+      }
+
+      if (String(user.memberId) !== String(linkedMember.id)) {
+        user.memberId = linkedMember.id;
+        changed = true;
+      }
+
+      if (String(user.chapterId ?? '') !== String(desiredChapterId ?? '')) {
+        user.chapterId = desiredChapterId;
+        changed = true;
+      }
+
+      if (user.isActive !== desiredActive) {
+        user.isActive = desiredActive;
+        changed = true;
+      }
+
+      if (desiredName && user.name !== desiredName) {
+        user.name = desiredName;
+        user.firstName = linkedMember.firstName || '';
+        user.lastName = linkedMember.lastName || '';
+        changed = true;
+      }
+    }
+
+    return user;
+  });
+
+  if (changed) saveUsers(normalized);
+  return normalized;
+}
+
+function saveUsers(users) {
+  localStorage.setItem(USER_KEY, JSON.stringify(users));
 }
 
 function getSession() {
@@ -66,7 +169,6 @@ function destinationFor(session) {
 
 async function apiJson(path, options = {}) {
   const response = await fetch(path, {
-    credentials: 'same-origin',
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -105,6 +207,8 @@ function backendSessionFromResponse(payload, remember = false) {
     loginAt: new Date().toISOString(),
     mustChangePassword: user.mustChangePassword === true,
     needsAreaSetup: user.role !== 'member' && !user.areaId,
+    accessToken: serverSession.accessToken || '',
+    refreshToken: serverSession.refreshToken || '',
     expiresAt: serverSession.expiresAt || null,
     backendAuth: true,
     demo: false
@@ -130,11 +234,8 @@ function isValidEmail(value) {
 }
 
 function passwordError(password) {
-  if (password.length < 10) return 'Password must be at least 10 characters long.';
-  if (!/[A-Z]/.test(password)) return 'Password must include at least one uppercase letter.';
-  if (!/[a-z]/.test(password)) return 'Password must include at least one lowercase letter.';
-  if (!/\d/.test(password)) return 'Password must include at least one number.';
-  if (!/[^A-Za-z0-9]/.test(password)) return 'Password must include at least one symbol.';
+  if (password.length < 8) return 'Password must be at least 8 characters long.';
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return 'Password must contain at least one letter and one number.';
   return '';
 }
 
@@ -216,20 +317,53 @@ if (loginForm) {
       return;
     }
 
-    // Production authentication is backend-only. Browser-stored prototype
-    // passwords are intentionally not accepted as a fallback.
+    // Prefer the real backend. During the migration period, older browser-only
+    // prototype accounts remain available as a fallback.
     try {
       const payload = await apiJson('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password, remember })
+        body: JSON.stringify({ email, password })
       });
       const session = backendSessionFromResponse(payload, remember);
       navigateWithLoader(destinationFor(session));
       return;
     } catch (backendError) {
-      setButtonBusy(submit, false);
-      showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect.');
-      return;
+      const users = getUsers();
+      const user = users.find(item => item.email === email && item.password === password);
+
+      if (!user) {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect.');
+        return;
+      }
+
+      if (user.role === 'legacy') {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
+        return;
+      }
+
+      if (user.isActive === false) {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
+        return;
+      }
+
+      const session = {
+        userId: user.id,
+        memberId: user.memberId ?? null,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+        role: normalizeAccessRole(user.role || 'member'),
+        chapterId: user.chapterId ?? null,
+        loginAt: new Date().toISOString(),
+        mustChangePassword: user.mustChangePassword === true,
+        needsAreaSetup: false,
+        demo: false
+      };
+
+      saveSession(session, remember);
+      navigateWithLoader(destinationFor(session));
     }
   });
 }
@@ -305,11 +439,7 @@ if (adminRegistrationForm) {
 // ---------------- CHANGE PASSWORD ----------------
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
-  backToLoginButton.addEventListener('click', async () => {
-    const session = getSession();
-    if (session?.backendAuth && !session?.demo) {
-      try { await apiJson('/api/auth/logout', { method: 'POST', body: '{}' }); } catch { /* local cleanup still proceeds */ }
-    }
+  backToLoginButton.addEventListener('click', () => {
     clearSession();
     navigateWithLoader('/index.html');
   });
@@ -334,9 +464,8 @@ if (forcePasswordForm) {
       if (pageIntro) pageIntro.textContent = 'Your administrator issued a temporary password. Create your own password before continuing.';
     }
 
-    forcePasswordForm.addEventListener('submit', async event => {
+    forcePasswordForm.addEventListener('submit', event => {
       event.preventDefault();
-      const submit = forcePasswordForm.querySelector('[type="submit"]');
       const currentPassword = document.getElementById('currentPassword').value;
       const password = document.getElementById('newPassword').value;
       const confirmation = document.getElementById('newPasswordConfirm').value;
@@ -355,39 +484,28 @@ if (forcePasswordForm) {
         return;
       }
       if (password === currentPassword) {
-        showMessage('passwordMessage', 'Choose a new password that is different from your current password.');
+        showMessage('passwordMessage', 'Choose a new password that is different from your temporary/current password.');
         return;
       }
 
-      setButtonBusy(submit, true, 'Updating Password…');
-
-      if (session.backendAuth) {
-        try {
-          await apiJson('/api/auth/change-password', {
-            method: 'POST',
-            body: JSON.stringify({ currentPassword, newPassword: password })
-          });
-          const updatedSession = { ...session, mustChangePassword: false };
-          updateSession(updatedSession);
-          showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
-          setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
-          return;
-        } catch (error) {
-          setButtonBusy(submit, false);
-          showMessage('passwordMessage', error?.message || 'Unable to update your password.');
-          return;
-        }
+      const users = getUsers();
+      const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
+      if (!user || user.password !== currentPassword) {
+        showMessage('passwordMessage', 'Your current password is incorrect.');
+        return;
       }
 
-      setButtonBusy(submit, false);
-      showMessage('passwordMessage', 'Password changes require a secure backend account. Please sign in again.');
-    });
+      user.password = password;
+      user.mustChangePassword = false;
+      user.passwordUpdatedAt = new Date().toISOString();
+      saveUsers(users);
 
+      const updatedSession = { ...session, mustChangePassword: false };
+      updateSession(updatedSession);
+      showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
+      setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
+    });
   }
 }
-
-document.querySelectorAll('[data-navigate]').forEach(element => {
-  element.addEventListener('click', () => navigateWithLoader(element.dataset.navigate || '/'));
-});
 
 attachPasswordToggles();

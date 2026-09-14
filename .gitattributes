@@ -1,0 +1,10 @@
+# Keep repository text files consistent across Windows/macOS/Linux.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.pdf binary

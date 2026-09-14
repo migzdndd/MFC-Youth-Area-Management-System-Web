@@ -1,22 +1,48 @@
--- Optional initial reference data for the first Area.
--- Change the name/code before running if needed.
+-- =========================================================
+-- Initial reference data for NCR Areas
+-- =========================================================
+
 insert into public.areas (name, code)
-values ('MFC Youth NCR Central', 'NCR-CENTRAL')
+values
+  ('NCR Central', 'NCR-CENTRAL'),
+  ('NCR East', 'NCR-EAST'),
+  ('NCR South', 'NCR-SOUTH'),
+  ('NCR North', 'NCR-NORTH')
 on conflict (code) do nothing;
 
-with a as (
-  select id from public.areas where code = 'NCR-CENTRAL'
+
+-- =========================================================
+-- Add the default Services to all four NCR Areas
+-- =========================================================
+
+with selected_areas as (
+  select id
+  from public.areas
+  where code in (
+    'NCR-CENTRAL',
+    'NCR-EAST',
+    'NCR-SOUTH',
+    'NCR-NORTH'
+  )
 )
+
 insert into public.services (area_id, name)
-select a.id, service_name
-from a
-cross join (values
-  ('Unit Servant'),
-  ('Household Servant'),
-  ('Chapter Servant'),
-  ('Area Servant'),
-  ('LIT Servant'),
-  ('Campus Servant'),
-  ('MFC High Servant')
+
+select
+  selected_areas.id,
+  service.service_name
+
+from selected_areas
+
+cross join (
+  values
+    ('Unit Servant'),
+    ('Household Servant'),
+    ('Chapter Servant'),
+    ('Area Servant'),
+    ('LIT Servant'),
+    ('Campus Servant'),
+    ('MFC High Servant')
 ) as service(service_name)
+
 on conflict (area_id, name) do nothing;
