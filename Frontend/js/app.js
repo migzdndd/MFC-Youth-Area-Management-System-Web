@@ -1558,64 +1558,6 @@ function renderDashboard() {
     }
       </section>
 
-      <section class="card panel">
-        <h3>
-          Frontend Status
-        </h3>
-
-        <div class="status-list">
-
-          <div>
-            <span>
-              Clean routes
-            </span>
-
-            <strong
-              class="status-ok"
-            >
-              Ready
-            </strong>
-          </div>
-
-          <div>
-            <span>
-              Responsive interface
-            </span>
-
-            <strong
-              class="status-ok"
-            >
-              Ready
-            </strong>
-          </div>
-
-          <div>
-            <span>
-              Browser data persistence
-            </span>
-
-            <strong
-              class="status-ok"
-            >
-              Ready
-            </strong>
-          </div>
-
-          <div>
-            <span>
-              Cloud backend
-            </span>
-
-            <strong
-              class="status-pending"
-            >
-              Future phase
-            </strong>
-          </div>
-
-        </div>
-      </section>
-
     </div>
   `;
 }
