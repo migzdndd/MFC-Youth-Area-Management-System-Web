@@ -267,7 +267,7 @@ function attachPasswordToggles() {
 // Signed-in users who revisit the sign-in page go to the correct portal.
 const currentSession = getSession();
 if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
-  location.replace(destinationFor(currentSession));
+  navigateWithLoader(destinationFor(currentSession), true);
 }
 
 // ---------------- LOGIN ----------------
@@ -282,7 +282,7 @@ function startDemoLogin(remember = false) {
   };
 
   saveSession(session, remember);
-  location.href = '/dashboard';
+  navigateWithLoader('/dashboard');
 }
 
 const demoLoginButton = document.getElementById('demoLoginButton');
@@ -325,7 +325,7 @@ if (loginForm) {
         body: JSON.stringify({ email, password })
       });
       const session = backendSessionFromResponse(payload, remember);
-      location.href = destinationFor(session);
+      navigateWithLoader(destinationFor(session));
       return;
     } catch (backendError) {
       const users = getUsers();
@@ -363,7 +363,7 @@ if (loginForm) {
       };
 
       saveSession(session, remember);
-      location.href = destinationFor(session);
+      navigateWithLoader(destinationFor(session));
     }
   });
 }
@@ -428,7 +428,7 @@ if (adminRegistrationForm) {
       session.needsAreaSetup = true;
       updateSession(session);
       showMessage('adminRegistrationMessage', 'Account created. Redirecting to Area setup…', 'success');
-      setTimeout(() => { location.href = '/dashboard'; }, 550);
+      setTimeout(() => { navigateWithLoader('/dashboard'); }, 550);
     } catch (error) {
       setButtonBusy(submit, false);
       showMessage('adminRegistrationMessage', error?.message || 'Unable to create the account.');
@@ -441,7 +441,7 @@ const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
   backToLoginButton.addEventListener('click', () => {
     clearSession();
-    location.href = '/index.html';
+    navigateWithLoader('/index.html');
   });
 }
 
@@ -453,7 +453,7 @@ if (forcePasswordForm) {
   const pageIntro = document.getElementById('passwordPageIntro');
 
   if (!session) {
-    location.replace('/');
+    navigateWithLoader('/', true);
   } else if (session.demo) {
     showMessage('passwordMessage', 'The built-in demo administrator password cannot be changed from this prototype.', 'error');
     forcePasswordForm.querySelectorAll('input, button[type="submit"]').forEach(el => { el.disabled = true; });
@@ -503,7 +503,7 @@ if (forcePasswordForm) {
       const updatedSession = { ...session, mustChangePassword: false };
       updateSession(updatedSession);
       showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
-      setTimeout(() => { location.href = destinationFor(updatedSession); }, 650);
+      setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
     });
   }
 }

@@ -126,14 +126,15 @@ function eventCard(event, registration, timing) {
 const session = getSession();
 
 if (!session) {
-  location.replace('/');
+  navigateWithLoader('/', true);
 } else if (session.mustChangePassword) {
-  location.replace('/change-password');
+  navigateWithLoader('/change-password', true);
 } else if (session.role !== 'member') {
-  location.replace(
+  navigateWithLoader(
     session.role === 'chapter_servant'
       ? '/chapters'
-      : '/dashboard'
+      : '/dashboard',
+    true
   );
 } else {
   const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
@@ -155,7 +156,7 @@ if (!session) {
   ) {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
-    location.replace('/');
+    navigateWithLoader('/', true);
   } else {
     const events = Array.isArray(data.events)
       ? data.events.filter(event => event && event.date)
@@ -318,9 +319,9 @@ if (!session) {
 document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
   localStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(SESSION_KEY);
-  location.href = '/';
+  navigateWithLoader('/');
 });
 
 document.getElementById('changePasswordBtn')?.addEventListener('click', () => {
-  location.href = '/change-password';
+  navigateWithLoader('/change-password');
 });

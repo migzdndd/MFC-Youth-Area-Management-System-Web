@@ -1043,17 +1043,17 @@ const page =
 const session = getSession();
 
 if (!session) {
-  location.replace('/');
+  navigateWithLoader('/', true);
 } else if (session.mustChangePassword) {
-  location.replace('/change-password');
+  navigateWithLoader('/change-password', true);
 } else if (session.role === 'member') {
-  location.replace('/member');
+  navigateWithLoader('/member', true);
 } else if (
   isChapterServantSession() &&
   !session.needsAreaSetup &&
   !['members', 'chapters', 'reports', 'events'].includes(page)
 ) {
-  location.replace('/chapters');
+  navigateWithLoader('/chapters', true);
 }
 
 const content =
@@ -1115,7 +1115,7 @@ if (logoutBtn) {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
 
-    location.href = '/';
+    navigateWithLoader('/');
   };
 }
 
@@ -7997,9 +7997,9 @@ async function showAreaOnboarding() {
     updateStoredSession(updated);
 
     if (session.role === 'chapter_servant') {
-      location.replace('/chapters');
+      navigateWithLoader('/chapters', true);
     } else {
-      location.replace('/dashboard');
+      navigateWithLoader('/dashboard', true);
     }
   };
 
