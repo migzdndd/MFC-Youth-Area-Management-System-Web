@@ -5,6 +5,28 @@
   let navigating = false;
   let navigationTimer = null;
 
+  function destinationLabel(url) {
+    try {
+      const path = new URL(url, window.location.href).pathname.replace(/\/$/, '');
+      const labels = {
+        '': 'Welcome',
+        '/': 'Welcome',
+        '/dashboard': 'Dashboard',
+        '/member': 'Member portal',
+        '/chapters': 'Chapters',
+        '/events': 'Events',
+        '/members': 'Members',
+        '/reports': 'Reports',
+        '/services': 'Services',
+        '/register': 'Account access',
+        '/change-password': 'Security settings'
+      };
+      return labels[path] || 'Your next page';
+    } catch {
+      return 'Your next page';
+    }
+  }
+
   function ensureLoader() {
     if (document.getElementById(LOADER_ID) || !document.body) return;
 
@@ -13,17 +35,17 @@
     overlay.className = 'page-loader';
     overlay.setAttribute('aria-hidden', 'true');
     overlay.innerHTML = `
-      <div class="spinner" role="status" aria-live="polite" aria-label="Loading page">
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
-        <div></div>
+      <div class="page-loader__content" role="status" aria-live="polite" aria-label="Loading page">
+        <div class="page-loader__mark" aria-hidden="true">
+          <span class="page-loader__mark-ring"></span>
+          <span class="page-loader__mark-core">MFC</span>
+        </div>
+        <div class="page-loader__copy">
+          <span class="page-loader__overline">MFC Youth</span>
+          <strong class="page-loader__label">Getting things ready</strong>
+          <span class="page-loader__destination"></span>
+        </div>
+        <div class="page-loader__progress" aria-hidden="true"><span></span></div>
       </div>
     `;
 
@@ -35,6 +57,8 @@
     const overlay = document.getElementById(LOADER_ID);
     if (!overlay) return;
 
+    const destination = overlay.querySelector('.page-loader__destination');
+    if (destination) destination.textContent = 'Loading your workspace';
     overlay.classList.add('is-active');
     overlay.setAttribute('aria-hidden', 'false');
     document.documentElement.classList.add('page-is-loading');
@@ -60,6 +84,9 @@
     show();
 
     const overlay = document.getElementById(LOADER_ID);
+    const destination = overlay?.querySelector('.page-loader__destination');
+    if (destination) destination.textContent = `Opening ${destinationLabel(url)}`;
+
     navigationTimer = window.setTimeout(() => {
       if (options.replace) {
         window.location.replace(url);

@@ -124,12 +124,33 @@ function eventCard(event, registration, timing) {
 }
 
 const session = getSession();
+const previewMode = Boolean(
+  session &&
+  session.role !== 'member' &&
+  new URLSearchParams(window.location.search).get('preview') === '1'
+);
+
+function previewMemberFromSession(currentSession) {
+  const name = String(currentSession?.name || currentSession?.email || 'Area Servant').trim();
+  const parts = name.split(/\s+/).filter(Boolean);
+  return {
+    id: currentSession?.memberId || `preview-${currentSession?.userId || 'admin'}`,
+    firstName: parts[0] || 'Area',
+    middleName: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
+    lastName: parts.length > 1 ? parts[parts.length - 1] : 'Servant',
+    email: currentSession?.email || 'preview@mfcyouth.local',
+    chapterName: 'Member View Preview',
+    contact: '',
+    firstAttendedYouthCamp: '',
+    services: []
+  };
+}
 
 if (!session) {
   navigateWithLoader('/', true);
 } else if (session.mustChangePassword) {
   navigateWithLoader('/change-password', true);
-} else if (session.role !== 'member') {
+} else if (session.role !== 'member' && !previewMode) {
   navigateWithLoader(
     session.role === 'chapter_servant'
       ? '/chapters'
@@ -139,9 +160,12 @@ if (!session) {
 } else {
   const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
   const members = Array.isArray(data.members) ? data.members : [];
-  const member = members.find(
+  const linkedMember = members.find(
     item => String(item.id) === String(session.memberId)
+  ) || members.find(
+    item => String(item.email || '').trim().toLowerCase() === String(session.email || '').trim().toLowerCase()
   );
+  const member = linkedMember || (previewMode ? previewMemberFromSession(session) : null);
 
   const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
   const account = Array.isArray(users)
@@ -149,15 +173,28 @@ if (!session) {
     : null;
 
   if (
-    !member ||
-    !account ||
-    account.isActive === false ||
-    String(member?.status || 'Active') === 'Inactive'
+    !previewMode &&
+    (
+      !member ||
+      (!session.backendAuth && !account) ||
+      account?.isActive === false ||
+      String(member?.status || 'Active') === 'Inactive'
+    )
   ) {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     navigateWithLoader('/', true);
-  } else {
+  } else if (member) {
+    if (previewMode) {
+      document.body.classList.add('member-preview-mode');
+      const actions = document.querySelector('.member-portal-actions');
+      if (actions) {
+        actions.innerHTML = `
+          <button class="btn" id="exitMemberPreview" type="button">Return to Admin Dashboard</button>
+        `;
+      }
+    }
+
     const events = Array.isArray(data.events)
       ? data.events.filter(event => event && event.date)
       : [];
@@ -194,9 +231,16 @@ if (!session) {
       ).length;
 
     document.getElementById('memberPortalContent').innerHTML = `
+      ${previewMode ? `
+        <section class="member-preview-banner" role="status">
+          <strong>Member Portal Preview</strong>
+          <span>You are previewing the interface a regular Member sees. Your administrator session remains active.</span>
+        </section>
+      ` : ''}
+
       <section class="member-welcome-card" id="overview">
         <div class="member-welcome-copy">
-          <span class="member-eyebrow">MEMBER ACCESS</span>
+          <span class="member-eyebrow">${previewMode ? 'MEMBER VIEW PREVIEW' : 'MEMBER ACCESS'}</span>
           <h1>Welcome, ${esc(member.firstName || fullName(member))}!</h1>
           <p>
             ${esc(member.chapterName || 'No Chapter Assigned')}
@@ -206,101 +250,48 @@ if (!session) {
 
         <div class="member-hero-badge">
           <span>Account</span>
-          <strong>Member</strong>
+          <strong>${previewMode ? 'Preview' : 'Member'}</strong>
         </div>
       </section>
 
       <section class="member-quick-grid" aria-label="Member dashboard summary">
-        <article>
-          <span>Upcoming Events</span>
-          <strong>${allUpcomingEvents.length}</strong>
-        </article>
-
-        <article>
-          <span>My Registrations</span>
-          <strong>${registeredUpcoming}</strong>
-        </article>
-
-        <article>
-          <span>Recently Attended</span>
-          <strong>${attendedRecent}</strong>
-        </article>
-
-        <article>
-          <span>Total Event Records</span>
-          <strong>${myRegistrations.length}</strong>
-        </article>
+        <article><span>Upcoming Events</span><strong>${allUpcomingEvents.length}</strong></article>
+        <article><span>My Registrations</span><strong>${registeredUpcoming}</strong></article>
+        <article><span>Recently Attended</span><strong>${attendedRecent}</strong></article>
+        <article><span>Total Event Records</span><strong>${myRegistrations.length}</strong></article>
       </section>
 
       <section class="member-dashboard-section" id="upcoming">
         <div class="member-section-heading">
-          <div>
-            <span class="member-eyebrow">WHAT'S NEXT</span>
-            <h2>Upcoming Events</h2>
-          </div>
+          <div><span class="member-eyebrow">WHAT'S NEXT</span><h2>Upcoming Events</h2></div>
           <p>Recent announcements and upcoming MFC Youth activities.</p>
         </div>
-
         <div class="member-event-stack">
           ${upcomingEvents.length
-            ? upcomingEvents
-                .map(event =>
-                  eventCard(
-                    event,
-                    eventRegistration(participants, member.id, event.id),
-                    'upcoming'
-                  )
-                )
-                .join('')
-            : `
-              <div class="member-empty-card">
-                <strong>No upcoming events yet.</strong>
-                <span>New events will appear here once they are added by your Area.</span>
-              </div>
-            `
+            ? upcomingEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'upcoming')).join('')
+            : `<div class="member-empty-card"><strong>No upcoming events yet.</strong><span>New events will appear here once they are added by your Area.</span></div>`
           }
         </div>
       </section>
 
       <section class="member-dashboard-section" id="recent">
         <div class="member-section-heading">
-          <div>
-            <span class="member-eyebrow">LOOKING BACK</span>
-            <h2>Recent Events</h2>
-          </div>
+          <div><span class="member-eyebrow">LOOKING BACK</span><h2>Recent Events</h2></div>
           <p>See recently completed activities and your participation status.</p>
         </div>
-
         <div class="member-event-stack">
           ${recentEvents.length
-            ? recentEvents
-                .map(event =>
-                  eventCard(
-                    event,
-                    eventRegistration(participants, member.id, event.id),
-                    'past'
-                  )
-                )
-                .join('')
-            : `
-              <div class="member-empty-card">
-                <strong>No recent events yet.</strong>
-                <span>Completed Area events will appear here.</span>
-              </div>
-            `
+            ? recentEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'past')).join('')
+            : `<div class="member-empty-card"><strong>No recent events yet.</strong><span>Completed Area events will appear here.</span></div>`
           }
         </div>
       </section>
 
       <section class="member-dashboard-section" id="profile">
         <div class="member-section-heading">
-          <div>
-            <span class="member-eyebrow">MY ACCOUNT</span>
-            <h2>Member Profile</h2>
-          </div>
-          <p>Your profile is linked to the official Area Members database.</p>
+          <div><span class="member-eyebrow">MY ACCOUNT</span><h2>Member Profile</h2></div>
+          <p>${previewMode ? 'Preview of the profile section visible to a Member.' : 'Your profile is linked to the official Area Members database.'}</p>
         </div>
-
         <article class="member-portal-card">
           <dl class="member-profile-list member-profile-wide">
             <div><dt>Name</dt><dd>${esc(fullName(member) || '—')}</dd></div>
@@ -313,15 +304,21 @@ if (!session) {
         </article>
       </section>
     `;
+
+    document.getElementById('exitMemberPreview')?.addEventListener('click', () => {
+      navigateWithLoader(session.role === 'chapter_servant' ? '/chapters' : '/dashboard');
+    });
   }
 }
 
-document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
-  localStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_KEY);
-  navigateWithLoader('/');
-});
+if (!previewMode) {
+  document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    navigateWithLoader('/');
+  });
 
-document.getElementById('changePasswordBtn')?.addEventListener('click', () => {
-  navigateWithLoader('/change-password');
-});
+  document.getElementById('changePasswordBtn')?.addEventListener('click', () => {
+    navigateWithLoader('/change-password');
+  });
+}

@@ -7,6 +7,15 @@ const LEADERSHIP_ROLES = new Set([
   'chapter_servant'
 ]);
 
+// Couple Coordinators keep management access but are intentionally not
+// represented in the Area Members roster. All other Servant Leader accounts
+// are linked to public.members after Area onboarding.
+const MEMBER_BACKED_ADMIN_ROLES = new Set([
+  'area_servant',
+  'lit_servant',
+  'chapter_servant'
+]);
+
 function cleanText(value, max = 160) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, max);
 }
@@ -33,6 +42,10 @@ function splitDisplayName(displayName, email) {
 function leadershipRole(role) {
   const normalized = String(role || '').trim().toLowerCase();
   return LEADERSHIP_ROLES.has(normalized) ? normalized : null;
+}
+
+function shouldCreateMemberRecord(role) {
+  return MEMBER_BACKED_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
 }
 
 function memberLinkError(message, statusCode = 409, code = 'MEMBER_LINK_FAILED') {
@@ -68,6 +81,28 @@ export async function ensureLeadershipMemberRecord({
 
   if (!targetAreaId) {
     return { profile, member: null, created: false, linkedExisting: false };
+  }
+
+  // Couple Coordinators are management-only accounts. Persist their Area
+  // selection in profiles, but do not create a Members-roster entry for them.
+  if (!shouldCreateMemberRecord(role)) {
+    const profileUpdates = { area_id: targetAreaId };
+    if (targetChapterId) profileUpdates.chapter_id = targetChapterId;
+
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update(profileUpdates)
+      .eq('id', profile.id)
+      .select('*')
+      .single();
+    if (profileUpdateError) throw profileUpdateError;
+
+    return {
+      profile: updatedProfile,
+      member: null,
+      created: false,
+      linkedExisting: false
+    };
   }
 
   // If the profile is already linked, keep the member row synchronized.

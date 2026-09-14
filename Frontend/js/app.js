@@ -109,6 +109,57 @@ async function backendApi(path, options = {}) {
   return body;
 }
 
+function cloudMemberToLocal(member, previous = {}) {
+  return {
+    ...previous,
+    id: member.id,
+    areaId: member.area_id ?? previous.areaId ?? null,
+    chapterId: member.chapter_id ?? previous.chapterId ?? null,
+    firstName: member.first_name || previous.firstName || '',
+    middleName: member.middle_name || '',
+    lastName: member.last_name || previous.lastName || '',
+    birthDate: member.birth_date || '',
+    contact: member.contact_number || '',
+    email: String(member.email || previous.email || '').trim().toLowerCase(),
+    address: member.address || '',
+    status: member.status || 'Active',
+    firstAttendedYouthCamp: member.first_attended_youth_camp || '',
+    accessLevel: normalizeAccessRole(member.access_level || 'member'),
+    createdAt: member.created_at || previous.createdAt || null,
+    updatedAt: member.updated_at || previous.updatedAt || null,
+    services: Array.isArray(previous.services) ? previous.services : [],
+    chapterName: previous.chapterName || '',
+    cloudBacked: true
+  };
+}
+
+async function syncBackendMembersIntoLocalDb() {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+
+  const payload = await backendApi('/api/members');
+  const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
+  const data = db();
+  const currentMembers = Array.isArray(data.members) ? data.members : [];
+
+  cloudMembers.forEach(cloudMember => {
+    const email = String(cloudMember.email || '').trim().toLowerCase();
+    const index = currentMembers.findIndex(localMember =>
+      String(localMember.id) === String(cloudMember.id) ||
+      (email && String(localMember.email || '').trim().toLowerCase() === email)
+    );
+
+    if (index >= 0) {
+      currentMembers[index] = cloudMemberToLocal(cloudMember, currentMembers[index]);
+    } else {
+      currentMembers.push(cloudMemberToLocal(cloudMember));
+    }
+  });
+
+  data.members = currentMembers;
+  save(data);
+  return true;
+}
+
 function isSuperAdminSession() {
   return isSuperAdminRole(session?.role);
 }
@@ -326,6 +377,11 @@ function removeMemberAccount(memberId) {
 
 function memberAccountState(member) {
   const account = findMemberAccount(member);
+  if (!account && member?.cloudBacked) {
+    return String(member.status || 'Active') === 'Inactive'
+      ? { label: 'Disabled', className: 'inactive' }
+      : { label: 'Active', className: 'active' };
+  }
   if (!account) return { label: 'Not Provisioned', className: 'inactive' };
   if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
   if (account.mustChangePassword) return { label: 'Temporary Password', className: 'pending' };
@@ -1111,6 +1167,56 @@ if (logoutBtn) {
     logoutBtn
   );
 
+  if (session?.role !== 'member') {
+    const previewButton = document.createElement('button');
+    previewButton.type = 'button';
+    previewButton.className = 'sidebar-account-action member-preview-button';
+    previewButton.textContent = 'Enter Members Portal';
+    previewButton.onclick = () => navigateWithLoader('/member?preview=1');
+    logoutBtn.parentElement?.insertBefore(previewButton, logoutBtn);
+
+    if (session?.backendAuth && !session?.demo) {
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'sidebar-account-action delete-account-button';
+      deleteButton.textContent = 'Delete Account';
+      deleteButton.onclick = async () => {
+        const warning = 'Permanently delete your account? This removes your Supabase login, profile, and linked member record. This cannot be undone.';
+        if (!window.confirm(warning)) return;
+
+        const typed = window.prompt('Type DELETE to permanently delete your account.');
+        if (typed !== 'DELETE') {
+          toast('Account deletion cancelled.', 'error');
+          return;
+        }
+
+        const originalText = deleteButton.textContent;
+        deleteButton.disabled = true;
+        deleteButton.textContent = 'Deleting Account…';
+
+        try {
+          await backendApi('/api/auth/account', { method: 'DELETE' });
+
+          const data = db();
+          data.members = (data.members || []).filter(member =>
+            String(member.id) !== String(session?.memberId) &&
+            String(member.email || '').trim().toLowerCase() !== String(session?.email || '').trim().toLowerCase()
+          );
+          save(data);
+
+          localStorage.removeItem(SESSION_KEY);
+          sessionStorage.removeItem(SESSION_KEY);
+          navigateWithLoader('/', true);
+        } catch (error) {
+          deleteButton.disabled = false;
+          deleteButton.textContent = originalText;
+          toast(error?.message || 'Unable to delete the account.', 'error');
+        }
+      };
+      logoutBtn.parentElement?.insertBefore(deleteButton, logoutBtn);
+    }
+  }
+
   logoutBtn.onclick = () => {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
@@ -1556,6 +1662,64 @@ function renderDashboard() {
         'Completed events will appear here automatically.'
       )
     }
+      </section>
+
+      <section class="card panel">
+        <h3>
+          Frontend Status
+        </h3>
+
+        <div class="status-list">
+
+          <div>
+            <span>
+              Clean routes
+            </span>
+
+            <strong
+              class="status-ok"
+            >
+              Ready
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Responsive interface
+            </span>
+
+            <strong
+              class="status-ok"
+            >
+              Ready
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Browser data persistence
+            </span>
+
+            <strong
+              class="status-ok"
+            >
+              Ready
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Cloud backend
+            </span>
+
+            <strong
+              class="status-pending"
+            >
+              Future phase
+            </strong>
+          </div>
+
+        </div>
       </section>
 
     </div>
@@ -7929,11 +8093,13 @@ async function showAreaOnboarding() {
     message.innerHTML = `<div class="message ${type}" role="status">${esc(text)}</div>`;
   };
 
-  const finishAreaSetup = area => {
+  const finishAreaSetup = (area, profile = null, member = null) => {
     const updated = {
       ...session,
       areaId: area.id,
       areaName: area.name,
+      memberId: profile?.member_id ?? member?.id ?? session?.memberId ?? null,
+      chapterId: profile?.chapter_id ?? session?.chapterId ?? null,
       needsAreaSetup: false
     };
     updateStoredSession(updated);
@@ -7979,7 +8145,7 @@ async function showAreaOnboarding() {
         body: JSON.stringify({ areaId })
       });
       showAreaMessage(`Connected to ${payload.area.name}.`, 'success');
-      setTimeout(() => finishAreaSetup(payload.area), 350);
+      setTimeout(() => finishAreaSetup(payload.area, payload.profile, payload.member), 350);
     } catch (error) {
       confirmButton.disabled = false;
       confirmButton.textContent = original;
@@ -8017,7 +8183,7 @@ async function showAreaOnboarding() {
         body: JSON.stringify({ name })
       });
       showAreaMessage(`${payload.area.name} was created and linked to your account.`, 'success');
-      setTimeout(() => finishAreaSetup(payload.area), 400);
+      setTimeout(() => finishAreaSetup(payload.area, payload.profile, payload.member), 400);
     } catch (error) {
       createButton.disabled = false;
       createButton.textContent = original;
@@ -8044,9 +8210,19 @@ const renderers = {
   events: renderEvents
 };
 
-(
-  renderers[page] ||
-  renderDashboard
-)();
+async function bootstrapApplication() {
+  try {
+    await syncBackendMembersIntoLocalDb();
+  } catch (error) {
+    console.warn('Cloud member sync skipped:', error?.message || error);
+  }
 
-showAreaOnboarding();
+  (
+    renderers[page] ||
+    renderDashboard
+  )();
+
+  showAreaOnboarding();
+}
+
+bootstrapApplication();

@@ -29,14 +29,16 @@ async function listMembers(req, res) {
 
   let query = supabase
     .from('members')
-    .select('id, area_id, chapter_id, first_name, middle_name, last_name, birth_date, contact_number, email, status, first_attended_youth_camp, access_level, created_at, updated_at')
+    .select('id, area_id, chapter_id, first_name, middle_name, last_name, birth_date, contact_number, email, address, status, first_attended_youth_camp, access_level, created_at, updated_at')
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
   if (isSuperAdminRole(profile.role)) {
     query = query.eq('area_id', profile.area_id);
   } else if (isChapterServantRole(profile.role)) {
-    query = query.eq('chapter_id', profile.chapter_id);
+    query = profile.chapter_id
+      ? query.eq('chapter_id', profile.chapter_id)
+      : query.eq('id', profile.member_id);
   } else {
     query = query.eq('id', profile.member_id);
   }
