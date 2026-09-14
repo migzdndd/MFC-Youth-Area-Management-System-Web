@@ -1,7 +1,16 @@
 function backendBaseUrl() {
   const raw = String(process.env.BACKEND_URL || '').trim();
   if (!raw) return '';
-  return raw.replace(/\/+$/, '');
+  const normalized = raw.replace(/\/+$/, '');
+  try {
+    const parsed = new URL(normalized);
+    const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') return '';
+    if (!isLocal && parsed.protocol !== 'https:') return '';
+    return normalized;
+  } catch {
+    return '';
+  }
 }
 
 function copyRequestHeaders(req) {
@@ -43,6 +52,10 @@ export async function proxyToBackend(req, res, path) {
     }
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  options.signal = controller.signal;
+
   try {
     const upstream = await fetch(url, options);
     const contentType = upstream.headers.get('content-type');
@@ -54,8 +67,10 @@ export async function proxyToBackend(req, res, path) {
   } catch (error) {
     return res.status(502).json({
       ok: false,
-      error: 'Unable to reach the backend service.',
+      error: error?.name === 'AbortError' ? 'Backend request timed out.' : 'Unable to reach the backend service.',
       ...(process.env.NODE_ENV !== 'production' ? { detail: error?.message || String(error) } : {})
     });
+  } finally {
+    clearTimeout(timeout);
   }
 }

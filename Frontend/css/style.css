@@ -2910,7 +2910,7 @@ html.page-is-loading body {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 220ms ease, visibility 220ms ease;
+  transition: opacity 110ms ease, visibility 110ms ease;
 }
 
 .page-loader::before,
@@ -2979,10 +2979,12 @@ html.page-is-loading body {
   animation: loader-spin 1.6s linear infinite;
 }
 
-.page-loader__mark-core {
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+.page-loader__logo {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.22));
 }
 
 .page-loader__copy {
@@ -3027,7 +3029,7 @@ html.page-is-loading body {
   height: 100%;
   border-radius: inherit;
   background: #f7c948;
-  animation: loader-progress 1.35s ease-in-out infinite;
+  animation: loader-progress 0.9s ease-in-out infinite;
 }
 
 @keyframes loader-spin {
