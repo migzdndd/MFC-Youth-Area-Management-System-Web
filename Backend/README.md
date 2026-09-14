@@ -117,3 +117,12 @@ Admin registration errors also return a safe `code` and `stage` when a backend s
 - Copy the Supabase Project URL directly from the Supabase **Connect** dialog into `SUPABASE_URL`.
 - Environment values are trimmed by the backend so accidental leading/trailing spaces do not cause misleading connection errors.
 - `/api/health` reports only the sanitized Supabase host, never API keys or secrets.
+
+## Leadership account ↔ member linking
+
+Servant Leader registration creates the Supabase Auth user and `public.profiles` row first.
+Because `public.members.area_id` is required, the corresponding `public.members` row is
+created (or an existing same-email member is linked) when the leader selects or creates
+their Area. `GET /api/auth/me` also repairs older leadership profiles that already have
+an Area but still have `member_id = NULL`.
+

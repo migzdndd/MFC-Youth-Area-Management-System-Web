@@ -1,5 +1,6 @@
 import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
+import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
 
 const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
@@ -12,7 +13,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
 
   try {
-    const { supabase, profile } = await requireAuthenticatedProfile(req);
+    const { supabase, profile, user } = await requireAuthenticatedProfile(req);
     if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
       return sendJson(res, 403, { ok: false, error: 'You do not have permission to select an Area.' });
     }
@@ -35,19 +36,20 @@ export default async function handler(req, res) {
       return sendJson(res, 404, { ok: false, error: 'The selected Area is not available.' });
     }
 
-    const { data: updatedProfile, error: profileError } = await supabase
-      .from('profiles')
-      .update({ area_id: area.id })
-      .eq('id', profile.id)
-      .is('area_id', null)
-      .select('id, role, area_id, chapter_id')
-      .single();
-    if (profileError) throw profileError;
+    const memberLink = await ensureLeadershipMemberRecord({
+      supabase,
+      user,
+      profile,
+      areaId: area.id
+    });
 
     return sendJson(res, 200, {
       ok: true,
       area,
-      profile: updatedProfile
+      profile: memberLink.profile,
+      member: memberLink.member,
+      memberCreated: memberLink.created,
+      memberLinkedExisting: memberLink.linkedExisting
     });
   } catch (error) {
     return apiError(res, error);

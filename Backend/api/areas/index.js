@@ -1,5 +1,6 @@
 import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
+import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
 
 const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
@@ -50,7 +51,7 @@ async function listAreas(req, res) {
 }
 
 async function createArea(req, res) {
-  const { supabase, profile } = await requireAuthenticatedProfile(req);
+  const { supabase, profile, user } = await requireAuthenticatedProfile(req);
   if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
     return sendJson(res, 403, { ok: false, error: 'You do not have permission to create an Area.' });
   }
@@ -104,19 +105,20 @@ async function createArea(req, res) {
       .insert(DEFAULT_SERVICES.map(serviceName => ({ area_id: area.id, name: serviceName, is_active: true })));
     if (serviceError) throw serviceError;
 
-    const { data: updatedProfile, error: profileError } = await supabase
-      .from('profiles')
-      .update({ area_id: area.id })
-      .eq('id', profile.id)
-      .is('area_id', null)
-      .select('id, role, area_id, chapter_id')
-      .single();
-    if (profileError) throw profileError;
+    const memberLink = await ensureLeadershipMemberRecord({
+      supabase,
+      user,
+      profile,
+      areaId: area.id
+    });
 
     return sendJson(res, 201, {
       ok: true,
       area,
-      profile: updatedProfile,
+      profile: memberLink.profile,
+      member: memberLink.member,
+      memberCreated: memberLink.created,
+      memberLinkedExisting: memberLink.linkedExisting,
       created: true
     });
   } catch (error) {
