@@ -1,0 +1,10 @@
+{
+  "name": "mfc-youth-area-management-system-frontend",
+  "version": "0.6.0-backend.1",
+  "private": true,
+  "type": "module",
+  "description": "Frontend for the MFC Youth Area Management System with API proxy routes to the dedicated Backend project.",
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,15 @@
+Backend/node_modules/
+Backend/.vercel/
+Backend/.env
+Backend/.env.local
+Backend/.env.development.local
+Backend/.env.production.local
+!Backend/.env.example
+
+Frontend/node_modules/
+Frontend/.vercel/
+Frontend/.env
+Frontend/.env.local
+Frontend/.env.development.local
+Frontend/.env.production.local
+!Frontend/.env.example

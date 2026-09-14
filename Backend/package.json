@@ -1,0 +1,13 @@
+{
+  "name": "mfc-youth-area-management-system-backend",
+  "version": "0.6.0-backend.1",
+  "private": true,
+  "type": "module",
+  "description": "Backend API for the MFC Youth Area Management System.",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0"
+  }
+}

@@ -220,6 +220,28 @@ if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
 }
 
 // ---------------- LOGIN ----------------
+function startDemoLogin(remember = false) {
+  const session = {
+    email: 'admin@mfcyouth.local',
+    name: 'Area Servant (Demo)',
+    role: 'area_servant',
+    loginAt: new Date().toISOString(),
+    mustChangePassword: false,
+    demo: true
+  };
+
+  saveSession(session, remember);
+  location.href = '/dashboard';
+}
+
+const demoLoginButton = document.getElementById('demoLoginButton');
+if (demoLoginButton) {
+  demoLoginButton.addEventListener('click', () => {
+    setButtonBusy(demoLoginButton, true, 'Opening Demo…');
+    startDemoLogin(false);
+  });
+}
+
 const loginForm = document.getElementById('loginForm');
 if (loginForm) {
   loginForm.addEventListener('submit', event => {
@@ -236,19 +258,11 @@ if (loginForm) {
 
     setButtonBusy(submit, true, 'Signing In…');
 
-    // Built-in management demo account remains available for the prototype.
+    // Built-in management demo credentials remain available in addition to
+    // the one-click Demo Login button on the sign-in page.
     const demoOk = email === 'admin@mfcyouth.local' && password === 'admin123';
     if (demoOk) {
-      const session = {
-        email,
-        name: 'Area Servant (Demo)',
-        role: 'area_servant',
-        loginAt: new Date().toISOString(),
-        mustChangePassword: false,
-        demo: true
-      };
-      saveSession(session, remember);
-      location.href = '/dashboard';
+      startDemoLogin(remember);
       return;
     }
 

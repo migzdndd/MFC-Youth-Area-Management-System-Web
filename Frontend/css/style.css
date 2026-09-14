@@ -288,6 +288,28 @@ a {
   background: rgba(45, 52, 58, 0.95);
 }
 
+.btn-demo {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid rgba(124, 196, 249, 0.55);
+  color: #9ed5ff;
+  box-shadow: inset 0 0 0 1px rgba(13, 126, 190, 0.08);
+}
+
+.btn-demo:hover {
+  background: rgba(31, 139, 211, 0.12);
+  border-color: rgba(124, 196, 249, 0.9);
+}
+
+.demo-login-note {
+  margin: 7px 0 0;
+  color: #8fa1ae;
+  font-size: .72rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .btn-dark:hover {
   background: rgba(0, 0, 0, 0.9);
 }

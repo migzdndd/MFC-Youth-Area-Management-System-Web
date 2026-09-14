@@ -1,6 +1,6 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Application
-// Browser-only data layer. A future backend can replace db()/save().
+// Browser-only data layer currently active. Backend Phase 6.1 lives under /api; page-by-page migration will replace db()/save().
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
@@ -1679,8 +1679,13 @@ function renderChapterServantMembers(data) {
   content.innerHTML =
     pageHeader(
       'Members',
-      `View-only access for ${esc(chapter.name)} Chapter members. Member management remains with Super Admin access levels.`,
-      `<span class="scope-chip">${esc(chapter.name)} Chapter · View Only</span>`
+      `View members and add new member records for ${esc(chapter.name)} Chapter. Existing records remain view-only for Chapter Servants.`,
+      `
+        <button class="btn blue" id="addChapterMember" type="button">
+          + Add Member
+        </button>
+        <span class="scope-chip">${esc(chapter.name)} Chapter · View + Add</span>
+      `
     ) +
     `
     <div class="toolbar">
@@ -1754,6 +1759,8 @@ function renderChapterServantMembers(data) {
       }
     </section>
   `;
+
+  document.getElementById('addChapterMember').onclick = () => memberModal();
 
   document.getElementById('memberSearch').oninput = event => {
     memberFilters.search = event.target.value;
@@ -2262,9 +2269,23 @@ window.viewMember = function(id) {
 };
 
 function memberModal(id = null) {
-  if (denyUnlessSuperAdmin()) return;
+  if (id) {
+    if (denyUnlessSuperAdmin()) return;
+  } else if (!isSuperAdminSession() && !isChapterServantSession()) {
+    toast('Only Super Admin access levels and Chapter Servants can add members.', 'error');
+    return;
+  }
 
   const data = db();
+
+  const chapterServantChapter = isChapterServantSession()
+    ? scopedChapter(data)
+    : null;
+
+  if (!id && isChapterServantSession() && !chapterServantChapter) {
+    toast('Your account is not assigned to a chapter.', 'error');
+    return;
+  }
 
   const member = id
     ? data.members.find(
@@ -2347,25 +2368,41 @@ function memberModal(id = null) {
           System Access Level
         </label>
 
-        <select
-          class="select-input"
-          id="mAccessLevel"
-        >
-          ${ACCESS_LEVELS
-      .map(level => `
-            <option
-              value="${level.value}"
-              ${normalizeAccessRole(member.accessLevel || 'member') === level.value ? 'selected' : ''}
+        ${isChapterServantSession() && !id
+          ? `
+            <input
+              class="text-input"
+              id="mAccessLevelDisplay"
+              type="text"
+              value="Member"
+              readonly
+              aria-readonly="true"
             >
-              ${esc(level.label)}
-            </option>
-          `)
-      .join('')}
-        </select>
-
-        <small class="field-help">
-          Chapter Servants are automatically scoped to the chapter selected below.
-        </small>
+            <input id="mAccessLevel" type="hidden" value="member">
+            <small class="field-help">
+              Chapter Servants can create member accounts, but only Super Admin access levels can grant elevated system access.
+            </small>
+          `
+          : `
+            <select
+              class="select-input"
+              id="mAccessLevel"
+            >
+              ${ACCESS_LEVELS
+                .map(level => `
+                  <option
+                    value="${level.value}"
+                    ${normalizeAccessRole(member.accessLevel || 'member') === level.value ? 'selected' : ''}
+                  >
+                    ${esc(level.label)}
+                  </option>
+                `)
+                .join('')}
+            </select>
+            <small class="field-help">
+              Chapter Servants are automatically scoped to the chapter selected below.
+            </small>
+          `}
       </div>
 
       <div class="form-group">
@@ -2379,11 +2416,13 @@ function memberModal(id = null) {
           id="mChapter"
         >
 
-          <option value="">
-            No Chapter
-          </option>
+          ${chapterServantChapter ? '' : `
+            <option value="">
+              No Chapter
+            </option>
+          `}
 
-          ${data.chapters
+          ${(chapterServantChapter ? [chapterServantChapter] : data.chapters)
       .map(
         chapter => `
                 <option
@@ -2581,12 +2620,23 @@ function memberModal(id = null) {
             item.id === chapterId
         );
 
+      if (
+        !id &&
+        isChapterServantSession() &&
+        (!chapterServantChapter || chapterId !== chapterServantChapter.id)
+      ) {
+        toast('You can only add members to your assigned chapter.', 'error');
+        return;
+      }
+
       const accessLevel =
-        normalizeAccessRole(
-          document.getElementById(
-            'mAccessLevel'
-          ).value
-        );
+        !id && isChapterServantSession()
+          ? 'member'
+          : normalizeAccessRole(
+              document.getElementById(
+                'mAccessLevel'
+              ).value
+            );
 
       if (
         accessLevel === 'chapter_servant' &&
