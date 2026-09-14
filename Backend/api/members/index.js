@@ -165,7 +165,9 @@ async function createMember(req, res) {
       password: temporaryPassword,
       email_confirm: true,
       user_metadata: {
-        display_name: [firstName, middleName, lastName].filter(Boolean).join(' ')
+        display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
+        registration_type: 'admin_provisioned_member',
+        password_origin: 'temporary'
       }
     });
     if (authError || !authData?.user) throw authError || new Error('Unable to create login account.');

@@ -427,7 +427,7 @@ if (adminRegistrationForm) {
       const session = backendSessionFromResponse(payload, true);
       session.needsAreaSetup = true;
       updateSession(session);
-      showMessage('adminRegistrationMessage', 'Account created. Redirecting to Area setup…', 'success');
+      showMessage('adminRegistrationMessage', 'Account created with your chosen password. Redirecting to Area setup…', 'success');
       setTimeout(() => { navigateWithLoader('/dashboard'); }, 550);
     } catch (error) {
       setButtonBusy(submit, false);

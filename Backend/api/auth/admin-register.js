@@ -77,7 +77,8 @@ export default async function handler(req, res) {
         email_confirm: true,
         user_metadata: {
           display_name: displayName,
-          registration_type: 'servant_leader'
+          registration_type: 'servant_leader',
+          password_origin: 'self_chosen'
         }
       });
 
@@ -133,7 +134,8 @@ export default async function handler(req, res) {
           role,
           areaId: null,
           chapterId: null,
-          mustChangePassword: false
+          mustChangePassword: false,
+          passwordMode: 'self_chosen'
         }
       });
     } catch (error) {

@@ -38,7 +38,8 @@ export default async function handler(req, res) {
         password: temporaryPassword,
         email: member.email,
         user_metadata: {
-          display_name: [member.first_name, member.middle_name, member.last_name].filter(Boolean).join(' ')
+          display_name: [member.first_name, member.middle_name, member.last_name].filter(Boolean).join(' '),
+          password_origin: 'temporary_reset'
         }
       });
       if (authUpdateError) throw authUpdateError;
@@ -57,7 +58,9 @@ export default async function handler(req, res) {
         password: temporaryPassword,
         email_confirm: true,
         user_metadata: {
-          display_name: [member.first_name, member.middle_name, member.last_name].filter(Boolean).join(' ')
+          display_name: [member.first_name, member.middle_name, member.last_name].filter(Boolean).join(' '),
+          registration_type: 'admin_provisioned_member',
+          password_origin: 'temporary'
         }
       });
       if (authCreateError || !authData?.user) throw authCreateError || new Error('Unable to create login account.');

@@ -126,3 +126,9 @@ created (or an existing same-email member is linked) when the leader selects or 
 their Area. `GET /api/auth/me` also repairs older leadership profiles that already have
 an Area but still have `member_id = NULL`.
 
+
+## Password provisioning policy
+
+- Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
+- Admin-added Members receive a generated temporary password and use `must_change_password = true` until they replace it.
+- The Servant Leader registration code authorizes registration only; it is never used as the user account password.
