@@ -91,30 +91,50 @@ function updateStoredSession(nextSession) {
 
 async function backendApi(path, options = {}) {
   const token = session?.accessToken || '';
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    }
-  });
+  const timeoutMs = Number(options.timeoutMs || 8000);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  let body = null;
   try {
-    body = await response.json();
-  } catch {
-    body = { ok: false, error: 'The server returned an invalid response.' };
-  }
+    const response = await fetch(path, {
+      ...options,
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      }
+    });
 
-  if (!response.ok) {
-    const error = new Error(body?.error || 'Request failed.');
-    error.status = response.status;
-    error.body = body;
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = { ok: false, error: 'The server returned an invalid response.' };
+    }
+
+    if (!response.ok) {
+      const error = new Error(body?.error || 'Request failed.');
+      error.status = response.status;
+      error.body = body;
+      throw error;
+    }
+
+    return body;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('The server took too long to respond. Please try again.');
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error('Unable to reach the server. Check your connection and try again.');
+    }
+
     throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-
-  return body;
 }
 
 function cloudMemberToLocal(member, previous = {}) {
@@ -8270,19 +8290,96 @@ const renderers = {
   events: renderEvents
 };
 
-async function bootstrapApplication() {
-  try {
-    await syncBackendMembersIntoLocalDb();
-  } catch (error) {
-    console.warn('Cloud member sync skipped:', error?.message || error);
-  }
+function renderPageFailure(error) {
+  console.error('Page render failed:', error);
 
-  (
-    renderers[page] ||
-    renderDashboard
-  )();
+  if (!content) return;
 
-  showAreaOnboarding();
+  content.removeAttribute('aria-busy');
+  content.innerHTML = `
+    <section class="card page-load-error" role="alert">
+      <h2>We couldn't finish loading this page.</h2>
+      <p>Your data was not changed. You can safely try loading the page again.</p>
+      <button class="btn blue" id="retryPageLoad" type="button">Try Again</button>
+    </section>
+  `;
+
+  document.getElementById('retryPageLoad')?.addEventListener('click', () => {
+    try {
+      window.location.reload();
+    } catch (reloadError) {
+      console.error('Reload failed:', reloadError);
+    }
+  });
 }
 
-bootstrapApplication();
+function renderPageSafely() {
+  try {
+    const renderer = renderers[page] || renderDashboard;
+    renderer();
+    content?.removeAttribute('aria-busy');
+    window.MFCPageSkeleton?.clear?.();
+    return true;
+  } catch (error) {
+    renderPageFailure(error);
+    return false;
+  }
+}
+
+async function refreshCloudMembersInBackground() {
+  try {
+    const changed = await syncBackendMembersIntoLocalDb();
+
+    if (changed) {
+      renderPageSafely();
+    }
+  } catch (error) {
+    // Cached/local data remains usable when the network is unavailable.
+    console.warn('Background member sync skipped:', error?.message || error);
+  }
+}
+
+function scheduleBackgroundSync() {
+  const run = () => {
+    refreshCloudMembersInBackground().catch(error => {
+      console.warn('Background refresh failed:', error?.message || error);
+    });
+  };
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(run, { timeout: 450 });
+  } else {
+    window.setTimeout(run, 80);
+  }
+}
+
+async function bootstrapApplication() {
+  try {
+    // Render immediately from cached/browser data so page switching never waits
+    // for Supabase/network synchronization.
+    const rendered = renderPageSafely();
+    if (!rendered) return;
+
+    try {
+      await showAreaOnboarding();
+    } catch (error) {
+      console.warn('Area onboarding check skipped:', error?.message || error);
+    }
+
+    scheduleBackgroundSync();
+  } catch (error) {
+    renderPageFailure(error);
+  }
+}
+
+window.addEventListener('error', event => {
+  console.error('Unhandled page error:', event.error || event.message);
+});
+
+window.addEventListener('unhandledrejection', event => {
+  console.error('Unhandled async error:', event.reason);
+});
+
+bootstrapApplication().catch(error => {
+  renderPageFailure(error);
+});
