@@ -1,7 +1,31 @@
 (() => {
   const LOADER_ID = 'mfcPageLoader';
-  const NAV_DELAY_MS = 90;
+  const NAV_DELAY_MS = 140;
+  const NAVIGATION_TIMEOUT_MS = 12000;
   let navigating = false;
+  let navigationTimer = null;
+
+  function destinationLabel(url) {
+    try {
+      const path = new URL(url, window.location.href).pathname.replace(/\/$/, '');
+      const labels = {
+        '': 'Welcome',
+        '/': 'Welcome',
+        '/dashboard': 'Dashboard',
+        '/member': 'Member portal',
+        '/chapters': 'Chapters',
+        '/events': 'Events',
+        '/members': 'Members',
+        '/reports': 'Reports',
+        '/services': 'Services',
+        '/register': 'Account access',
+        '/change-password': 'Security settings'
+      };
+      return labels[path] || 'Your next page';
+    } catch {
+      return 'Your next page';
+    }
+  }
 
   function ensureLoader() {
     if (document.getElementById(LOADER_ID) || !document.body) return;
@@ -12,18 +36,16 @@
     overlay.setAttribute('aria-hidden', 'true');
     overlay.innerHTML = `
       <div class="page-loader__content" role="status" aria-live="polite" aria-label="Loading page">
-        <div class="banter-loader" aria-hidden="true">
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
-          <div class="banter-loader__box"></div>
+        <div class="page-loader__mark" aria-hidden="true">
+          <span class="page-loader__mark-ring"></span>
+          <span class="page-loader__mark-core">MFC</span>
         </div>
-        <span class="page-loader__label">Loading</span>
+        <div class="page-loader__copy">
+          <span class="page-loader__overline">MFC Youth</span>
+          <strong class="page-loader__label">Getting things ready</strong>
+          <span class="page-loader__destination"></span>
+        </div>
+        <div class="page-loader__progress" aria-hidden="true"><span></span></div>
       </div>
     `;
 
@@ -35,6 +57,8 @@
     const overlay = document.getElementById(LOADER_ID);
     if (!overlay) return;
 
+    const destination = overlay.querySelector('.page-loader__destination');
+    if (destination) destination.textContent = 'Loading your workspace';
     overlay.classList.add('is-active');
     overlay.setAttribute('aria-hidden', 'false');
     document.documentElement.classList.add('page-is-loading');
@@ -45,6 +69,10 @@
     if (!overlay) return;
 
     navigating = false;
+    if (navigationTimer) {
+      window.clearTimeout(navigationTimer);
+      navigationTimer = null;
+    }
     overlay.classList.remove('is-active');
     overlay.setAttribute('aria-hidden', 'true');
     document.documentElement.classList.remove('page-is-loading');
@@ -55,13 +83,21 @@
     navigating = true;
     show();
 
-    window.setTimeout(() => {
+    const overlay = document.getElementById(LOADER_ID);
+    const destination = overlay?.querySelector('.page-loader__destination');
+    if (destination) destination.textContent = `Opening ${destinationLabel(url)}`;
+
+    navigationTimer = window.setTimeout(() => {
       if (options.replace) {
         window.location.replace(url);
       } else {
         window.location.assign(url);
       }
     }, NAV_DELAY_MS);
+
+    window.setTimeout(() => {
+      if (navigating) hide();
+    }, NAVIGATION_TIMEOUT_MS);
   }
 
   function shouldHandleLink(anchor, event) {
@@ -104,6 +140,9 @@
   }, true);
 
   window.addEventListener('pageshow', hide);
+  window.addEventListener('pagehide', () => {
+    if (navigating) show();
+  });
 
   // Expose a small global API so programmatic redirects use the same transition.
   window.MFCPageLoader = { show, hide, navigate };
