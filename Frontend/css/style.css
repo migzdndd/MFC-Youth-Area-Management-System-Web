@@ -2904,7 +2904,6 @@ html.page-is-loading body {
   z-index: 100000;
   display: grid;
   place-items: center;
-  padding: 24px;
   background: #041b2b;
   isolation: isolate;
   opacity: 0;
@@ -2942,106 +2941,40 @@ html.page-is-loading body {
   pointer-events: all;
 }
 
-.page-loader__content {
-  position: relative;
-  width: min(100%, 360px);
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 18px;
-  align-items: center;
-  padding: 22px 22px 20px;
-  border: 1px solid rgba(175, 229, 255, 0.18);
-  border-radius: 10px;
-  background: rgba(7, 40, 61, 0.76);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26), inset 0 1px rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(14px);
-}
-
-.page-loader__mark {
-  position: relative;
-  display: grid;
-  width: 64px;
-  height: 64px;
-  place-items: center;
-  color: #062238;
-  border-radius: 50%;
-  background: #f7c948;
-  box-shadow: 0 0 0 7px rgba(247, 201, 72, 0.1), 0 0 32px rgba(247, 201, 72, 0.2);
-  animation: loader-breathe 2.1s ease-in-out infinite;
-}
-
-.page-loader__mark-ring {
+.spinner {
   position: absolute;
-  inset: -9px;
-  border: 1px solid rgba(247, 201, 72, 0.42);
-  border-left-color: transparent;
-  border-radius: 50%;
-  animation: loader-spin 1.6s linear infinite;
+  width: 9px;
+  height: 9px;
 }
 
-.page-loader__mark-core {
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+.spinner div {
+  position: absolute;
+  width: 50%;
+  height: 150%;
+  background: #474bff;
+  transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1%));
+  animation: spinner-fzua35 1s calc(var(--delay) * 1s) infinite ease;
 }
 
-.page-loader__copy {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
-}
+.spinner div:nth-child(1) { --delay: 0.1; --rotation: 36; --translation: 150; }
+.spinner div:nth-child(2) { --delay: 0.2; --rotation: 72; --translation: 150; }
+.spinner div:nth-child(3) { --delay: 0.3; --rotation: 108; --translation: 150; }
+.spinner div:nth-child(4) { --delay: 0.4; --rotation: 144; --translation: 150; }
+.spinner div:nth-child(5) { --delay: 0.5; --rotation: 180; --translation: 150; }
+.spinner div:nth-child(6) { --delay: 0.6; --rotation: 216; --translation: 150; }
+.spinner div:nth-child(7) { --delay: 0.7; --rotation: 252; --translation: 150; }
+.spinner div:nth-child(8) { --delay: 0.8; --rotation: 288; --translation: 150; }
+.spinner div:nth-child(9) { --delay: 0.9; --rotation: 324; --translation: 150; }
+.spinner div:nth-child(10) { --delay: 1; --rotation: 360; --translation: 150; }
 
-.page-loader__overline {
-  color: #75d5f5;
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
+@keyframes spinner-fzua35 {
+  0%, 10%, 20%, 30%, 50%, 60%, 70%, 80%, 90%, 100% {
+    transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1%));
+  }
 
-.page-loader__label {
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.page-loader__destination {
-  overflow: hidden;
-  color: rgba(235, 249, 255, 0.62);
-  font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page-loader__progress {
-  grid-column: 1 / -1;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.page-loader__progress span {
-  display: block;
-  width: 42%;
-  height: 100%;
-  border-radius: inherit;
-  background: #f7c948;
-  animation: loader-progress 1.35s ease-in-out infinite;
-}
-
-@keyframes loader-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes loader-breathe {
-  50% { transform: scale(0.94); }
-}
-
-@keyframes loader-progress {
-  0% { transform: translateX(-120%); }
-  50% { transform: translateX(145%); }
-  100% { transform: translateX(290%); }
+  50% {
+    transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1.5%));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3049,22 +2982,7 @@ html.page-is-loading body {
     transition: none;
   }
 
-  .page-loader__mark,
-  .page-loader__mark-ring,
-  .page-loader__progress span {
+  .spinner div {
     animation: none;
-  }
-}
-
-@media (max-width: 420px) {
-  .page-loader__content {
-    grid-template-columns: 52px 1fr;
-    gap: 14px;
-    padding: 18px;
-  }
-
-  .page-loader__mark {
-    width: 52px;
-    height: 52px;
   }
 }
