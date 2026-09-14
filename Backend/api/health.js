@@ -1,4 +1,4 @@
-import { backendConfig } from './_lib/env.js';
+import { backendConfig, validateSupabaseUrl } from './_lib/env.js';
 import { createSupabaseAdmin } from './_lib/supabase.js';
 import { sendJson, methodNotAllowed } from './_lib/http.js';
 
@@ -6,8 +6,9 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
 
   const config = backendConfig();
+  const urlCheck = validateSupabaseUrl(config.supabaseUrl);
   const configured = Boolean(
-    config.supabaseUrl &&
+    urlCheck.valid &&
     config.supabaseAnonKey &&
     config.supabaseServiceRoleKey
   );
@@ -29,8 +30,12 @@ export default async function handler(req, res) {
         databaseConnected = true;
       }
     } catch (error) {
-      databaseError = error?.message || 'Unable to connect to Supabase.';
+      databaseError = error?.cause?.message || error?.message || 'Unable to connect to Supabase.';
     }
+  } else if (!urlCheck.valid) {
+    databaseError = urlCheck.reason === 'missing'
+      ? 'SUPABASE_URL is missing.'
+      : 'SUPABASE_URL is invalid. Copy the Project URL directly from Supabase Connect.';
   }
 
   return sendJson(res, databaseConnected ? 200 : 503, {
@@ -39,6 +44,9 @@ export default async function handler(req, res) {
     backendPhase: '6.2-admin-registration-area-onboarding',
     configured,
     adminRegistrationConfigured: Boolean(config.adminRegistrationCode),
+    supabaseUrlConfigured: Boolean(config.supabaseUrl),
+    supabaseUrlValid: urlCheck.valid,
+    ...(urlCheck.host ? { supabaseHost: urlCheck.host } : {}),
     database: databaseConnected ? 'supabase-postgres' : 'unavailable',
     databaseConnected,
     ...(databaseError ? { databaseError } : {}),

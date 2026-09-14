@@ -110,3 +110,10 @@ A healthy response must include:
 - `"databaseConnected": true`
 
 Admin registration errors also return a safe `code` and `stage` when a backend step fails, without exposing secret keys.
+
+## Environment-file safety
+
+- `Backend/.env.local` is local-only and must never be committed, uploaded in source ZIPs, or shared.
+- Copy the Supabase Project URL directly from the Supabase **Connect** dialog into `SUPABASE_URL`.
+- Environment values are trimmed by the backend so accidental leading/trailing spaces do not cause misleading connection errors.
+- `/api/health` reports only the sanitized Supabase host, never API keys or secrets.
