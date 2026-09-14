@@ -52,3 +52,11 @@ desktop.ini
 # Supabase local files
 .supabase/
 Backend/supabase/.temp/
+# Never commit development source archives (they can accidentally contain secrets)
+Source Code*.zip
+Source-Code*.zip
+*MFC-Youth-Area-Management-System-Web*.zip
+
+# Local database dumps / credentials
+*.dump
+*.sql.gz

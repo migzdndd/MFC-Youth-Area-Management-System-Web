@@ -1,41 +1,47 @@
 # Backend connection
 
-The real backend is stored in the sibling folder:
+The repository has separate Vercel projects:
 
 ```text
-Web-Source/
+MFC-Youth-Area-Management-System-Web/
 ├── Backend/
 └── Frontend/
 ```
 
-The `Frontend/api/` files are only lightweight proxy routes. They do not contain backend business logic.
-They forward the existing public `/api/*` URLs to the separately deployed Backend project using the
-`BACKEND_URL` environment variable.
-
-Example:
+The Frontend `api/` routes are lightweight proxies. They forward `/api/*` requests to the Backend using `BACKEND_URL`.
 
 ```text
-Frontend request
-POST /api/auth/login
-        ↓
-Frontend/api/auth/login.js
-        ↓
+Browser
+   ↓
+Frontend /api/auth/login
+   ↓
 BACKEND_URL/api/auth/login
-        ↓
-Backend/api/auth/login.js
+   ↓
+Backend
+   ↓
+Neon PostgreSQL
 ```
+
+The proxy also forwards the Backend's secure `HttpOnly` authentication cookie back to the browser, so database/session secrets are not stored in browser JavaScript.
 
 ## Vercel setup
 
-1. Create/deploy a Vercel project with **Root Directory = `Backend`**.
-2. Add these Backend environment variables:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `ADMIN_REGISTRATION_CODE` (Backend only)
-3. Create/deploy the existing frontend Vercel project with **Root Directory = `Frontend`**.
-4. In the Frontend project, set:
-   - `BACKEND_URL=https://your-backend-project.vercel.app`
-5. Redeploy the Frontend project.
+### Backend project
 
-The browser can continue using `/api/...`; the Frontend proxy sends those requests to the Backend project.
+Root Directory: `Backend`
+
+Environment variables:
+
+- `DATABASE_URL` — supplied by the Neon integration
+- `ADMIN_REGISTRATION_CODE` — server-only
+- `FRONTEND_ORIGIN=https://your-frontend-domain.vercel.app` — recommended
+
+### Frontend project
+
+Root Directory: `Frontend`
+
+Environment variable:
+
+- `BACKEND_URL=https://your-backend-project.vercel.app`
+
+Redeploy both projects after changing environment variables or backend code.

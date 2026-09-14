@@ -1,6 +1,6 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Application
-// Browser-only data layer currently active. Backend Phase 6.1 lives under /api; page-by-page migration will replace db()/save().
+// Hybrid data layer: authentication, Areas, and Members are cloud-backed through Neon; remaining modules are being migrated page-by-page.
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
@@ -50,13 +50,6 @@ function accessRoleLabel(value) {
   return ACCESS_LEVELS.find(item => item.value === normalized)?.label || 'Member';
 }
 
-function inlineJsArg(value) {
-  return JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/'/g, '\\u0027');
-}
 
 function isSuperAdminRole(value) {
   return SUPER_ADMIN_ROLES.has(String(value || '').trim().toLowerCase());
@@ -92,6 +85,7 @@ function updateStoredSession(nextSession) {
 async function backendApi(path, options = {}) {
   const token = session?.accessToken || '';
   const response = await fetch(path, {
+    credentials: 'same-origin',
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -141,6 +135,28 @@ function cloudMemberToLocal(member, previous = {}) {
   };
 }
 
+function cloudChapterToLocal(chapter) {
+  return {
+    id: chapter.id,
+    areaId: chapter.area_id ?? null,
+    name: chapter.name || '',
+    isActive: chapter.is_active !== false,
+    createdAt: chapter.created_at || null,
+    updatedAt: chapter.updated_at || null,
+    cloudBacked: true
+  };
+}
+
+async function syncBackendChaptersIntoLocalDb() {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+  const payload = await backendApi('/api/chapters');
+  const cloudChapters = Array.isArray(payload?.chapters) ? payload.chapters : [];
+  const data = db();
+  data.chapters = cloudChapters.map(cloudChapterToLocal);
+  save(data);
+  return true;
+}
+
 async function syncBackendMembersIntoLocalDb() {
   if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
 
@@ -164,6 +180,10 @@ async function syncBackendMembersIntoLocalDb() {
   });
 
   data.members = currentMembers;
+  const chaptersById = new Map((data.chapters || []).map(chapter => [String(chapter.id), chapter.name]));
+  data.members.forEach(member => {
+    member.chapterName = member.chapterId ? (chaptersById.get(String(member.chapterId)) || '') : '';
+  });
   save(data);
   return true;
 }
@@ -218,9 +238,7 @@ function canManageOwnChapterMember(data, member) {
 
 // =========================================================
 // FRONTEND ACCOUNT PROVISIONING
-// Member records are the source of truth. Adding a member creates a linked
-// linked account with a one-time temporary password. In production this must be
-// moved to the backend and passwords must be hashed, never stored in plaintext.
+// Member records are the source of truth. Cloud-backed member creation provisions a secure server-side account with a one-time temporary password.
 // =========================================================
 
 function getAuthUsers() {
@@ -626,6 +644,67 @@ function esc(value = '') {
   );
 }
 
+function dataActionId(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : text;
+}
+
+function installCspSafeActionDelegation() {
+  if (document.documentElement.dataset.mfcActionDelegation === '1') return;
+  document.documentElement.dataset.mfcActionDelegation = '1';
+
+  document.addEventListener('click', async event => {
+    const trigger = event.target.closest('[data-mfc-action]');
+    if (!trigger) return;
+
+    const action = trigger.dataset.mfcAction;
+    if (!action) return;
+
+    event.preventDefault();
+
+    const memberId = dataActionId(trigger.dataset.memberId);
+    const chapterId = dataActionId(trigger.dataset.chapterId);
+    const reportId = dataActionId(trigger.dataset.reportId);
+    const eventId = dataActionId(trigger.dataset.eventId);
+    const participantId = dataActionId(trigger.dataset.participantId);
+    const contributionId = dataActionId(trigger.dataset.contributionId);
+
+    try {
+      switch (action) {
+        case 'view-member': return window.viewMember?.(memberId);
+        case 'edit-member': return window.editMember?.(memberId);
+        case 'service-member': return window.serviceMember?.(memberId);
+        case 'gig-member': return window.gigMember?.(memberId);
+        case 'manage-member-login': return await window.manageMemberLogin?.(memberId);
+        case 'delete-member': return await window.deleteMember?.(memberId);
+        case 'delete-gig-contribution': return window.deleteGigContribution?.(memberId, contributionId);
+        case 'view-chapter': return window.viewChapter?.(chapterId);
+        case 'add-members-to-chapter': return window.addMembersToChapter?.(chapterId);
+        case 'edit-chapter': return window.editChapter?.(chapterId);
+        case 'delete-chapter': return await window.deleteChapter?.(chapterId);
+        case 'view-service': return window.viewService?.(trigger.dataset.service || '');
+        case 'report-modal': return window.reportModal?.(reportId);
+        case 'delete-report': return window.deleteReport?.(reportId);
+        case 'view-event': return window.viewEvent?.(eventId);
+        case 'event-modal': return window.eventModal?.(eventId);
+        case 'delete-event': return window.deleteEvent?.(eventId);
+        case 'participant-modal': return window.participantModal?.(eventId, participantId);
+        case 'delete-participant': return window.deleteParticipant?.(eventId, participantId);
+        default:
+          console.warn('Unknown UI action:', action);
+      }
+    } catch (error) {
+      console.error('UI action failed:', action, error);
+      if (typeof toast === 'function') {
+        toast('That action could not be completed. Please try again.', 'error');
+      }
+    }
+  });
+}
+
+installCspSafeActionDelegation();
+
 function money(value) {
   return Number(value || 0).toLocaleString('en-PH', {
     style: 'currency',
@@ -992,7 +1071,7 @@ window.manageMemberLogin = async id => {
   }
 
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
-    if (!confirm(`Reset the Supabase login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`)) return;
+    if (!confirm(`Reset the secure login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`)) return;
 
     try {
       const payload = await backendApi('/api/members/login', {
@@ -1205,7 +1284,7 @@ if (logoutBtn) {
       deleteButton.className = 'sidebar-account-action delete-account-button';
       deleteButton.textContent = 'Delete Account';
       deleteButton.onclick = async () => {
-        const warning = 'Permanently delete your account? This removes your Supabase login, profile, and linked member record. This cannot be undone.';
+        const warning = 'Permanently delete your account? This removes your login, profile, active sessions, and linked member record from the Neon database. This cannot be undone.';
         if (!window.confirm(warning)) return;
 
         const typed = window.prompt('Type DELETE to permanently delete your account.');
@@ -1241,10 +1320,12 @@ if (logoutBtn) {
     }
   }
 
-  logoutBtn.onclick = () => {
+  logoutBtn.onclick = async () => {
+    if (session?.backendAuth && !session?.demo) {
+      try { await backendApi('/api/auth/logout', { method: 'POST', body: '{}' }); } catch { /* local cleanup still proceeds */ }
+    }
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
-
     navigateWithLoader('/');
   };
 }
@@ -1910,7 +1991,7 @@ function renderChapterServantMembers(data) {
                   <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
                   <td>${esc(member.contact || '—')}</td>
                   <td class="actions-cell">
-                    <button class="btn" onclick='viewMember(${inlineJsArg(member.id)})'>View</button>
+                    <button class="btn" type="button" data-mfc-action="view-member" data-member-id="${esc(member.id)}">View</button>
                   </td>
                 </tr>
               `).join('')}
@@ -2160,42 +2241,42 @@ function renderMembers() {
                         >
                           <button
                             class="btn"
-                            onclick='viewMember(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="view-member" data-member-id="${esc(member.id)}"
                           >
                             View
                           </button>
 
                           <button
                             class="btn"
-                            onclick='editMember(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="edit-member" data-member-id="${esc(member.id)}"
                           >
                             Edit
                           </button>
 
                           <button
                             class="btn"
-                            onclick='serviceMember(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="service-member" data-member-id="${esc(member.id)}"
                           >
                             Services
                           </button>
 
                           <button
                             class="btn"
-                            onclick='gigMember(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="gig-member" data-member-id="${esc(member.id)}"
                           >
                             GIG
                           </button>
 
                           <button
                             class="btn"
-                            onclick='manageMemberLogin(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="manage-member-login" data-member-id="${esc(member.id)}"
                           >
                             Login
                           </button>
 
                           <button
                             class="btn red"
-                            onclick='deleteMember(${inlineJsArg(member.id)})'
+                            type="button" data-mfc-action="delete-member" data-member-id="${esc(member.id)}"
                           >
                             Delete
                           </button>
@@ -2556,6 +2637,7 @@ function memberModal(id = null) {
               id="mAccessLevel"
             >
               ${ACCESS_LEVELS
+                .filter(level => level.value !== 'couple_coordinator')
                 .map(level => `
                   <option
                     value="${level.value}"
@@ -2910,7 +2992,7 @@ function memberModal(id = null) {
             updateStoredSession(session);
           }
         } catch (error) {
-          toast(error?.message || 'Unable to save this member to Supabase.', 'error');
+          toast(error?.message || 'Unable to save this member to the cloud database.', 'error');
           return;
         }
       } else if (id) {
@@ -2965,7 +3047,7 @@ window.deleteMember = async id => {
     try {
       await backendApi(`/api/members?id=${encodeURIComponent(member.id)}`, { method: 'DELETE' });
     } catch (error) {
-      toast(error?.message || 'Unable to delete this member from Supabase.', 'error');
+      toast(error?.message || 'Unable to delete this member from the cloud database.', 'error');
       return;
     }
   }
@@ -3126,7 +3208,7 @@ window.gigMember = id => {
                     <button
                       class="mini-delete"
                       type="button"
-                      onclick='deleteGigContribution(${inlineJsArg(id)}, ${inlineJsArg(row.id)})'
+                      data-mfc-action="delete-gig-contribution" data-member-id="${esc(id)}" data-contribution-id="${esc(row.id)}"
                       aria-label="Delete contribution"
                     >
                       ×
@@ -3442,8 +3524,8 @@ function renderChapterServantDashboard(data) {
                         <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
                         <td>${esc(money(total))}</td>
                         <td class="actions-cell">
-                          <button class="btn" onclick='viewMember(${inlineJsArg(member.id)})'>View</button>
-                          <button class="btn" onclick='gigMember(${inlineJsArg(member.id)})'>GIG</button>
+                          <button class="btn" type="button" data-mfc-action="view-member" data-member-id="${esc(member.id)}">View</button>
+                          <button class="btn" type="button" data-mfc-action="gig-member" data-member-id="${esc(member.id)}">GIG</button>
                         </td>
                       </tr>
                     `;
@@ -3583,8 +3665,8 @@ function renderChapters() {
             const members =
               data.members.filter(
                 member =>
-                  member.chapterId ===
-                  chapter.id
+                  String(member.chapterId) ===
+                  String(chapter.id)
               );
 
             return `
@@ -3616,28 +3698,28 @@ function renderChapters() {
                           >
                             <button
                               class="btn"
-                              onclick="viewChapter(${chapter.id})"
+                              type="button" data-mfc-action="view-chapter" data-chapter-id="${esc(chapter.id)}"
                             >
                               View Members
                             </button>
 
                             <button
                               class="btn"
-                              onclick="window.addMembersToChapter(${chapter.id})"
+                              type="button" data-mfc-action="add-members-to-chapter" data-chapter-id="${esc(chapter.id)}"
                             >
                               + Add Members
                             </button>
 
                             <button
                               class="btn"
-                              onclick="editChapter(${chapter.id})"
+                              type="button" data-mfc-action="edit-chapter" data-chapter-id="${esc(chapter.id)}"
                             >
                               Rename
                             </button>
 
                             <button
                               class="btn red"
-                              onclick="deleteChapter(${chapter.id})"
+                              type="button" data-mfc-action="delete-chapter" data-chapter-id="${esc(chapter.id)}"
                             >
                               Delete
                             </button>
@@ -3691,112 +3773,83 @@ function chapterModal(id = null) {
   if (denyUnlessSuperAdmin()) return;
 
   const data = db();
-
   const chapter = id
-    ? data.chapters.find(
-      item => String(item.id) === String(id)
-    )
+    ? data.chapters.find(item => String(item.id) === String(id))
     : {};
 
   openModal(
-    id
-      ? 'Rename Chapter'
-      : 'Add Chapter',
-
-    field(
-      'Chapter Name',
-      'cName',
-      'text',
-      chapter?.name || '',
-      'required maxlength="100"'
-    ),
-
-    close => {
-      const name =
-        document
-          .getElementById('cName')
-          .value.trim();
-
+    id ? 'Rename Chapter' : 'Add Chapter',
+    field('Chapter Name', 'cName', 'text', chapter?.name || '', 'required maxlength="100"'),
+    async close => {
+      const name = document.getElementById('cName').value.trim();
       if (!name) {
-        toast(
-          'Chapter name is required.',
-          'error'
-        );
-
+        toast('Chapter name is required.', 'error');
         return;
       }
 
-      if (
-        data.chapters.some(
-          item =>
-            item.id !== id &&
-            item.name.toLowerCase() ===
-            name.toLowerCase()
-        )
-      ) {
-        toast(
-          'That chapter already exists.',
-          'error'
-        );
-
+      if (data.chapters.some(item => String(item.id) !== String(id) && item.name.toLowerCase() === name.toLowerCase())) {
+        toast('That chapter already exists.', 'error');
         return;
       }
 
+      const oldName = chapter?.name || '';
+
+      if (session?.backendAuth && !session?.demo) {
+        try {
+          const payload = await backendApi('/api/chapters', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify(id ? { id, name } : { name })
+          });
+          const saved = cloudChapterToLocal(payload.chapter);
+          if (id) {
+            const index = data.chapters.findIndex(item => String(item.id) === String(id));
+            if (index >= 0) data.chapters[index] = saved;
+          } else {
+            data.chapters.push(saved);
+          }
+
+          if (id && oldName !== name) {
+            data.members
+              .filter(member => String(member.chapterId) === String(id))
+              .forEach(member => { member.chapterName = name; });
+            data.reports
+              .filter(report => report.chapter === oldName)
+              .forEach(report => { report.chapter = name; });
+            data.participants
+              .filter(participant => participant.chapter === oldName)
+              .forEach(participant => { participant.chapter = name; });
+          }
+
+          save(data);
+          close();
+          toast(id ? 'Chapter renamed.' : 'Chapter added.');
+          renderChapters();
+          return;
+        } catch (error) {
+          toast(error?.message || 'Unable to save the chapter.', 'error');
+          return;
+        }
+      }
+
+      // Demo/offline prototype fallback.
       if (id) {
-        const oldName =
-          chapter.name;
-
-        chapter.name =
-          name;
-
+        chapter.name = name;
         data.members
-          .filter(
-            member =>
-              member.chapterId === id
-          )
-          .forEach(member => {
-            member.chapterName =
-              name;
-          });
-
+          .filter(member => String(member.chapterId) === String(id))
+          .forEach(member => { member.chapterName = name; });
         data.reports
-          .filter(
-            report =>
-              report.chapter ===
-              oldName
-          )
-          .forEach(report => {
-            report.chapter =
-              name;
-          });
-
+          .filter(report => report.chapter === oldName)
+          .forEach(report => { report.chapter = name; });
         data.participants
-          .filter(
-            participant =>
-              participant.chapter ===
-              oldName
-          )
-          .forEach(participant => {
-            participant.chapter =
-              name;
-          });
+          .filter(participant => participant.chapter === oldName)
+          .forEach(participant => { participant.chapter = name; });
       } else {
-        data.chapters.push({
-          id: uid(),
-          name
-        });
+        data.chapters.push({ id: uid(), name });
       }
 
       save(data);
-
       close();
-
-      toast(
-        id
-          ? 'Chapter renamed.'
-          : 'Chapter added.'
-      );
-
+      toast(id ? 'Chapter renamed.' : 'Chapter added.');
       renderChapters();
     }
   );
@@ -3805,43 +3858,30 @@ function chapterModal(id = null) {
 window.editChapter =
   chapterModal;
 
-window.deleteChapter = id => {
+window.deleteChapter = async id => {
   if (denyUnlessSuperAdmin()) return;
 
   const data = db();
-
-  if (
-    data.members.some(
-      member =>
-        member.chapterId === id
-    )
-  ) {
-    alert(
-      'Move or remove members from this chapter before deleting it.'
-    );
-
+  if (data.members.some(member => String(member.chapterId) === String(id))) {
+    alert('Move or remove members from this chapter before deleting it.');
     return;
   }
 
-  if (
-    confirm(
-      'Delete this chapter?'
-    )
-  ) {
-    data.chapters =
-      data.chapters.filter(
-        chapter =>
-          chapter.id !== id
-      );
+  if (!confirm('Delete this chapter?')) return;
 
-    save(data);
-
-    toast(
-      'Chapter deleted.'
-    );
-
-    renderChapters();
+  if (session?.backendAuth && !session?.demo) {
+    try {
+      await backendApi(`/api/chapters?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (error) {
+      toast(error?.message || 'Unable to delete the chapter.', 'error');
+      return;
+    }
   }
+
+  data.chapters = data.chapters.filter(chapter => String(chapter.id) !== String(id));
+  save(data);
+  toast('Chapter deleted.');
+  renderChapters();
 };
 
 window.viewChapter = id => {
@@ -3865,7 +3905,7 @@ window.viewChapter = id => {
   const members =
     data.members.filter(
       member =>
-        member.chapterId === id
+        String(member.chapterId) === String(id)
     );
 
   openModal(
@@ -4012,25 +4052,38 @@ window.addMembersToChapter = id => {
         No unassigned members match your search.
       </p>
     `,
-    close => {
+    async close => {
       const selectedIds = [
         ...document.querySelectorAll(
           'input[name="chapterMember"]:checked'
         )
-      ]
-        .map(input => Number(input.value))
-        .filter(Number.isFinite);
+      ].map(input => String(input.value)).filter(Boolean);
 
       if (!selectedIds.length) {
         toast('Select at least one member.', 'error');
         return;
       }
 
-      let assignedCount = 0;
+      let successfullyAssigned = selectedIds;
+      if (session?.backendAuth && !session?.demo) {
+        try {
+          const payload = await backendApi('/api/chapters/assign-members', {
+            method: 'POST',
+            body: JSON.stringify({ chapterId: chapter.id, memberIds: selectedIds })
+          });
+          successfullyAssigned = Array.isArray(payload?.assignedMemberIds)
+            ? payload.assignedMemberIds.map(String)
+            : [];
+        } catch (error) {
+          toast(error?.message || 'Unable to assign the selected members.', 'error');
+          return;
+        }
+      }
 
+      let assignedCount = 0;
       data.members.forEach(member => {
         if (
-          selectedIds.includes(member.id) &&
+          successfullyAssigned.includes(String(member.id)) &&
           isUnassignedMember(member)
         ) {
           member.chapterId = chapter.id;
@@ -4047,11 +4100,7 @@ window.addMembersToChapter = id => {
 
       save(data);
       close();
-
-      toast(
-        `${assignedCount} member${assignedCount === 1 ? '' : 's'} added to ${chapter.name} Chapter.`
-      );
-
+      toast(`${assignedCount} member${assignedCount === 1 ? '' : 's'} added to ${chapter.name} Chapter.`);
       renderChapters();
     },
     'Add Selected Members'
@@ -4130,12 +4179,9 @@ function renderServices() {
 
               <button
                 class="btn"
-                onclick="viewService('${esc(
-            service
-          ).replace(
-            /'/g,
-            "\\'"
-          )}')"
+                type="button"
+                data-mfc-action="view-service"
+                data-service="${esc(service)}"
               >
                 View Members
               </button>
@@ -5098,14 +5144,14 @@ function renderReports() {
                         >
                           <button
                             class="btn"
-                            onclick="reportModal(${report.id})"
+                            type="button" data-mfc-action="report-modal" data-report-id="${esc(report.id)}"
                           >
                             Edit
                           </button>
 
                           <button
                             class="btn red"
-                            onclick="deleteReport(${report.id})"
+                            type="button" data-mfc-action="delete-report" data-report-id="${esc(report.id)}"
                           >
                             Delete
                           </button>
@@ -7051,7 +7097,7 @@ function renderEvents() {
                           >
                             <button
                               class="btn"
-                              onclick="viewEvent(${event.id})"
+                              type="button" data-mfc-action="view-event" data-event-id="${esc(event.id)}"
                             >
                               View
                             </button>
@@ -7060,14 +7106,14 @@ function renderEvents() {
                               ? `
                                 <button
                                   class="btn"
-                                  onclick="eventModal(${event.id})"
+                                  type="button" data-mfc-action="event-modal" data-event-id="${esc(event.id)}"
                                 >
                                   Edit
                                 </button>
 
                                 <button
                                   class="btn red"
-                                  onclick="deleteEvent(${event.id})"
+                                  type="button" data-mfc-action="delete-event" data-event-id="${esc(event.id)}"
                                 >
                                   Delete
                                 </button>
@@ -7502,14 +7548,14 @@ window.viewEvent = id => {
                           ? `
                             <button
                               class="btn"
-                              onclick="participantModal(${id}, ${participant.id})"
+                              type="button" data-mfc-action="participant-modal" data-event-id="${esc(id)}" data-participant-id="${esc(participant.id)}"
                             >
                               Edit
                             </button>
 
                             <button
                               class="btn red"
-                              onclick="deleteParticipant(${id}, ${participant.id})"
+                              type="button" data-mfc-action="delete-participant" data-event-id="${esc(id)}" data-participant-id="${esc(participant.id)}"
                             >
                               Delete
                             </button>
@@ -7641,7 +7687,7 @@ window.viewEvent = id => {
           <button
             class="btn blue"
             type="button"
-            onclick="participantModal(${id})"
+            data-mfc-action="participant-modal" data-event-id="${esc(id)}"
           >
             + Register Participant
           </button>
@@ -8123,7 +8169,7 @@ async function showAreaOnboarding() {
               <span>Area Name</span>
               <input class="text-input" id="newAreaName" type="text" maxlength="120" placeholder="e.g. MFC Youth NCR East">
             </label>
-            <p class="field-help">The backend will create the Area in Supabase and connect this account to it. Standard service records will also be prepared for the new Area.</p>
+            <p class="field-help">The backend will create the Area in Neon PostgreSQL and connect this account to it. Standard service records will also be prepared for the new Area.</p>
             <div class="area-create-actions">
               <button class="btn" id="cancelCreateAreaButton" type="button">Cancel</button>
               <button class="btn blue" id="createAreaButton" type="button">Create Area-Based Account</button>
@@ -8271,17 +8317,48 @@ const renderers = {
 };
 
 async function bootstrapApplication() {
-  try {
-    await syncBackendMembersIntoLocalDb();
-  } catch (error) {
-    console.warn('Cloud member sync skipped:', error?.message || error);
+  // A browser-side session object is not proof of authentication. For every
+  // real backend session, verify the HttpOnly server session before rendering
+  // management data so an expired/deleted account cannot keep using cached UI.
+  if (session?.backendAuth && !session?.demo) {
+    try {
+      const payload = await backendApi('/api/auth/me');
+      Object.assign(session, {
+        userId: payload?.user?.id ?? session.userId,
+        memberId: payload?.user?.memberId ?? session.memberId,
+        email: payload?.user?.email || session.email,
+        name: payload?.user?.name || session.name,
+        role: normalizeAccessRole(payload?.user?.role || session.role),
+        areaId: payload?.user?.areaId ?? null,
+        chapterId: payload?.user?.chapterId ?? null,
+        mustChangePassword: payload?.user?.mustChangePassword === true,
+        needsAreaSetup: payload?.user?.role !== 'member' && !payload?.user?.areaId
+      });
+      updateStoredSession(session);
+      if (session.mustChangePassword) {
+        navigateWithLoader('/change-password', true);
+        return;
+      }
+      if (session.role === 'member') {
+        navigateWithLoader('/member', true);
+        return;
+      }
+    } catch (error) {
+      localStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
+      navigateWithLoader('/', true);
+      return;
+    }
   }
 
-  (
-    renderers[page] ||
-    renderDashboard
-  )();
+  try {
+    await syncBackendChaptersIntoLocalDb();
+    await syncBackendMembersIntoLocalDb();
+  } catch (error) {
+    console.warn('Cloud data sync skipped:', error?.message || error);
+  }
 
+  (renderers[page] || renderDashboard)();
   showAreaOnboarding();
 }
 

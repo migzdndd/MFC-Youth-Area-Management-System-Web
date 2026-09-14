@@ -1,128 +1,97 @@
-# Backend Phase 6.2 — Admin Registration & Area Onboarding
+# Backend Phase 0.7 — Neon PostgreSQL + Secure Server Authentication
 
-This phase starts the real backend without breaking the current localStorage prototype.
+The backend no longer depends on Supabase. The cloud database is Neon PostgreSQL provisioned through Vercel, and authentication is handled server-side by the Backend using salted `scrypt` password hashes and opaque database-backed sessions.
 
 ## Architecture
 
 ```text
-Web Frontend (Vercel)
-        |
-        v
-Frontend /api/* proxy routes
-        |
-        v
-Backend/api/* backend implementation
-        |
-        +--> Supabase Auth
-        |
-        +--> PostgreSQL (Supabase)
+Browser
+   |
+   v
+Frontend (Vercel)
+   |
+   v
+Frontend /api/* proxy
+   |
+   v
+Backend (Vercel)
+   |
+   v
+Neon PostgreSQL
 ```
 
-The future WinForms desktop app should use the same API instead of talking directly to the cloud database. That keeps RBAC and Area/Chapter authorization in one place.
+The browser never receives `DATABASE_URL` and never connects directly to PostgreSQL.
 
+## Required Backend environment variables
 
-## Project layout
+- `DATABASE_URL` — automatically supplied by the Vercel/Neon integration.
+- `ADMIN_REGISTRATION_CODE` — server-only Servant Leader registration code.
+- `FRONTEND_ORIGIN` — recommended production Frontend origin for origin validation.
+- `SESSION_HOURS` — optional; defaults to 12.
+- `REMEMBER_SESSION_DAYS` — optional; defaults to 30.
 
-The backend and frontend are now separated as sibling projects in the repository:
+Never commit real environment files or connection strings.
+
+## Database setup
+
+For the Neon database that already has the 10 MFC Youth application tables, run:
 
 ```text
-Web-Source/
-├── Backend/
-│   ├── api/          # Real server-side implementation
-│   ├── supabase/     # PostgreSQL schema and seed SQL
-│   ├── .env.example
-│   └── README.md
-└── Frontend/
-    ├── api/          # Lightweight proxy routes only
-    ├── css/
-    ├── js/
-    └── *.html
+Backend/database/002_existing_schema_neon_auth_migration.sql
 ```
 
-The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). Each Frontend `api/` route proxies to the separately deployed Backend through `BACKEND_URL`. Backend business logic remains only in `Backend/api/`.
+For a completely fresh Neon database, run:
 
-## What is included
+```text
+Backend/database/001_neon_schema.sql
+```
 
-- Supabase/PostgreSQL schema for Areas, Chapters, Members, Profiles, Services, Events, Participants, Activity Reports and GIG.
-- Server-only Supabase service-role client.
+`003_optional_seed.sql` is optional and only pre-creates MFC Youth NCR Central and its standard services.
+
+## Authentication/security model
+
+- Passwords are never stored as plaintext.
+- Passwords are hashed server-side with Node.js `scrypt` and a random salt.
+- Sessions use cryptographically random opaque tokens.
+- Only SHA-256 session-token hashes are stored in PostgreSQL.
+- The browser receives the session as `Secure`, `HttpOnly`, `SameSite=Lax` cookie through the Frontend API proxy.
+- Login lockout activates after repeated invalid passwords.
+- Password changes invalidate other active sessions.
+- SQL uses parameterized PostgreSQL queries through `@neondatabase/serverless`.
+- Backend errors are sanitized in production.
+- Request size validation and optional origin validation are enabled.
+- Vercel security headers enable HSTS and common browser protections.
+- The Frontend uses a strict Content Security Policy without inline JavaScript event handlers; dynamic actions use delegated event listeners.
+
+## Current cloud-backed endpoints
+
 - `GET /api/health`
 - `POST /api/auth/login`
+- `POST /api/auth/logout`
 - `POST /api/auth/admin-register`
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
+- `DELETE /api/auth/account`
 - `GET /api/areas`
 - `POST /api/areas`
 - `POST /api/areas/select`
-- `GET /api/auth/me`
-- `POST /api/auth/change-password`
 - `GET /api/members`
 - `POST /api/members`
-- Member creation automatically provisions a Supabase Auth account and returns a temporary password once.
-- Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
-- Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
-- RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
+- `PATCH /api/members`
+- `DELETE /api/members`
+- `POST /api/members/login`
+- `GET /api/chapters`
+- `POST /api/chapters`
+- `PATCH /api/chapters`
+- `DELETE /api/chapters`
+- `POST /api/chapters/assign-members`
 
-## Setup
+Services, Events, Activity Reports, GIG and dashboard analytics still have frontend/local prototype logic and should be migrated to the same backend in the next phases.
 
-1. Create a Supabase project.
-2. Open Supabase SQL Editor and run `Backend/supabase/001_initial_schema.sql`.
-3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the initial Area name/code.
-4. In Vercel Project Settings -> Environment Variables, add:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration password)
-5. Redeploy.
-6. Visit `/api/health`. It should report `configured: true`.
+## Role behavior
 
-## First management / Servant Leader account
-
-Use the **First-Time Access** page in the Frontend and the **Register an Admin Account** card. The backend verifies `ADMIN_REGISTRATION_CODE`, creates a Supabase Auth user + `profiles` record, signs the new user in, and requires Area selection before normal management access.
-
-If the user's Area already exists, choose it. If not, **Create Area-Based Account** creates a row in `public.areas`, seeds the standard Services for that Area, and links the new profile to it.
-
-The registration code must remain only in `Backend/.env.local` and Vercel Backend Environment Variables. Never hardcode it in Frontend files.
-
-## Migration strategy
-
-Do not switch every page at once. Recommended order:
-
-1. Backend foundation (this phase).
-2. Real login/session + first admin bootstrap.
-3. Members / Chapters / Services.
-4. Events / Event Participants.
-5. Activity Reports / GIG.
-6. Dashboard / Analytics queries.
-7. One-time localStorage data importer.
-8. Remove production localStorage writes.
-9. Add desktop sync endpoints.
-
-## Security rule
-
-Never put `SUPABASE_SERVICE_ROLE_KEY` in HTML or browser JavaScript. It belongs only in Vercel Environment Variables and server-side functions in `Backend/api`.
-
-
-## Registration diagnostics
-
-`GET /api/health` now performs a real Supabase database request instead of only checking whether environment variables are non-empty.
-
-A healthy response must include:
-
-- `"ok": true`
-- `"databaseConnected": true`
-
-Admin registration errors also return a safe `code` and `stage` when a backend step fails, without exposing secret keys.
-
-## Environment-file safety
-
-- `Backend/.env.local` is local-only and must never be committed, uploaded in source ZIPs, or shared.
-- Copy the Supabase Project URL directly from the Supabase **Connect** dialog into `SUPABASE_URL`.
-- Environment values are trimmed by the backend so accidental leading/trailing spaces do not cause misleading connection errors.
-- `/api/health` reports only the sanitized Supabase host, never API keys or secrets.
-
-## Leadership account ↔ member linking
-
-Servant Leader registration creates the Supabase Auth user and `public.profiles` row first.
-Because `public.members.area_id` is required, the corresponding `public.members` row is
-created (or an existing same-email member is linked) when the leader selects or creates
-their Area. `GET /api/auth/me` also repairs older leadership profiles that already have
-an Area but still have `member_id = NULL`.
-
+- Couple Coordinator/s: management account only; intentionally not added to the Members roster.
+- Area Servant: management account + Members record after Area onboarding.
+- LIT Servant: management account + Members record after Area onboarding.
+- Chapter Servant: chapter-scoped management account + Members record after Area onboarding.
+- Member: Members record + login account provisioned by leadership.

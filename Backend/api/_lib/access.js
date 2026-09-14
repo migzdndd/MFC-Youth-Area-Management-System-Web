@@ -1,5 +1,4 @@
-import { createSupabaseAdmin } from './supabase.js';
-import { readBearerToken } from './http.js';
+import { loadSession } from './auth-session.js';
 
 export const SUPER_ADMIN_ROLES = new Set([
   'couple_coordinator',
@@ -16,36 +15,25 @@ export function isChapterServantRole(role) {
 }
 
 export async function requireAuthenticatedProfile(req) {
-  const token = readBearerToken(req);
-  if (!token) {
-    const error = new Error('Authentication required.');
-    error.statusCode = 401;
-    error.code = 'AUTH_REQUIRED';
-    throw error;
-  }
-
-  const supabase = createSupabaseAdmin();
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
-  if (userError || !userData?.user) {
+  const session = await loadSession(req);
+  if (!session) {
     const error = new Error('Session is invalid or expired.');
     error.statusCode = 401;
     error.code = 'INVALID_SESSION';
     throw error;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userData.user.id)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  if (!profile || profile.is_active === false) {
-    const error = new Error('This account is not active.');
-    error.statusCode = 403;
-    error.code = 'ACCOUNT_INACTIVE';
-    throw error;
-  }
-
-  return { supabase, user: userData.user, profile, token };
+  return {
+    account: session.account,
+    user: {
+      id: session.account.id,
+      email: session.account.email,
+      user_metadata: {
+        display_name: session.account.display_name
+      }
+    },
+    profile: session.profile,
+    tokenHash: session.tokenHash,
+    sessionId: session.sessionId
+  };
 }
