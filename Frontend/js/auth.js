@@ -154,6 +154,11 @@ function updateSession(session) {
   }
 }
 
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
 function destinationFor(session) {
   if (session?.mustChangePassword) return '/change-password';
   if (session?.role === 'member') return '/member';
@@ -286,6 +291,14 @@ if (loginForm) {
 }
 
 // ---------------- CHANGE PASSWORD ----------------
+const backToLoginButton = document.getElementById('backToLoginButton');
+if (backToLoginButton) {
+  backToLoginButton.addEventListener('click', () => {
+    clearSession();
+    location.href = '/index.html';
+  });
+}
+
 const forcePasswordForm = document.getElementById('forcePasswordForm');
 if (forcePasswordForm) {
   const session = getSession();
@@ -297,7 +310,7 @@ if (forcePasswordForm) {
     location.replace('/');
   } else if (session.demo) {
     showMessage('passwordMessage', 'The built-in demo administrator password cannot be changed from this prototype.', 'error');
-    forcePasswordForm.querySelectorAll('input,button').forEach(el => { el.disabled = true; });
+    forcePasswordForm.querySelectorAll('input, button[type="submit"]').forEach(el => { el.disabled = true; });
   } else {
     if (accountEmail) accountEmail.textContent = session.email;
     if (session.mustChangePassword) {
