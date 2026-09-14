@@ -9,6 +9,24 @@ const USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
 
+const ACCESS_ROLE_VALUES = new Set([
+  'couple_coordinator',
+  'area_servant',
+  'lit_servant',
+  'chapter_servant',
+  'member'
+]);
+
+function normalizeAccessRole(value) {
+  const role = String(value || 'member').trim().toLowerCase();
+  if (role === 'area_admin') return 'area_servant';
+  return ACCESS_ROLE_VALUES.has(role) ? role : 'member';
+}
+
+function roleForMember(member) {
+  return normalizeAccessRole(member?.accessLevel || 'member');
+}
+
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
@@ -26,35 +44,85 @@ function getUsers() {
   const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
   if (!Array.isArray(users)) return [];
 
-  // Best-effort migration for accounts created by the old public sign-up flow.
-  // If an old account matches exactly one member by email, convert it to a
-  // member account. Unlinked legacy accounts are intentionally not granted
-  // management access.
   const members = getMembers();
   let changed = false;
-  const normalized = users.map(raw => {
-    const user = { ...raw, email: normalizeEmail(raw.email) };
 
-    if (!user.role) {
+  const normalized = users.map(raw => {
+    const user = {
+      ...raw,
+      email: normalizeEmail(raw.email)
+    };
+
+    let linkedMember = null;
+
+    if (
+      user.memberId !== null &&
+      user.memberId !== undefined
+    ) {
+      linkedMember = members.find(
+        member => String(member.id) === String(user.memberId)
+      ) || null;
+    }
+
+    if (!linkedMember && user.email) {
       const matches = members.filter(
-        member => normalizeEmail(member.email) && normalizeEmail(member.email) === user.email
+        member =>
+          normalizeEmail(member.email) &&
+          normalizeEmail(member.email) === user.email
       );
 
       if (matches.length === 1) {
-        user.role = 'member';
-        user.memberId = matches[0].id;
-        user.isActive = String(matches[0].status || 'Active') !== 'Inactive';
-        if (user.mustChangePassword === undefined) user.mustChangePassword = true;
+        linkedMember = matches[0];
+      }
+    }
+
+    if (!user.role) {
+      if (linkedMember) {
+        user.role = roleForMember(linkedMember);
+        user.memberId = linkedMember.id;
+        user.mustChangePassword = user.mustChangePassword !== false;
       } else {
         user.role = 'legacy';
       }
       changed = true;
     }
 
-    if (user.role === 'member' && user.isActive === undefined) {
-      const member = members.find(item => String(item.id) === String(user.memberId));
-      user.isActive = member ? String(member.status || 'Active') !== 'Inactive' : true;
-      changed = true;
+    if (linkedMember && user.role !== 'legacy') {
+      const desiredRole = roleForMember(linkedMember);
+      const desiredChapterId = linkedMember.chapterId ?? null;
+      const desiredActive = String(linkedMember.status || 'Active') !== 'Inactive';
+      const desiredName = [
+        linkedMember.firstName,
+        linkedMember.middleName,
+        linkedMember.lastName
+      ].filter(Boolean).join(' ');
+
+      if (user.role !== desiredRole) {
+        user.role = desiredRole;
+        changed = true;
+      }
+
+      if (String(user.memberId) !== String(linkedMember.id)) {
+        user.memberId = linkedMember.id;
+        changed = true;
+      }
+
+      if (String(user.chapterId ?? '') !== String(desiredChapterId ?? '')) {
+        user.chapterId = desiredChapterId;
+        changed = true;
+      }
+
+      if (user.isActive !== desiredActive) {
+        user.isActive = desiredActive;
+        changed = true;
+      }
+
+      if (desiredName && user.name !== desiredName) {
+        user.name = desiredName;
+        user.firstName = linkedMember.firstName || '';
+        user.lastName = linkedMember.lastName || '';
+        changed = true;
+      }
     }
 
     return user;
@@ -89,6 +157,7 @@ function updateSession(session) {
 function destinationFor(session) {
   if (session?.mustChangePassword) return '/change-password';
   if (session?.role === 'member') return '/member';
+  if (session?.role === 'chapter_servant') return '/chapters';
   return '/dashboard';
 }
 
@@ -167,8 +236,8 @@ if (loginForm) {
     if (demoOk) {
       const session = {
         email,
-        name: 'Area Administrator',
-        role: 'area_admin',
+        name: 'Area Servant (Demo)',
+        role: 'area_servant',
         loginAt: new Date().toISOString(),
         mustChangePassword: false,
         demo: true
@@ -189,13 +258,13 @@ if (loginForm) {
 
     if (user.role === 'legacy') {
       setButtonBusy(submit, false);
-      showMessage('loginMessage', 'This older account is not linked to a member record. Ask an Area Admin to add or link you from the Members page.');
+      showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
       return;
     }
 
     if (user.isActive === false) {
       setButtonBusy(submit, false);
-      showMessage('loginMessage', 'This member account is currently inactive. Contact your Area Admin.');
+      showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
       return;
     }
 
@@ -204,7 +273,8 @@ if (loginForm) {
       memberId: user.memberId ?? null,
       email: user.email,
       name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
-      role: user.role || 'member',
+      role: normalizeAccessRole(user.role || 'member'),
+      chapterId: user.chapterId ?? null,
       loginAt: new Date().toISOString(),
       mustChangePassword: user.mustChangePassword === true,
       demo: false

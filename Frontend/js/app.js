@@ -6,7 +6,7 @@
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
 const USER_KEY = 'mfc_demo_users';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 let activeModalCleanup = null;
 
 const SERVICES = [
@@ -18,6 +18,45 @@ const SERVICES = [
   'Campus Servant',
   'MFC High Servant'
 ];
+
+const ACCESS_LEVELS = [
+  { value: 'couple_coordinator', label: 'Couple Coordinator/s' },
+  { value: 'area_servant', label: 'Area Servant' },
+  { value: 'lit_servant', label: 'LIT Servant' },
+  { value: 'chapter_servant', label: 'Chapter Servant' },
+  { value: 'member', label: 'Member' }
+];
+
+const ACCESS_ROLE_VALUES = new Set(
+  ACCESS_LEVELS.map(item => item.value)
+);
+
+const SUPER_ADMIN_ROLES = new Set([
+  'couple_coordinator',
+  'area_servant',
+  'lit_servant',
+  // Kept only for compatibility with the older prototype session.
+  'area_admin'
+]);
+
+function normalizeAccessRole(value) {
+  const role = String(value || 'member').trim().toLowerCase();
+  if (role === 'area_admin') return 'area_servant';
+  return ACCESS_ROLE_VALUES.has(role) ? role : 'member';
+}
+
+function accessRoleLabel(value) {
+  const normalized = normalizeAccessRole(value);
+  return ACCESS_LEVELS.find(item => item.value === normalized)?.label || 'Member';
+}
+
+function isSuperAdminRole(value) {
+  return SUPER_ADMIN_ROLES.has(String(value || '').trim().toLowerCase());
+}
+
+function isChapterServantRole(value) {
+  return String(value || '').trim().toLowerCase() === 'chapter_servant';
+}
 
 function safeParse(raw, fallback) {
   try {
@@ -34,11 +73,58 @@ function getSession() {
   );
 }
 
+function isSuperAdminSession() {
+  return isSuperAdminRole(session?.role);
+}
+
+function isChapterServantSession() {
+  return isChapterServantRole(session?.role);
+}
+
+function scopedChapter(data) {
+  if (!isChapterServantSession()) return null;
+
+  const directId = session?.chapterId;
+  if (directId !== null && directId !== undefined && String(directId).trim() !== '') {
+    const direct = data.chapters.find(
+      chapter => String(chapter.id) === String(directId)
+    );
+    if (direct) return direct;
+  }
+
+  const linkedMember = data.members.find(
+    member => String(member.id) === String(session?.memberId)
+  );
+
+  if (!linkedMember?.chapterId) return null;
+
+  return data.chapters.find(
+    chapter => String(chapter.id) === String(linkedMember.chapterId)
+  ) || null;
+}
+
+function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, and LIT Servants can perform this action.') {
+  if (isSuperAdminSession()) return false;
+  toast(message, 'error');
+  return true;
+}
+
+function canManageOwnChapterMember(data, member) {
+  if (isSuperAdminSession()) return true;
+  if (!isChapterServantSession() || !member) return false;
+
+  const chapter = scopedChapter(data);
+  return Boolean(
+    chapter &&
+    String(member.chapterId) === String(chapter.id)
+  );
+}
+
 
 // =========================================================
 // FRONTEND ACCOUNT PROVISIONING
 // Member records are the source of truth. Adding a member creates a linked
-// member login with a one-time temporary password. In production this must be
+// linked account with a one-time temporary password. In production this must be
 // moved to the backend and passwords must be hashed, never stored in plaintext.
 // =========================================================
 
@@ -67,7 +153,13 @@ function findMemberAccount(member, users = getAuthUsers()) {
   if (!email) return null;
 
   return users.find(
-    user => authEmail(user.email) === email && ['member', 'legacy'].includes(user.role || 'legacy')
+    user =>
+      authEmail(user.email) === email &&
+      (
+        ACCESS_ROLE_VALUES.has(String(user.role || '').trim().toLowerCase()) ||
+        String(user.role || '').trim().toLowerCase() === 'area_admin' ||
+        (user.role || 'legacy') === 'legacy'
+      )
   ) || null;
 }
 
@@ -127,7 +219,7 @@ function generateTemporaryPassword() {
 
 function provisionMemberAccount(member, { resetPassword = false } = {}) {
   if (!member?.email) {
-    throw new Error('A valid email address is required to create a member login.');
+    throw new Error('A valid email address is required to create an account login.');
   }
 
   const users = getAuthUsers();
@@ -151,7 +243,8 @@ function provisionMemberAccount(member, { resetPassword = false } = {}) {
     lastName: member.lastName || '',
     name: fullName(member),
     email: authEmail(member.email),
-    role: 'member',
+    role: normalizeAccessRole(member.accessLevel),
+    chapterId: member.chapterId ?? null,
     isActive: String(member.status || 'Active') !== 'Inactive',
     updatedAt: now
   });
@@ -179,7 +272,8 @@ function syncMemberAccount(member) {
     lastName: member.lastName || '',
     name: fullName(member),
     email: authEmail(member.email),
-    role: 'member',
+    role: normalizeAccessRole(member.accessLevel),
+    chapterId: member.chapterId ?? null,
     isActive: String(member.status || 'Active') !== 'Inactive',
     updatedAt: new Date().toISOString()
   });
@@ -232,6 +326,7 @@ function normalizeDatabase(input) {
       .map(member => {
         const normalized = {
           ...member,
+          accessLevel: normalizeAccessRole(member.accessLevel || 'member'),
           services: Array.isArray(member.services)
             ? member.services.filter(Boolean).map(String)
             : []
@@ -728,7 +823,7 @@ function showTemporaryCredentials(member, temporaryPassword) {
   if (!member || !temporaryPassword) return;
 
   openModal(
-    'Member Login Created',
+    'Account Login Created',
     `
       <div class="credential-panel">
         <div class="credential-notice">
@@ -739,6 +834,11 @@ function showTemporaryCredentials(member, temporaryPassword) {
         <div class="credential-row">
           <span>Email</span>
           <code>${esc(member.email)}</code>
+        </div>
+
+        <div class="credential-row">
+          <span>Access Level</span>
+          <code>${esc(accessRoleLabel(member.accessLevel))}</code>
         </div>
 
         <div class="credential-row">
@@ -760,7 +860,7 @@ function showTemporaryCredentials(member, temporaryPassword) {
   const copyButton = document.getElementById('copyMemberCredentials');
   if (copyButton) {
     copyButton.onclick = async () => {
-      const text = `MFC Youth Member Login\nEmail: ${member.email}\nTemporary Password: ${temporaryPassword}\n\nPlease change your password after signing in.`;
+      const text = `MFC Youth Account Login\nEmail: ${member.email}\nAccess Level: ${accessRoleLabel(member.accessLevel)}\nTemporary Password: ${temporaryPassword}\n\nPlease change your password after signing in.`;
       try {
         await navigator.clipboard.writeText(text);
         copyButton.textContent = 'Copied!';
@@ -780,6 +880,8 @@ function showTemporaryCredentials(member, temporaryPassword) {
 }
 
 window.manageMemberLogin = id => {
+  if (denyUnlessSuperAdmin()) return;
+
   const data = db();
   const member = data.members.find(item => item.id === id);
   if (!member) return;
@@ -798,14 +900,14 @@ window.manageMemberLogin = id => {
   const existing = findMemberAccount(member);
   const action = existing ? 'reset' : 'create';
   const prompt = existing
-    ? `Reset the login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`
-    : `Create a member login for ${fullName(member)}? A temporary password will be issued.`;
+    ? `Reset the account login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`
+    : `Create an account login for ${fullName(member)}? A temporary password will be issued.`;
 
   if (!confirm(prompt)) return;
 
   const result = provisionMemberAccount(member, { resetPassword: true });
   renderMembers();
-  toast(action === 'reset' ? 'Member login reset.' : 'Member login created.');
+  toast(action === 'reset' ? 'Account login reset.' : 'Account login created.');
   showTemporaryCredentials(member, result.temporaryPassword);
 };
 
@@ -899,6 +1001,9 @@ function emptyState(title, text) {
 
 seedDB();
 
+const page =
+  document.body.dataset.page;
+
 const session = getSession();
 
 if (!session) {
@@ -907,10 +1012,12 @@ if (!session) {
   location.replace('/change-password');
 } else if (session.role === 'member') {
   location.replace('/member');
+} else if (
+  isChapterServantSession() &&
+  !['members', 'chapters', 'reports', 'events'].includes(page)
+) {
+  location.replace('/chapters');
 }
-
-const page =
-  document.body.dataset.page;
 
 const content =
   document.getElementById('pageContent');
@@ -918,11 +1025,34 @@ const content =
 const logoutBtn =
   document.getElementById('logoutBtn');
 
+if (isChapterServantSession()) {
+  const allowedPaths = new Set([
+    '/members',
+    '/chapters',
+    '/reports',
+    '/events'
+  ]);
+
+  document.querySelectorAll('.sidebar-nav a').forEach(link => {
+    const href = link.getAttribute('href') || '';
+    if (!allowedPaths.has(href)) {
+      link.classList.add('role-hidden');
+      link.setAttribute('aria-hidden', 'true');
+      link.tabIndex = -1;
+    }
+  });
+}
+
 if (logoutBtn) {
   const user =
     document.createElement('div');
 
   user.className = 'signed-in-user';
+
+  const scopeData = db();
+  const chapter = isChapterServantSession()
+    ? scopedChapter(scopeData)
+    : null;
 
   user.innerHTML = `
     <span>Signed in as</span>
@@ -933,6 +1063,10 @@ if (logoutBtn) {
     'Area User'
   )}
     </strong>
+    <small class="signed-in-role">
+      ${esc(accessRoleLabel(session?.role))}
+      ${chapter ? ` · ${esc(chapter.name)}` : ''}
+    </small>
   `;
 
   logoutBtn.parentElement?.insertBefore(
@@ -1498,8 +1632,154 @@ function filteredMembers(data) {
   });
 }
 
+
+function renderChapterServantMembers(data) {
+  const chapter = scopedChapter(data);
+
+  if (!chapter) {
+    content.innerHTML =
+      pageHeader(
+        'Members',
+        'Your account is not assigned to a chapter yet.'
+      ) +
+      emptyState(
+        'No chapter assignment',
+        'Ask an Area Servant, LIT Servant, or Couple Coordinator to assign your account to a chapter.'
+      );
+    return;
+  }
+
+  const chapterMembers = data.members
+    .filter(member => String(member.chapterId) === String(chapter.id));
+
+  const list = chapterMembers.filter(member => {
+    const haystack = `
+      ${member.firstName || ''}
+      ${member.middleName || ''}
+      ${member.lastName || ''}
+      ${member.email || ''}
+      ${member.contact || ''}
+      ${(member.services || []).join(' ')}
+    `.toLowerCase();
+
+    if (!haystack.includes(memberFilters.search.toLowerCase())) {
+      return false;
+    }
+
+    if (
+      memberFilters.status !== 'All' &&
+      member.status !== memberFilters.status
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  content.innerHTML =
+    pageHeader(
+      'Members',
+      `View-only access for ${esc(chapter.name)} Chapter members. Member management remains with Super Admin access levels.`,
+      `<span class="scope-chip">${esc(chapter.name)} Chapter · View Only</span>`
+    ) +
+    `
+    <div class="toolbar">
+      <div class="grow">
+        <input
+          class="search-input"
+          id="memberSearch"
+          placeholder="Search ${esc(chapter.name)} members..."
+          value="${esc(memberFilters.search)}"
+        >
+      </div>
+
+      <select
+        class="select-input compact-filter"
+        id="memberStatus"
+      >
+        <option>All</option>
+        <option ${memberFilters.status === 'Active' ? 'selected' : ''}>Active</option>
+        <option ${memberFilters.status === 'Inactive' ? 'selected' : ''}>Inactive</option>
+      </select>
+
+      <button class="btn" id="clearMemberFilters">Clear</button>
+    </div>
+
+    <div class="result-count">
+      Showing ${list.length} of ${chapterMembers.length}
+      ${esc(chapter.name)} member${chapterMembers.length === 1 ? '' : 's'}
+    </div>
+
+    <section class="card table-wrap">
+      ${list.length
+        ? `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Status</th>
+                <th>Services</th>
+                <th>Contact Number</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map(member => `
+                <tr>
+                  <td>
+                    <strong>${esc(fullName(member))}</strong>
+                    <div class="muted">${esc(member.email || 'No email')}</div>
+                  </td>
+                  <td>
+                    <span class="badge ${member.status === 'Active' ? 'active' : 'inactive'}">
+                      ${esc(member.status || 'Active')}
+                    </span>
+                  </td>
+                  <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
+                  <td>${esc(member.contact || '—')}</td>
+                  <td class="actions-cell">
+                    <button class="btn" onclick="viewMember(${member.id})">View</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `
+        : emptyState(
+            'No matching members',
+            chapterMembers.length
+              ? 'Change or clear the filters to see other chapter members.'
+              : 'This chapter does not have assigned members yet.'
+          )
+      }
+    </section>
+  `;
+
+  document.getElementById('memberSearch').oninput = event => {
+    memberFilters.search = event.target.value;
+    renderMembers();
+  };
+
+  document.getElementById('memberStatus').onchange = event => {
+    memberFilters.status = event.target.value;
+    renderMembers();
+  };
+
+  document.getElementById('clearMemberFilters').onclick = () => {
+    memberFilters.search = '';
+    memberFilters.status = 'All';
+    memberFilters.chapter = 'All';
+    renderMembers();
+  };
+}
+
 function renderMembers() {
   const data = db();
+
+  if (isChapterServantSession()) {
+    renderChapterServantMembers(data);
+    return;
+  }
 
   const list =
     filteredMembers(data);
@@ -1619,6 +1899,7 @@ function renderMembers() {
                   <th>Status</th>
                   <th>Services</th>
                   <th>Account</th>
+                  <th>Access</th>
                   <th>Contact Number</th>
                   <th>Actions</th>
                 </tr>
@@ -1687,6 +1968,10 @@ function renderMembers() {
                           <span class="badge ${memberAccountState(member).className}">
                             ${esc(memberAccountState(member).label)}
                           </span>
+                        </td>
+
+                        <td>
+                          ${esc(accessRoleLabel(member.accessLevel))}
                         </td>
 
                         <td>
@@ -1815,6 +2100,14 @@ window.viewMember = function(id) {
 
   if (!member) return;
 
+  if (
+    isChapterServantSession() &&
+    !canManageOwnChapterMember(data, member)
+  ) {
+    toast('You can only view members assigned to your chapter.', 'error');
+    return;
+  }
+
   const rows = data.gig
     .filter(item => item.memberId === id)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1929,6 +2222,11 @@ window.viewMember = function(id) {
         </div>
 
         <div class="detail-item">
+          <span class="detail-label">System Access</span>
+          <div class="detail-value">${esc(accessRoleLabel(member.accessLevel))}</div>
+        </div>
+
+        <div class="detail-item">
           <span class="detail-label">Login Account</span>
           <div class="detail-value">
             <span class="badge ${memberAccountState(member).className}">${esc(memberAccountState(member).label)}</span>
@@ -1964,6 +2262,8 @@ window.viewMember = function(id) {
 };
 
 function memberModal(id = null) {
+  if (denyUnlessSuperAdmin()) return;
+
   const data = db();
 
   const member = id
@@ -2041,6 +2341,32 @@ function memberModal(id = null) {
     member.status ||
     'Active'
   )}
+
+      <div class="form-group">
+        <label for="mAccessLevel">
+          System Access Level
+        </label>
+
+        <select
+          class="select-input"
+          id="mAccessLevel"
+        >
+          ${ACCESS_LEVELS
+      .map(level => `
+            <option
+              value="${level.value}"
+              ${normalizeAccessRole(member.accessLevel || 'member') === level.value ? 'selected' : ''}
+            >
+              ${esc(level.label)}
+            </option>
+          `)
+      .join('')}
+        </select>
+
+        <small class="field-help">
+          Chapter Servants are automatically scoped to the chapter selected below.
+        </small>
+      </div>
 
       <div class="form-group">
 
@@ -2255,6 +2581,25 @@ function memberModal(id = null) {
             item.id === chapterId
         );
 
+      const accessLevel =
+        normalizeAccessRole(
+          document.getElementById(
+            'mAccessLevel'
+          ).value
+        );
+
+      if (
+        accessLevel === 'chapter_servant' &&
+        !chapter
+      ) {
+        toast(
+          'A Chapter Servant must be assigned to a chapter.',
+          'error'
+        );
+
+        return;
+      }
+
       const record = {
         id:
           id ||
@@ -2283,6 +2628,8 @@ function memberModal(id = null) {
           document.getElementById(
             'mStatus'
           ).value,
+
+        accessLevel,
 
         chapterId,
 
@@ -2352,6 +2699,8 @@ window.editMember =
   memberModal;
 
 window.deleteMember = id => {
+  if (denyUnlessSuperAdmin()) return;
+
   if (
     !confirm(
       'Delete this member, their linked login account, and their GIG contribution records?'
@@ -2385,6 +2734,8 @@ window.deleteMember = id => {
 };
 
 window.serviceMember = id => {
+  if (denyUnlessSuperAdmin()) return;
+
   const data = db();
 
   const member =
@@ -2469,6 +2820,11 @@ window.gigMember = id => {
     );
 
   if (!member) return;
+
+  if (!canManageOwnChapterMember(data, member)) {
+    toast('You can only manage GIG records for members in your assigned chapter.', 'error');
+    return;
+  }
 
   const rows =
     data.gig
@@ -2657,6 +3013,16 @@ window.deleteGigContribution = (
   memberId,
   contributionId
 ) => {
+  const accessData = db();
+  const accessMember = accessData.members.find(
+    member => String(member.id) === String(memberId)
+  );
+
+  if (!canManageOwnChapterMember(accessData, accessMember)) {
+    toast('You can only manage GIG records for members in your assigned chapter.', 'error');
+    return;
+  }
+
   if (
     !confirm(
       'Delete this GIG contribution?'
@@ -2693,8 +3059,196 @@ window.deleteGigContribution = (
 
 let chapterSearch = '';
 
+
+function renderChapterServantDashboard(data) {
+  const chapter = scopedChapter(data);
+
+  if (!chapter) {
+    content.innerHTML =
+      pageHeader(
+        'Chapter Dashboard',
+        'Your Chapter Servant account is not assigned to a chapter yet.'
+      ) +
+      emptyState(
+        'No chapter assignment',
+        'Ask an Area Servant, LIT Servant, or Couple Coordinator to assign your member record to a chapter.'
+      );
+    return;
+  }
+
+  const members = data.members
+    .filter(member => String(member.chapterId) === String(chapter.id))
+    .sort((a, b) => fullName(a).localeCompare(fullName(b)));
+
+  const activeMembers = members.filter(
+    member => String(member.status || 'Active') === 'Active'
+  );
+
+  const memberIds = new Set(members.map(member => String(member.id)));
+
+  const gigRows = data.gig.filter(
+    item => memberIds.has(String(item.memberId))
+  );
+
+  const gigTotal = gigRows.reduce(
+    (sum, item) => sum + Number(item.amount || 0),
+    0
+  );
+
+  const chapterReports = data.reports
+    .filter(report => report.chapter === chapter.name)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const unassignedCount = data.members.filter(isUnassignedMember).length;
+
+  content.innerHTML =
+    pageHeader(
+      `${esc(chapter.name)} Chapter`,
+      'Chapter Servant dashboard. Your access is limited to this assigned chapter.',
+      `
+        <button
+          class="btn blue"
+          id="chapterAssignMembers"
+          type="button"
+        >
+          + Add Unassigned Members
+        </button>
+      `
+    ) +
+    `
+    <div class="chapter-scope-banner">
+      <div>
+        <span class="member-eyebrow">CHAPTER SERVANT ACCESS</span>
+        <strong>${esc(chapter.name)} Chapter</strong>
+      </div>
+      <span class="scope-chip">${unassignedCount} unassigned member${unassignedCount === 1 ? '' : 's'} available</span>
+    </div>
+
+    <div class="stat-grid">
+      <section class="card stat-card">
+        <span>Chapter Members</span>
+        <strong>${members.length}</strong>
+      </section>
+
+      <section class="card stat-card">
+        <span>Active Members</span>
+        <strong>${activeMembers.length}</strong>
+      </section>
+
+      <section class="card stat-card">
+        <span>Activity Reports</span>
+        <strong>${chapterReports.length}</strong>
+      </section>
+
+      <section class="card stat-card">
+        <span>Total Chapter GIG</span>
+        <strong>${esc(money(gigTotal))}</strong>
+      </section>
+    </div>
+
+    <div class="grid-2 chapter-dashboard-grid">
+      <section class="card panel">
+        <div class="panel-heading-row">
+          <div>
+            <span class="member-eyebrow">MEMBERS</span>
+            <h3>Chapter Roster</h3>
+          </div>
+          <span class="scope-chip">${members.length} total</span>
+        </div>
+
+        ${members.length
+          ? `
+            <div class="table-wrap chapter-roster-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Status</th>
+                    <th>Services</th>
+                    <th>GIG</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${members.map(member => {
+                    const total = data.gig
+                      .filter(item => String(item.memberId) === String(member.id))
+                      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+                    return `
+                      <tr>
+                        <td>
+                          <strong>${esc(fullName(member))}</strong>
+                          <div class="muted">${esc(member.email || 'No email')}</div>
+                        </td>
+                        <td>
+                          <span class="badge ${member.status === 'Active' ? 'active' : 'inactive'}">
+                            ${esc(member.status || 'Active')}
+                          </span>
+                        </td>
+                        <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
+                        <td>${esc(money(total))}</td>
+                        <td class="actions-cell">
+                          <button class="btn" onclick="viewMember(${member.id})">View</button>
+                          <button class="btn" onclick="gigMember(${member.id})">GIG</button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `
+          : emptyState(
+              'No chapter members',
+              'Use Add Unassigned Members to assign available members to this chapter.'
+            )
+        }
+      </section>
+
+      <section class="card panel">
+        <div class="panel-heading-row">
+          <div>
+            <span class="member-eyebrow">RECENT</span>
+            <h3>Chapter Activity</h3>
+          </div>
+        </div>
+
+        ${chapterReports.length
+          ? `
+            <div class="chapter-activity-list">
+              ${chapterReports.slice(0, 6).map(report => `
+                <div class="chapter-activity-item">
+                  <div>
+                    <strong>${esc(report.title || report.activity || 'Activity')}</strong>
+                    <span>${esc(report.type || 'Activity Report')}</span>
+                  </div>
+                  <time>${esc(fmtDate(report.date))}</time>
+                </div>
+              `).join('')}
+            </div>
+          `
+          : emptyState(
+              'No chapter activity reports',
+              'Reports created for this chapter will appear here.'
+            )
+        }
+      </section>
+    </div>
+  `;
+
+  document.getElementById('chapterAssignMembers')?.addEventListener('click', () => {
+    window.addMembersToChapter(chapter.id);
+  });
+}
+
 function renderChapters() {
   const data = db();
+
+  if (isChapterServantSession()) {
+    renderChapterServantDashboard(data);
+    return;
+  }
 
   const list =
     data.chapters.filter(
@@ -2881,6 +3435,8 @@ function renderChapters() {
 }
 
 function chapterModal(id = null) {
+  if (denyUnlessSuperAdmin()) return;
+
   const data = db();
 
   const chapter = id
@@ -2997,6 +3553,8 @@ window.editChapter =
   chapterModal;
 
 window.deleteChapter = id => {
+  if (denyUnlessSuperAdmin()) return;
+
   const data = db();
 
   if (
@@ -3042,6 +3600,14 @@ window.viewChapter = id => {
     );
 
   if (!chapter) return;
+
+  if (
+    isChapterServantSession() &&
+    String(scopedChapter(data)?.id) !== String(chapter.id)
+  ) {
+    toast('You can only view your assigned chapter.', 'error');
+    return;
+  }
 
   const members =
     data.members.filter(
@@ -3102,6 +3668,18 @@ window.addMembersToChapter = id => {
 
   if (!chapter) {
     toast('Chapter could not be found.', 'error');
+    return;
+  }
+
+  if (isChapterServantSession()) {
+    const assignedChapter = scopedChapter(data);
+
+    if (!assignedChapter || String(assignedChapter.id) !== String(chapter.id)) {
+      toast('You can only add unassigned members to your assigned chapter.', 'error');
+      return;
+    }
+  } else if (!isSuperAdminSession()) {
+    toast('You do not have permission to assign chapter members.', 'error');
     return;
   }
 
@@ -3204,6 +3782,7 @@ window.addMembersToChapter = id => {
         ) {
           member.chapterId = chapter.id;
           member.chapterName = chapter.name;
+          syncMemberAccount(member);
           assignedCount += 1;
         }
       });
@@ -3430,8 +4009,22 @@ function reportChapters(data) {
 }
 
 function filteredReports(data) {
+  const chapterScope = isChapterServantSession()
+    ? scopedChapter(data)
+    : null;
+
   return data.reports
     .filter(report => {
+      if (
+        isChapterServantSession() &&
+        (
+          !chapterScope ||
+          report.chapter !== chapterScope.name
+        )
+      ) {
+        return false;
+      }
+
       const text = `
         ${report.title || ''}
         ${report.activity || ''}
@@ -3727,6 +4320,27 @@ function reportScopeText() {
 function renderReports() {
   const data = db();
 
+  const chapterScope = isChapterServantSession()
+    ? scopedChapter(data)
+    : null;
+
+  if (isChapterServantSession()) {
+    if (!chapterScope) {
+      content.innerHTML =
+        pageHeader(
+          'Activity Reports',
+          'Your Chapter Servant account is not assigned to a chapter yet.'
+        ) +
+        emptyState(
+          'No chapter assignment',
+          'Ask a Super Admin to assign your account to a chapter before creating activity reports.'
+        );
+      return;
+    }
+
+    reportFilters.chapter = chapterScope.name;
+  }
+
   const list =
     filteredReports(data);
 
@@ -3798,7 +4412,9 @@ function renderReports() {
   content.innerHTML =
     pageHeader(
       'Activity Reports',
-      'Manage activity reports, filter records, review analytics, and export summarized documents.',
+      isChapterServantSession()
+        ? `Manage activity reports for ${esc(chapterScope.name)} Chapter. Your name and chapter are locked to your account scope.`
+        : 'Manage activity reports, filter records, review analytics, and export summarized documents.',
       `
         <button
           class="btn blue"
@@ -3893,6 +4509,7 @@ function renderReports() {
       <select
         class="select-input compact-filter"
         id="reportChapter"
+        ${isChapterServantSession() ? 'disabled' : ''}
       >
         <option>
           All
@@ -4344,7 +4961,9 @@ function renderReports() {
   ).onclick = () => {
     reportFilters = {
       search: '',
-      chapter: 'All',
+      chapter: isChapterServantSession() && chapterScope
+        ? chapterScope.name
+        : 'All',
       type: 'All',
       from: '',
       to: ''
@@ -4359,11 +4978,29 @@ window.reportModal = function (
 ) {
   const data = db();
 
+  const chapterScope = isChapterServantSession()
+    ? scopedChapter(data)
+    : null;
+
+  if (isChapterServantSession() && !chapterScope) {
+    toast('Your account is not assigned to a chapter.', 'error');
+    return;
+  }
+
   const report = id
     ? data.reports.find(
       item => item.id === id
     )
     : {};
+
+  if (
+    isChapterServantSession() &&
+    id &&
+    report?.chapter !== chapterScope?.name
+  ) {
+    toast('You can only edit activity reports for your assigned chapter.', 'error');
+    return;
+  }
 
   const linkedEvent =
     report?.eventId
@@ -4423,6 +5060,7 @@ window.reportModal = function (
         <select
           class="select-input"
           id="rChapter"
+          ${isChapterServantSession() ? 'disabled' : ''}
         >
 
           <option value="">
@@ -4434,7 +5072,7 @@ window.reportModal = function (
         chapter => `
                 <option
                   value="${esc(chapter.name)}"
-                  ${report?.chapter ===
+                  ${(report?.chapter || chapterScope?.name) ===
             chapter.name
             ? 'selected'
             : ''
@@ -4544,10 +5182,16 @@ window.reportModal = function (
         'Prepared By',
         'rPrepared',
         'text',
-        report?.preparedBy ||
-        session?.name ||
-        '',
-        'maxlength="100"'
+        isChapterServantSession()
+          ? (session?.name || '')
+          : (
+              report?.preparedBy ||
+              session?.name ||
+              ''
+            ),
+        isChapterServantSession()
+          ? 'maxlength="100" readonly'
+          : 'maxlength="100"'
       )}
 
       ${field(
@@ -4722,9 +5366,11 @@ window.reportModal = function (
         title,
 
         chapter:
-          document.getElementById(
-            'rChapter'
-          ).value,
+          isChapterServantSession() && chapterScope
+            ? chapterScope.name
+            : document.getElementById(
+                'rChapter'
+              ).value,
 
         type:
           document
@@ -4743,11 +5389,13 @@ window.reportModal = function (
         date,
 
         preparedBy:
-          document
-            .getElementById(
-              'rPrepared'
-            )
-            .value.trim(),
+          isChapterServantSession()
+            ? (session?.name || '')
+            : document
+                .getElementById(
+                  'rPrepared'
+                )
+                .value.trim(),
 
         participants,
 
@@ -4860,6 +5508,21 @@ window.reportModal = function (
 };
 
 window.deleteReport = id => {
+  const data = db();
+
+  if (isChapterServantSession()) {
+    const chapter = scopedChapter(data);
+    const report = data.reports.find(item => item.id === id);
+
+    if (!chapter || !report || report.chapter !== chapter.name) {
+      toast('You can only delete activity reports for your assigned chapter.', 'error');
+      return;
+    }
+  } else if (!isSuperAdminSession()) {
+    toast('You do not have permission to delete activity reports.', 'error');
+    return;
+  }
+
   if (
     !confirm(
       'Delete this activity report?'
@@ -4867,8 +5530,6 @@ window.deleteReport = id => {
   ) {
     return;
   }
-
-  const data = db();
 
   data.reports =
     data.reports.filter(
@@ -5945,6 +6606,8 @@ function eventAttendance(
 function renderEvents() {
   const data = db();
 
+  const canManage = isSuperAdminSession();
+
   const list =
     filteredEvents(data);
 
@@ -5954,15 +6617,19 @@ function renderEvents() {
   content.innerHTML =
     pageHeader(
       'Events',
-      'Manage Area events, participant registration, payment status, and attendance.',
-      `
-        <button
-          class="btn blue"
-          id="addEvent"
-        >
-          + Add Event
-        </button>
-      `
+      canManage
+        ? 'Manage Area events, participant registration, payment status, and attendance.'
+        : 'View Area events. Chapter Servants have read-only event access.',
+      canManage
+        ? `
+          <button
+            class="btn blue"
+            id="addEvent"
+          >
+            + Add Event
+          </button>
+        `
+        : `<span class="scope-chip">View Only</span>`
     ) +
     `
     <div class="toolbar">
@@ -6136,19 +6803,24 @@ function renderEvents() {
                               View
                             </button>
 
-                            <button
-                              class="btn"
-                              onclick="eventModal(${event.id})"
-                            >
-                              Edit
-                            </button>
+                            ${canManage
+                              ? `
+                                <button
+                                  class="btn"
+                                  onclick="eventModal(${event.id})"
+                                >
+                                  Edit
+                                </button>
 
-                            <button
-                              class="btn red"
-                              onclick="deleteEvent(${event.id})"
-                            >
-                              Delete
-                            </button>
+                                <button
+                                  class="btn red"
+                                  onclick="deleteEvent(${event.id})"
+                                >
+                                  Delete
+                                </button>
+                              `
+                              : ''
+                            }
                           </td>
 
                         </tr>
@@ -6172,10 +6844,15 @@ function renderEvents() {
     </section>
   `;
 
-  document.getElementById(
-    'addEvent'
-  ).onclick = () =>
+  const addEventButton =
+    document.getElementById(
+      'addEvent'
+    );
+
+  if (addEventButton) {
+    addEventButton.onclick = () =>
       eventModal();
+  }
 
   document.getElementById(
     'eventSearch'
@@ -6210,6 +6887,8 @@ function renderEvents() {
 window.eventModal = function (
   id = null
 ) {
+  if (denyUnlessSuperAdmin('Only Super Admin access levels can create or edit Area events.')) return;
+
   const data = db();
 
   const event = id
@@ -6403,6 +7082,8 @@ window.eventModal = function (
 };
 
 window.deleteEvent = id => {
+  if (denyUnlessSuperAdmin('Only Super Admin access levels can delete Area events.')) return;
+
   if (
     !confirm(
       'Delete this event and all of its participant records?'
@@ -6447,6 +7128,7 @@ window.deleteEvent = id => {
 
 window.viewEvent = id => {
   const data = db();
+  const canManage = isSuperAdminSession();
 
   const event =
     data.events.find(
@@ -6563,19 +7245,24 @@ window.viewEvent = id => {
                       <td
                         class="actions-cell"
                       >
-                        <button
-                          class="btn"
-                          onclick="participantModal(${id}, ${participant.id})"
-                        >
-                          Edit
-                        </button>
+                        ${canManage
+                          ? `
+                            <button
+                              class="btn"
+                              onclick="participantModal(${id}, ${participant.id})"
+                            >
+                              Edit
+                            </button>
 
-                        <button
-                          class="btn red"
-                          onclick="deleteParticipant(${id}, ${participant.id})"
-                        >
-                          Delete
-                        </button>
+                            <button
+                              class="btn red"
+                              onclick="deleteParticipant(${id}, ${participant.id})"
+                            >
+                              Delete
+                            </button>
+                          `
+                          : '<span class="muted">View only</span>'
+                        }
                       </td>
 
                     </tr>
@@ -6696,13 +7383,18 @@ window.viewEvent = id => {
         (${participants.length})
       </h3>
 
-      <button
-        class="btn blue"
-        type="button"
-        onclick="participantModal(${id})"
-      >
-        + Register Participant
-      </button>
+      ${canManage
+        ? `
+          <button
+            class="btn blue"
+            type="button"
+            onclick="participantModal(${id})"
+          >
+            + Register Participant
+          </button>
+        `
+        : '<span class="scope-chip">View Only</span>'
+      }
 
     </div>
 
@@ -6719,6 +7411,8 @@ window.participantModal = (
   eventId,
   id = null
 ) => {
+  if (denyUnlessSuperAdmin('Only Super Admin access levels can manage event participants.')) return;
+
   const data = db();
 
   const participant = id
@@ -7086,6 +7780,8 @@ window.deleteParticipant = (
   eventId,
   id
 ) => {
+  if (denyUnlessSuperAdmin('Only Super Admin access levels can manage event participants.')) return;
+
   if (
     !confirm(
       'Delete this participant?'
