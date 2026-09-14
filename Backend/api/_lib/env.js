@@ -2,7 +2,8 @@ export function backendConfig() {
   return {
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
-    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    adminRegistrationCode: process.env.ADMIN_REGISTRATION_CODE || ''
   };
 }
 
@@ -21,4 +22,15 @@ export function assertBackendConfigured() {
   }
 
   return config;
+}
+
+export function assertAdminRegistrationConfigured() {
+  const { adminRegistrationCode } = backendConfig();
+  if (!adminRegistrationCode) {
+    const error = new Error('Administrator registration is not configured. Missing: ADMIN_REGISTRATION_CODE');
+    error.statusCode = 503;
+    error.code = 'ADMIN_REGISTRATION_NOT_CONFIGURED';
+    throw error;
+  }
+  return { adminRegistrationCode };
 }

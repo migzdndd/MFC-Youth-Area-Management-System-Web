@@ -14,8 +14,9 @@ export default async function handler(req, res) {
   return sendJson(res, 200, {
     ok: true,
     service: 'mfc-youth-web-api',
-    backendPhase: '6.1-foundation',
+    backendPhase: '6.2-admin-registration-area-onboarding',
     configured,
+    adminRegistrationConfigured: Boolean(config.adminRegistrationCode),
     database: configured ? 'supabase-postgres' : 'awaiting-environment-variables',
     timestamp: new Date().toISOString()
   });

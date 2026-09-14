@@ -32,6 +32,7 @@ Backend/api/auth/login.js
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_REGISTRATION_CODE` (Backend only)
 3. Create/deploy the existing frontend Vercel project with **Root Directory = `Frontend`**.
 4. In the Frontend project, set:
    - `BACKEND_URL=https://your-backend-project.vercel.app`

@@ -161,9 +161,60 @@ function clearSession() {
 
 function destinationFor(session) {
   if (session?.mustChangePassword) return '/change-password';
+  if (session?.needsAreaSetup) return '/dashboard';
   if (session?.role === 'member') return '/member';
   if (session?.role === 'chapter_servant') return '/chapters';
   return '/dashboard';
+}
+
+async function apiJson(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = { ok: false, error: 'The server returned an invalid response.' };
+  }
+
+  if (!response.ok) {
+    const error = new Error(body?.error || 'Request failed.');
+    error.status = response.status;
+    error.code = body?.code;
+    throw error;
+  }
+
+  return body;
+}
+
+function backendSessionFromResponse(payload, remember = false) {
+  const user = payload?.user || {};
+  const serverSession = payload?.session || {};
+  const session = {
+    userId: user.id ?? null,
+    memberId: user.memberId ?? null,
+    email: user.email || '',
+    name: user.name || user.email || 'Area User',
+    role: normalizeAccessRole(user.role || 'member'),
+    areaId: user.areaId ?? null,
+    chapterId: user.chapterId ?? null,
+    loginAt: new Date().toISOString(),
+    mustChangePassword: user.mustChangePassword === true,
+    needsAreaSetup: user.role !== 'member' && !user.areaId,
+    accessToken: serverSession.accessToken || '',
+    refreshToken: serverSession.refreshToken || '',
+    expiresAt: serverSession.expiresAt || null,
+    backendAuth: true,
+    demo: false
+  };
+  saveSession(session, remember);
+  return session;
 }
 
 function showMessage(id, text, type = 'error') {
@@ -244,7 +295,7 @@ if (demoLoginButton) {
 
 const loginForm = document.getElementById('loginForm');
 if (loginForm) {
-  loginForm.addEventListener('submit', event => {
+  loginForm.addEventListener('submit', async event => {
     event.preventDefault();
     const submit = loginForm.querySelector('[type="submit"]');
     const email = normalizeEmail(document.getElementById('loginEmail').value);
@@ -266,41 +317,122 @@ if (loginForm) {
       return;
     }
 
-    const users = getUsers();
-    const user = users.find(item => item.email === email && item.password === password);
+    // Prefer the real backend. During the migration period, older browser-only
+    // prototype accounts remain available as a fallback.
+    try {
+      const payload = await apiJson('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      const session = backendSessionFromResponse(payload, remember);
+      location.href = destinationFor(session);
+      return;
+    } catch (backendError) {
+      const users = getUsers();
+      const user = users.find(item => item.email === email && item.password === password);
 
-    if (!user) {
-      setButtonBusy(submit, false);
-      showMessage('loginMessage', 'Account not found or password is incorrect.');
+      if (!user) {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect.');
+        return;
+      }
+
+      if (user.role === 'legacy') {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
+        return;
+      }
+
+      if (user.isActive === false) {
+        setButtonBusy(submit, false);
+        showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
+        return;
+      }
+
+      const session = {
+        userId: user.id,
+        memberId: user.memberId ?? null,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+        role: normalizeAccessRole(user.role || 'member'),
+        chapterId: user.chapterId ?? null,
+        loginAt: new Date().toISOString(),
+        mustChangePassword: user.mustChangePassword === true,
+        needsAreaSetup: false,
+        demo: false
+      };
+
+      saveSession(session, remember);
+      location.href = destinationFor(session);
+    }
+  });
+}
+
+// ---------------- SERVANT LEADER REGISTRATION ----------------
+const adminRegistrationForm = document.getElementById('adminRegistrationForm');
+if (adminRegistrationForm) {
+  adminRegistrationForm.addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const submit = document.getElementById('adminRegisterButton') || adminRegistrationForm.querySelector('[type="submit"]');
+    const displayName = String(document.getElementById('adminDisplayName')?.value || '').trim();
+    const email = normalizeEmail(document.getElementById('adminEmail')?.value || '');
+    const role = String(document.getElementById('adminRole')?.value || '').trim();
+    const verificationCode = String(document.getElementById('adminVerificationCode')?.value || '');
+    const password = String(document.getElementById('adminPassword')?.value || '');
+    const confirmPassword = String(document.getElementById('adminPasswordConfirm')?.value || '');
+
+    if (!displayName) {
+      showMessage('adminRegistrationMessage', 'Enter your full name.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showMessage('adminRegistrationMessage', 'Enter a valid email address.');
+      return;
+    }
+    if (!['couple_coordinator', 'area_servant', 'lit_servant', 'chapter_servant'].includes(role)) {
+      showMessage('adminRegistrationMessage', 'Select your System Access Level.');
+      return;
+    }
+    if (!verificationCode) {
+      showMessage('adminRegistrationMessage', 'Enter the administrator registration password.');
       return;
     }
 
-    if (user.role === 'legacy') {
-      setButtonBusy(submit, false);
-      showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
+    const pError = passwordError(password);
+    if (pError) {
+      showMessage('adminRegistrationMessage', pError);
+      return;
+    }
+    if (password !== confirmPassword) {
+      showMessage('adminRegistrationMessage', 'Passwords do not match.');
       return;
     }
 
-    if (user.isActive === false) {
+    setButtonBusy(submit, true, 'Creating Account…');
+
+    try {
+      const payload = await apiJson('/api/auth/admin-register', {
+        method: 'POST',
+        body: JSON.stringify({
+          displayName,
+          email,
+          role,
+          verificationCode,
+          password,
+          confirmPassword
+        })
+      });
+
+      const session = backendSessionFromResponse(payload, true);
+      session.needsAreaSetup = true;
+      updateSession(session);
+      showMessage('adminRegistrationMessage', 'Account created. Redirecting to Area setup…', 'success');
+      setTimeout(() => { location.href = '/dashboard'; }, 550);
+    } catch (error) {
       setButtonBusy(submit, false);
-      showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
-      return;
+      showMessage('adminRegistrationMessage', error?.message || 'Unable to create the account.');
     }
-
-    const session = {
-      userId: user.id,
-      memberId: user.memberId ?? null,
-      email: user.email,
-      name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
-      role: normalizeAccessRole(user.role || 'member'),
-      chapterId: user.chapterId ?? null,
-      loginAt: new Date().toISOString(),
-      mustChangePassword: user.mustChangePassword === true,
-      demo: false
-    };
-
-    saveSession(session, remember);
-    location.href = destinationFor(session);
   });
 }
 

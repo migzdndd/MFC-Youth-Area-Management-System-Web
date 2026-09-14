@@ -2695,3 +2695,197 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   FIRST-TIME ACCESS / SERVANT LEADER REGISTRATION
+   ========================================================= */
+
+.auth-access-page {
+  justify-content: center;
+}
+
+.auth-access-layout {
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: minmax(340px, 460px) minmax(380px, 520px);
+  gap: clamp(24px, 4vw, 54px);
+  align-items: start;
+}
+
+.auth-access-layout .auth-card {
+  width: 100%;
+}
+
+.admin-registration-card .login-header {
+  margin-bottom: 14px;
+}
+
+.admin-registration-form {
+  gap: 10px;
+}
+
+.admin-registration-form .login-heading {
+  margin-bottom: .25em;
+}
+
+.auth-field-label {
+  color: #c7d7e5;
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+  margin: 2px 2px -4px;
+}
+
+.auth-field-help {
+  text-align: left;
+  margin-top: -4px;
+}
+
+.auth-select {
+  appearance: auto;
+  cursor: pointer;
+}
+
+.auth-select option {
+  color: #15253b;
+  background: #fff;
+}
+
+.registration-security-note {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid rgba(95, 183, 240, .22);
+  border-radius: 12px;
+  background: rgba(48, 126, 177, .11);
+  color: #aebdca;
+  font-size: .74rem;
+  line-height: 1.45;
+}
+
+.registration-security-note strong {
+  color: #eaf5ff;
+  font-size: .78rem;
+}
+
+/* =========================================================
+   AREA-BASED ACCOUNT ONBOARDING
+   ========================================================= */
+
+.area-onboarding-backdrop {
+  z-index: 1000;
+  background: rgba(0, 18, 32, .76);
+  backdrop-filter: blur(4px);
+}
+
+.area-onboarding-modal {
+  width: min(620px, 100%);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.area-onboarding-header {
+  padding: 22px 24px 17px;
+  background: linear-gradient(135deg, #002847, #064b75);
+  color: #fff;
+}
+
+.area-onboarding-header h2 {
+  margin-top: 5px;
+  font-size: 1.35rem;
+}
+
+.area-onboarding-kicker {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #98d3fb;
+}
+
+.area-onboarding-intro {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.area-setup-panel {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #f8fafc;
+  transition: opacity .2s ease;
+}
+
+.area-setup-muted {
+  opacity: .45;
+  pointer-events: none;
+}
+
+.area-onboarding-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 15px 0;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.area-onboarding-divider::before,
+.area-onboarding-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.area-create-toggle {
+  width: 100%;
+  border-color: #b9d8ee;
+  background: #eef7fd;
+  color: var(--blue2);
+  font-weight: 800;
+}
+
+.area-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.area-chapter-note {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: #fff8e6;
+  border: 1px solid #f0d996;
+  color: #765b13;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .auth-access-layout {
+    grid-template-columns: 1fr;
+    width: min(560px, 100%);
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-access-page {
+    padding: 22px 14px;
+  }
+
+  .area-create-actions {
+    flex-direction: column-reverse;
+  }
+
+  .area-create-actions .btn {
+    width: 100%;
+  }
+}

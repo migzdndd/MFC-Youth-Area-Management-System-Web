@@ -41,6 +41,7 @@ export default async function handler(req, res) {
       user: {
         id: data.user.id,
         email: data.user.email,
+        name: data.user.user_metadata?.display_name || data.user.email,
         memberId: profile.member_id,
         role: profile.role,
         areaId: profile.area_id,

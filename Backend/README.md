@@ -1,4 +1,4 @@
-# Backend Phase 6.1 — Foundation
+# Backend Phase 6.2 — Admin Registration & Area Onboarding
 
 This phase starts the real backend without breaking the current localStorage prototype.
 
@@ -47,6 +47,10 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - Server-only Supabase service-role client.
 - `GET /api/health`
 - `POST /api/auth/login`
+- `POST /api/auth/admin-register`
+- `GET /api/areas`
+- `POST /api/areas`
+- `POST /api/areas/select`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`
 - `GET /api/members`
@@ -65,14 +69,17 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration password)
 5. Redeploy.
 6. Visit `/api/health`. It should report `configured: true`.
 
-## Important: first management account
+## First management / Servant Leader account
 
-The current frontend Demo Login remains local-only for demonstration and is NOT a backend super-admin account.
+Use the **First-Time Access** page in the Frontend and the **Register an Admin Account** card. The backend verifies `ADMIN_REGISTRATION_CODE`, creates a Supabase Auth user + `profiles` record, signs the new user in, and requires Area selection before normal management access.
 
-Before switching production login to the backend, create the first real management Auth user in Supabase and link it to a `members` + `profiles` record. This bootstrap step will be formalized in Backend Phase 6.2 so that a service-role key never appears in the browser.
+If the user's Area already exists, choose it. If not, **Create Area-Based Account** creates a row in `public.areas`, seeds the standard Services for that Area, and links the new profile to it.
+
+The registration code must remain only in `Backend/.env.local` and Vercel Backend Environment Variables. Never hardcode it in Frontend files.
 
 ## Migration strategy
 
