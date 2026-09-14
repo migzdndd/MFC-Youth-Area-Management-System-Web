@@ -29,6 +29,13 @@ function registrationCodeMatches(input, expected) {
   return timingSafeEqual(supplied, target);
 }
 
+function stageError(error, stage, code) {
+  const wrapped = error instanceof Error ? error : new Error(String(error || 'Unknown backend error.'));
+  wrapped.stage = stage;
+  wrapped.code = wrapped.code || code;
+  return wrapped;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
 
@@ -75,10 +82,11 @@ export default async function handler(req, res) {
       });
 
       if (authError || !authData?.user) {
-        if (String(authError?.message || '').toLowerCase().includes('already')) {
+        const message = String(authError?.message || '');
+        if (message.toLowerCase().includes('already') || message.toLowerCase().includes('registered')) {
           return sendJson(res, 409, { ok: false, error: 'An account with this email already exists.' });
         }
-        throw authError || new Error('Unable to create the account.');
+        throw stageError(authError || new Error('Unable to create the account.'), 'auth_user_creation', 'AUTH_USER_CREATION_FAILED');
       }
 
       createdUserId = authData.user.id;
@@ -94,15 +102,19 @@ export default async function handler(req, res) {
           must_change_password: false,
           is_active: true
         });
-      if (profileError) throw profileError;
+
+      if (profileError) {
+        throw stageError(profileError, 'profile_creation', 'PROFILE_CREATION_FAILED');
+      }
 
       const authClient = createSupabaseAuthClient();
       const { data: signInData, error: signInError } = await authClient.auth.signInWithPassword({
         email,
         password
       });
+
       if (signInError || !signInData?.session) {
-        throw signInError || new Error('Account created, but automatic sign-in failed.');
+        throw stageError(signInError || new Error('Account created, but automatic sign-in failed.'), 'automatic_sign_in', 'AUTO_SIGNIN_FAILED');
       }
 
       return sendJson(res, 201, {
@@ -126,7 +138,11 @@ export default async function handler(req, res) {
       });
     } catch (error) {
       if (createdUserId) {
-        await admin.auth.admin.deleteUser(createdUserId).catch(() => {});
+        try {
+          await admin.auth.admin.deleteUser(createdUserId);
+        } catch {
+          // Cleanup failure must not replace the original registration error.
+        }
       }
       throw error;
     }

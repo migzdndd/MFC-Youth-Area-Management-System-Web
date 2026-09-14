@@ -98,3 +98,15 @@ Do not switch every page at once. Recommended order:
 ## Security rule
 
 Never put `SUPABASE_SERVICE_ROLE_KEY` in HTML or browser JavaScript. It belongs only in Vercel Environment Variables and server-side functions in `Backend/api`.
+
+
+## Registration diagnostics
+
+`GET /api/health` now performs a real Supabase database request instead of only checking whether environment variables are non-empty.
+
+A healthy response must include:
+
+- `"ok": true`
+- `"databaseConnected": true`
+
+Admin registration errors also return a safe `code` and `stage` when a backend step fails, without exposing secret keys.
