@@ -50,6 +50,14 @@ function accessRoleLabel(value) {
   return ACCESS_LEVELS.find(item => item.value === normalized)?.label || 'Member';
 }
 
+function inlineJsArg(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/'/g, '\\u0027');
+}
+
 function isSuperAdminRole(value) {
   return SUPER_ADMIN_ROLES.has(String(value || '').trim().toLowerCase());
 }
@@ -943,7 +951,7 @@ function showTemporaryCredentials(member, temporaryPassword) {
         </button>
 
         <p class="field-help">
-          Frontend prototype only: credentials are stored locally in this browser. Production authentication must use a secure backend and hashed passwords.
+          ${member.cloudBacked ? 'This temporary password was issued securely by the backend and must be changed on first sign-in.' : 'Prototype account: this temporary password is stored only in the local browser data layer.'}
         </p>
       </div>
     `
@@ -971,15 +979,31 @@ function showTemporaryCredentials(member, temporaryPassword) {
   }
 }
 
-window.manageMemberLogin = id => {
+window.manageMemberLogin = async id => {
   if (denyUnlessSuperAdmin()) return;
 
   const data = db();
-  const member = data.members.find(item => item.id === id);
+  const member = data.members.find(item => String(item.id) === String(id));
   if (!member) return;
 
   if (!member.email || !validEmail(member.email)) {
     toast('Add a valid email address to this member before creating a login.', 'error');
+    return;
+  }
+
+  if (member.cloudBacked && session?.backendAuth && !session?.demo) {
+    if (!confirm(`Reset the Supabase login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`)) return;
+
+    try {
+      const payload = await backendApi('/api/members/login', {
+        method: 'POST',
+        body: JSON.stringify({ memberId: member.id })
+      });
+      toast('Account login reset.');
+      showTemporaryCredentials(member, payload?.account?.temporaryPassword);
+    } catch (error) {
+      toast(error?.message || 'Unable to reset this member account.', 'error');
+    }
     return;
   }
 
@@ -1886,7 +1910,7 @@ function renderChapterServantMembers(data) {
                   <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
                   <td>${esc(member.contact || '—')}</td>
                   <td class="actions-cell">
-                    <button class="btn" onclick="viewMember(${member.id})">View</button>
+                    <button class="btn" onclick='viewMember(${inlineJsArg(member.id)})'>View</button>
                   </td>
                 </tr>
               `).join('')}
@@ -2136,42 +2160,42 @@ function renderMembers() {
                         >
                           <button
                             class="btn"
-                            onclick="viewMember(${member.id})"
+                            onclick='viewMember(${inlineJsArg(member.id)})'
                           >
                             View
                           </button>
 
                           <button
                             class="btn"
-                            onclick="editMember(${member.id})"
+                            onclick='editMember(${inlineJsArg(member.id)})'
                           >
                             Edit
                           </button>
 
                           <button
                             class="btn"
-                            onclick="serviceMember(${member.id})"
+                            onclick='serviceMember(${inlineJsArg(member.id)})'
                           >
                             Services
                           </button>
 
                           <button
                             class="btn"
-                            onclick="gigMember(${member.id})"
+                            onclick='gigMember(${inlineJsArg(member.id)})'
                           >
                             GIG
                           </button>
 
                           <button
                             class="btn"
-                            onclick="manageMemberLogin(${member.id})"
+                            onclick='manageMemberLogin(${inlineJsArg(member.id)})'
                           >
                             Login
                           </button>
 
                           <button
                             class="btn red"
-                            onclick="deleteMember(${member.id})"
+                            onclick='deleteMember(${inlineJsArg(member.id)})'
                           >
                             Delete
                           </button>
@@ -2245,7 +2269,7 @@ window.viewMember = function(id) {
   const data = db();
 
   const member = data.members.find(
-    item => item.id === id
+    item => String(item.id) === String(id)
   );
 
   if (!member) return;
@@ -2259,7 +2283,7 @@ window.viewMember = function(id) {
   }
 
   const rows = data.gig
-    .filter(item => item.memberId === id)
+    .filter(item => String(item.memberId) === String(id))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const totalContributions = rows.reduce(
@@ -2432,7 +2456,7 @@ function memberModal(id = null) {
 
   const member = id
     ? data.members.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     )
     : {};
 
@@ -2616,7 +2640,7 @@ function memberModal(id = null) {
 
     body,
 
-    close => {
+    async close => {
       const firstName =
         document
           .getElementById('mFirst')
@@ -2841,31 +2865,67 @@ function memberModal(id = null) {
       };
 
       let provisionResult = null;
+      let savedRecord = record;
 
-      if (id) {
+      if (session?.backendAuth && !session?.demo) {
+        try {
+          const payload = await backendApi('/api/members', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify({
+              ...(id ? { id } : {}),
+              firstName: record.firstName,
+              middleName: record.middleName,
+              lastName: record.lastName,
+              birthDate: record.birthDate || null,
+              firstAttendedYouthCamp: record.firstAttendedYouthCamp || null,
+              contactNumber: record.contact || null,
+              email: record.email,
+              status: record.status,
+              accessLevel: record.accessLevel,
+              chapterId: record.chapterId || null,
+              address: record.address || null
+            })
+          });
+
+          savedRecord = cloudMemberToLocal(payload.member, record);
+          provisionResult = payload.account || null;
+
+          const existingIndex = data.members.findIndex(item =>
+            String(item.id) === String(savedRecord.id) ||
+            (savedRecord.email && String(item.email || '').trim().toLowerCase() === savedRecord.email)
+          );
+          if (existingIndex >= 0) data.members[existingIndex] = savedRecord;
+          else data.members.push(savedRecord);
+
+          if (id && String(savedRecord.id) === String(session?.memberId || '')) {
+            Object.assign(session, {
+              memberId: savedRecord.id,
+              name: fullName(savedRecord),
+              firstName: savedRecord.firstName || '',
+              lastName: savedRecord.lastName || '',
+              email: savedRecord.email || session.email,
+              role: normalizeAccessRole(savedRecord.accessLevel || session.role),
+              chapterId: savedRecord.chapterId ?? null
+            });
+            updateStoredSession(session);
+          }
+        } catch (error) {
+          toast(error?.message || 'Unable to save this member to Supabase.', 'error');
+          return;
+        }
+      } else if (id) {
         Object.assign(
-          data.members.find(
-            item =>
-              item.id === id
-          ),
+          data.members.find(item => String(item.id) === String(id)),
           record
         );
 
-        // Existing linked accounts follow member profile/email/status changes.
-        // Older member records without an account are provisioned the first
-        // time an administrator saves them.
         if (findMemberAccount(record)) {
           syncMemberAccount(record);
         } else {
           provisionResult = provisionMemberAccount(record);
         }
       } else {
-        data.members.push(
-          record
-        );
-
-        // New member = new login account. This removes the old conflict where
-        // a person could exist separately in Members and public registration.
+        data.members.push(record);
         provisionResult = provisionMemberAccount(record);
       }
 
@@ -2881,8 +2941,9 @@ function memberModal(id = null) {
 
       renderMembers();
 
-      if (provisionResult?.temporaryPassword) {
-        showTemporaryCredentials(record, provisionResult.temporaryPassword);
+      const temporaryPassword = provisionResult?.temporaryPassword || provisionResult?.account?.temporaryPassword;
+      if (temporaryPassword) {
+        showTemporaryCredentials(savedRecord, temporaryPassword);
       }
     }
   );
@@ -2891,38 +2952,37 @@ function memberModal(id = null) {
 window.editMember =
   memberModal;
 
-window.deleteMember = id => {
+window.deleteMember = async id => {
   if (denyUnlessSuperAdmin()) return;
 
-  if (
-    !confirm(
-      'Delete this member, their linked login account, and their GIG contribution records?'
-    )
-  ) {
+  const data = db();
+  const member = data.members.find(item => String(item.id) === String(id));
+  if (!member) return;
+
+  if (!confirm('Delete this member, their linked login account, and their GIG contribution records? This cannot be undone.')) return;
+
+  if (member.cloudBacked && session?.backendAuth && !session?.demo) {
+    try {
+      await backendApi(`/api/members?id=${encodeURIComponent(member.id)}`, { method: 'DELETE' });
+    } catch (error) {
+      toast(error?.message || 'Unable to delete this member from Supabase.', 'error');
+      return;
+    }
+  }
+
+  data.members = data.members.filter(item => String(item.id) !== String(id));
+  data.gig = data.gig.filter(item => String(item.memberId) !== String(id));
+  removeMemberAccount(id);
+  save(data);
+
+  if (String(session?.memberId || '') === String(id)) {
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    navigateWithLoader('/', true);
     return;
   }
 
-  const data = db();
-
-  data.members =
-    data.members.filter(
-      item => item.id !== id
-    );
-
-  data.gig =
-    data.gig.filter(
-      item =>
-        item.memberId !== id
-    );
-
-  removeMemberAccount(id);
-
-  save(data);
-
-  toast(
-    'Member deleted.'
-  );
-
+  toast('Member deleted.');
   renderMembers();
 };
 
@@ -2933,7 +2993,7 @@ window.serviceMember = id => {
 
   const member =
     data.members.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     );
 
   if (!member) return;
@@ -3009,7 +3069,7 @@ window.gigMember = id => {
 
   const member =
     data.members.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     );
 
   if (!member) return;
@@ -3066,7 +3126,7 @@ window.gigMember = id => {
                     <button
                       class="mini-delete"
                       type="button"
-                      onclick="deleteGigContribution(${id}, ${row.id})"
+                      onclick='deleteGigContribution(${inlineJsArg(id)}, ${inlineJsArg(row.id)})'
                       aria-label="Delete contribution"
                     >
                       ×
@@ -3382,8 +3442,8 @@ function renderChapterServantDashboard(data) {
                         <td>${esc((member.services || []).join(', ') || 'No Service Assigned')}</td>
                         <td>${esc(money(total))}</td>
                         <td class="actions-cell">
-                          <button class="btn" onclick="viewMember(${member.id})">View</button>
-                          <button class="btn" onclick="gigMember(${member.id})">GIG</button>
+                          <button class="btn" onclick='viewMember(${inlineJsArg(member.id)})'>View</button>
+                          <button class="btn" onclick='gigMember(${inlineJsArg(member.id)})'>GIG</button>
                         </td>
                       </tr>
                     `;
@@ -3634,7 +3694,7 @@ function chapterModal(id = null) {
 
   const chapter = id
     ? data.chapters.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     )
     : {};
 
@@ -3789,7 +3849,7 @@ window.viewChapter = id => {
 
   const chapter =
     data.chapters.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     );
 
   if (!chapter) return;
@@ -3856,7 +3916,7 @@ window.addMembersToChapter = id => {
   const data = db();
 
   const chapter = data.chapters.find(
-    item => item.id === id
+    item => String(item.id) === String(id)
   );
 
   if (!chapter) {
@@ -5182,7 +5242,7 @@ window.reportModal = function (
 
   const report = id
     ? data.reports.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     )
     : {};
 
@@ -5705,7 +5765,7 @@ window.deleteReport = id => {
 
   if (isChapterServantSession()) {
     const chapter = scopedChapter(data);
-    const report = data.reports.find(item => item.id === id);
+    const report = data.reports.find(item => String(item.id) === String(id));
 
     if (!chapter || !report || report.chapter !== chapter.name) {
       toast('You can only delete activity reports for your assigned chapter.', 'error');
@@ -7086,7 +7146,7 @@ window.eventModal = function (
 
   const event = id
     ? data.events.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     )
     : {};
 
@@ -7325,7 +7385,7 @@ window.viewEvent = id => {
 
   const event =
     data.events.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     );
 
   if (!event) return;
@@ -7610,7 +7670,7 @@ window.participantModal = (
 
   const participant = id
     ? data.participants.find(
-      item => item.id === id
+      item => String(item.id) === String(id)
     )
     : null;
 
@@ -7907,7 +7967,7 @@ window.participantModal = (
 
       if (id) {
         const target = data.participants.find(
-          item => item.id === id
+          item => String(item.id) === String(id)
         );
 
         if (!target) {

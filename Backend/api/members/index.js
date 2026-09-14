@@ -24,6 +24,34 @@ function cleanText(value, max = 255) {
   return String(value || '').trim().slice(0, max);
 }
 
+async function loadAreaMember(supabase, memberId, areaId) {
+  if (!memberId || !areaId) return null;
+  const { data, error } = await supabase
+    .from('members')
+    .select('*')
+    .eq('id', memberId)
+    .eq('area_id', areaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function validateChapter(supabase, chapterId, areaId) {
+  if (!chapterId) return null;
+  const { data: chapter, error } = await supabase
+    .from('chapters')
+    .select('id, area_id')
+    .eq('id', chapterId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!chapter || String(chapter.area_id) !== String(areaId)) {
+    const invalid = new Error('The selected chapter does not belong to your Area.');
+    invalid.statusCode = 400;
+    throw invalid;
+  }
+  return chapter;
+}
+
 async function listMembers(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
 
@@ -75,7 +103,7 @@ async function createMember(req, res) {
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
   let accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
-  let areaId = profile.area_id;
+  const areaId = profile.area_id;
   let chapterId = input.chapterId || null;
 
   if (isChapterServantRole(profile.role)) {
@@ -89,18 +117,11 @@ async function createMember(req, res) {
   if (isChapterServantRole(profile.role) && !chapterId) {
     return sendJson(res, 409, { ok: false, error: 'Your Chapter Servant account is not assigned to a chapter.' });
   }
-
-  if (chapterId) {
-    const { data: chapter, error: chapterError } = await supabase
-      .from('chapters')
-      .select('id, area_id')
-      .eq('id', chapterId)
-      .maybeSingle();
-    if (chapterError) throw chapterError;
-    if (!chapter || String(chapter.area_id) !== String(areaId)) {
-      return sendJson(res, 400, { ok: false, error: 'The selected chapter does not belong to your Area.' });
-    }
+  if (accessLevel === 'chapter_servant' && !chapterId) {
+    return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });
   }
+
+  await validateChapter(supabase, chapterId, areaId);
 
   const { data: existingMember, error: existingError } = await supabase
     .from('members')
@@ -184,11 +205,151 @@ async function createMember(req, res) {
   }
 }
 
+async function updateMember(req, res) {
+  const { supabase, profile } = await requireAuthenticatedProfile(req);
+  if (!isSuperAdminRole(profile.role)) {
+    return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can edit member records.' });
+  }
+
+  const input = req.body || {};
+  const memberId = input.id;
+  if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
+
+  const existing = await loadAreaMember(supabase, memberId, profile.area_id);
+  if (!existing) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
+
+  const firstName = cleanText(input.firstName ?? existing.first_name, 100);
+  const middleName = cleanText(input.middleName ?? existing.middle_name, 100) || null;
+  const lastName = cleanText(input.lastName ?? existing.last_name, 100);
+  const email = normalizeEmail(input.email ?? existing.email);
+  const contactNumber = cleanText(input.contactNumber ?? existing.contact_number, 50) || null;
+  const address = cleanText(input.address ?? existing.address, 1000) || null;
+  const birthDate = input.birthDate ?? existing.birth_date ?? null;
+  const firstAttendedYouthCamp = input.firstAttendedYouthCamp ?? existing.first_attended_youth_camp ?? null;
+  const status = String(input.status ?? existing.status) === 'Inactive' ? 'Inactive' : 'Active';
+  const requestedRole = String(input.accessLevel ?? existing.access_level ?? 'member').trim().toLowerCase();
+  const accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
+  const chapterId = input.chapterId || null;
+
+  if (!firstName || !lastName) {
+    return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
+  }
+  if (!isValidEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid email is required.' });
+  }
+  if (accessLevel === 'chapter_servant' && !chapterId) {
+    return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });
+  }
+
+  await validateChapter(supabase, chapterId, profile.area_id);
+
+  const { data: duplicate, error: duplicateError } = await supabase
+    .from('members')
+    .select('id')
+    .ilike('email', email)
+    .neq('id', memberId)
+    .maybeSingle();
+  if (duplicateError) throw duplicateError;
+  if (duplicate) return sendJson(res, 409, { ok: false, error: 'Another member already uses that email address.' });
+
+  const { data: updated, error: updateError } = await supabase
+    .from('members')
+    .update({
+      chapter_id: chapterId,
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      birth_date: birthDate,
+      contact_number: contactNumber,
+      email,
+      address,
+      status,
+      first_attended_youth_camp: firstAttendedYouthCamp,
+      access_level: accessLevel
+    })
+    .eq('id', memberId)
+    .eq('area_id', profile.area_id)
+    .select('*')
+    .single();
+  if (updateError) throw updateError;
+
+  const { data: linkedProfile, error: linkedProfileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('member_id', memberId)
+    .maybeSingle();
+  if (linkedProfileError) throw linkedProfileError;
+
+  if (linkedProfile?.id) {
+    const { error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({
+        role: accessLevel,
+        chapter_id: chapterId,
+        is_active: status !== 'Inactive'
+      })
+      .eq('id', linkedProfile.id);
+    if (profileUpdateError) throw profileUpdateError;
+
+    const authChanges = {
+      email,
+      user_metadata: {
+        display_name: [firstName, middleName, lastName].filter(Boolean).join(' ')
+      }
+    };
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, authChanges);
+    if (authUpdateError) throw authUpdateError;
+  }
+
+  return sendJson(res, 200, { ok: true, member: updated });
+}
+
+async function deleteMember(req, res) {
+  const { supabase, profile } = await requireAuthenticatedProfile(req);
+  if (!isSuperAdminRole(profile.role)) {
+    return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can delete member records.' });
+  }
+
+  const memberId = req.query?.id || req.body?.id;
+  if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
+
+  const member = await loadAreaMember(supabase, memberId, profile.area_id);
+  if (!member) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
+
+  const { data: linkedProfile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('member_id', memberId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  if (linkedProfile?.id) {
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(linkedProfile.id);
+    if (authDeleteError) throw authDeleteError;
+  }
+
+  const { error: memberDeleteError } = await supabase
+    .from('members')
+    .delete()
+    .eq('id', memberId)
+    .eq('area_id', profile.area_id);
+  if (memberDeleteError) throw memberDeleteError;
+
+  return sendJson(res, 200, {
+    ok: true,
+    deleted: true,
+    deletedAuthUser: Boolean(linkedProfile?.id),
+    memberId
+  });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') return await listMembers(req, res);
     if (req.method === 'POST') return await createMember(req, res);
-    return methodNotAllowed(res, ['GET', 'POST']);
+    if (req.method === 'PATCH') return await updateMember(req, res);
+    if (req.method === 'DELETE') return await deleteMember(req, res);
+    return methodNotAllowed(res, ['GET', 'POST', 'PATCH', 'DELETE']);
   } catch (error) {
     return apiError(res, error);
   }
