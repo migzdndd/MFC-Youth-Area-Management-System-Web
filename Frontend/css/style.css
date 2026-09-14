@@ -2980,9 +2980,10 @@ html.page-is-loading body {
 }
 
 .page-loader__mark-core {
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
 }
 
 .page-loader__copy {

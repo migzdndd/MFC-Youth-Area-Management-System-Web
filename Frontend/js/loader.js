@@ -38,7 +38,7 @@
       <div class="page-loader__content" role="status" aria-live="polite" aria-label="Loading page">
         <div class="page-loader__mark" aria-hidden="true">
           <span class="page-loader__mark-ring"></span>
-          <span class="page-loader__mark-core">MFC</span>
+          <img class="page-loader__mark-core" src="/img/logo-2.png" alt="MFC Youth Logo">
         </div>
         <div class="page-loader__copy">
           <span class="page-loader__overline">MFC Youth</span>
