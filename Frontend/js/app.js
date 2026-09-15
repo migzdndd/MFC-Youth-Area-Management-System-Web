@@ -9,6 +9,23 @@ const USER_KEY = 'mfc_demo_users';
 const DB_VERSION = 7;
 let activeModalCleanup = null;
 
+function initializeMotionEffects() {
+  const revealTargets = document.querySelectorAll('.animate-in');
+  if (!revealTargets.length) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    revealTargets.forEach((element) => element.classList.add('is-visible'));
+    return;
+  }
+
+  revealTargets.forEach((element, index) => {
+    element.style.animationDelay = `${index * 80}ms`;
+    requestAnimationFrame(() => element.classList.add('is-visible'));
+  });
+}
+
+window.addEventListener('DOMContentLoaded', initializeMotionEffects);
+
 const SERVICES = [
   'Unit Servant',
   'Household Servant',
@@ -5427,7 +5444,7 @@ window.reportModal = function (
         chapter => `
                 <option
                   value="${esc(chapter.name)}"
-                  ${(report?.chapter || chapterScope?.name) ===
+                  ${reportFilters.chapter ===
             chapter.name
             ? 'selected'
             : ''
@@ -7374,13 +7391,11 @@ window.viewEvent = id => {
                       </td>
 
                       <td>
-                        <span
-                          class="badge ${participant.paymentStatus ===
+                        <span class="badge ${participant.paymentStatus ===
               'Paid'
               ? 'paid'
               : 'unpaid'
-            }"
-                        >
+            }">
                           ${esc(
               participant.paymentStatus || 'Unpaid'
             )}
@@ -7388,12 +7403,10 @@ window.viewEvent = id => {
                       </td>
 
                       <td>
-                        <span
-                          class="badge ${participant.attended
+                        <span class="badge ${participant.attended
               ? 'attended'
               : 'pending'
-            }"
-                        >
+            }">
                           ${participant.attended
               ? 'Attended'
               : 'Not Yet'

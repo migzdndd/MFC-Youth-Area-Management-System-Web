@@ -264,6 +264,23 @@ function attachPasswordToggles() {
   });
 }
 
+function initializeRevealAnimations() {
+  const revealTargets = document.querySelectorAll('.animate-in');
+  if (!revealTargets.length) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    revealTargets.forEach((element) => element.classList.add('is-visible'));
+    return;
+  }
+
+  revealTargets.forEach((element, index) => {
+    element.style.animationDelay = `${index * 80}ms`;
+    requestAnimationFrame(() => element.classList.add('is-visible'));
+  });
+}
+
+window.addEventListener('DOMContentLoaded', initializeRevealAnimations);
+
 // Signed-in users who revisit the sign-in page go to the correct portal.
 const currentSession = getSession();
 if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {

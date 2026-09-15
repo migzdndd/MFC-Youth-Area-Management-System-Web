@@ -22,6 +22,10 @@
   --success: #2f8c5a;
   --warning: #e0a01c;
   --shadow: 0 12px 32px rgba(16, 35, 58, .10);
+  --motion-fast: 180ms;
+  --motion-medium: 240ms;
+  --motion-slow: 300ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body {
@@ -42,8 +46,148 @@ a {
   color: inherit;
 }
 
-.hidden {
-  display: none !important;
+button,
+a,
+.btn,
+.badge,
+.card,
+.panel,
+.summary-item,
+.service-card,
+.stat-card,
+.login-meta-row span,
+.info-pills span,
+.info-badge,
+.info-status,
+.info-stats div,
+.login-card,
+.login-form,
+.auth-info {
+  will-change: transform, opacity, filter;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    filter var(--motion-fast) var(--ease-out);
+}
+
+button:hover,
+button:focus-visible,
+.btn:hover,
+.btn:focus-visible,
+a:hover,
+a:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(8, 120, 189, 0.12);
+}
+
+button:active,
+.btn:active,
+.btn-auth:active {
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 5px 10px rgba(8, 120, 189, 0.1);
+}
+
+.badge,
+.info-badge,
+.info-status,
+.login-meta-row span,
+.info-pills span {
+  border: 1px solid transparent;
+}
+
+.badge:hover,
+.info-badge:hover,
+.info-status:hover,
+.login-meta-row span:hover,
+.info-pills span:hover {
+  transform: translateY(-1px) scale(1.02);
+  border-color: rgba(8, 120, 189, 0.3);
+  box-shadow: 0 8px 20px rgba(8, 120, 189, 0.08);
+}
+
+.card:hover,
+.panel:hover,
+.summary-item:hover,
+.service-card:hover,
+.stat-card:hover,
+.info-stats div:hover,
+.login-card:hover,
+.login-form:hover,
+.auth-info:hover {
+  transform: translateY(-4px);
+  border-color: rgba(8, 120, 189, 0.32);
+  box-shadow: 0 16px 32px rgba(20, 40, 60, 0.08), 0 0 0 1px rgba(115, 179, 230, 0.14);
+}
+
+.card::before,
+.panel::before,
+.summary-item::before,
+.service-card::before,
+.stat-card::before,
+.info-stats div::before,
+.login-card::before,
+.login-form::before,
+.auth-info::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(12, 128, 191, 0.12), rgba(118, 189, 248, 0.03), rgba(255, 255, 255, 0));
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.card:hover::before,
+.panel:hover::before,
+.summary-item:hover::before,
+.service-card:hover::before,
+.stat-card:hover::before,
+.info-stats div:hover::before,
+.login-card:hover::before,
+.login-form:hover::before,
+.auth-info:hover::before {
+  opacity: 1;
+}
+
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+    filter: blur(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+.animate-in {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+}
+
+.animate-in.is-visible {
+  animation: fadeInUp 420ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-in {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 /* AUTH PAGES */
@@ -2829,10 +2973,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 15px 0;
+   margin: 15px 0;
   color: var(--muted);
   font-size: .75rem;
-  font-weight: 800;
+  font-weight:  800;
   text-transform: uppercase;
 }
 
