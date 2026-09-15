@@ -14,6 +14,7 @@ export default async function handler(req, res) {
   );
 
   let databaseConnected = false;
+  let schemaReady = false;
   let databaseError = null;
 
   if (configured) {
@@ -28,6 +29,14 @@ export default async function handler(req, res) {
         databaseError = error.message || 'Supabase database check failed.';
       } else {
         databaseConnected = true;
+        const [eventSchema, reportSchema] = await Promise.all([
+          admin.from('events').select('id, fee, manual_attendance').limit(1),
+          admin.from('activity_reports').select('id, prepared_by_name, chapter_name_snapshot, activity, participant_count, location, event_id').limit(1)
+        ]);
+        schemaReady = !eventSchema.error && !reportSchema.error;
+        if (!schemaReady) {
+          databaseError = eventSchema.error?.message || reportSchema.error?.message || 'Cloud module migration is incomplete.';
+        }
       }
     } catch (error) {
       databaseError = error?.cause?.message || error?.message || 'Unable to connect to Supabase.';
@@ -41,7 +50,7 @@ export default async function handler(req, res) {
   return sendJson(res, databaseConnected ? 200 : 503, {
     ok: databaseConnected,
     service: 'mfc-youth-web-api',
-    backendPhase: '6.2-admin-registration-area-onboarding',
+    backendPhase: '6.6-cloud-data-modules',
     configured,
     adminRegistrationConfigured: Boolean(config.adminRegistrationCode),
     supabaseUrlConfigured: Boolean(config.supabaseUrl),
@@ -49,6 +58,7 @@ export default async function handler(req, res) {
     ...(urlCheck.host ? { supabaseHost: urlCheck.host } : {}),
     database: databaseConnected ? 'supabase-postgres' : 'unavailable',
     databaseConnected,
+    schemaReady,
     ...(databaseError ? { databaseError } : {}),
     timestamp: new Date().toISOString()
   });

@@ -130,6 +130,116 @@ const previewMode = Boolean(
   new URLSearchParams(window.location.search).get('preview') === '1'
 );
 
+
+async function portalBackendApi(path) {
+  const token = session?.accessToken || '';
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(path, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const body = await response.json().catch(() => ({ ok: false, error: 'Invalid server response.' }));
+    if (!response.ok) throw new Error(body?.error || 'Request failed.');
+    return body;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function portalCloudMember(member, previous = {}) {
+  return {
+    ...previous,
+    id: member.id,
+    areaId: member.area_id || null,
+    chapterId: member.chapter_id || null,
+    firstName: member.first_name || '',
+    middleName: member.middle_name || '',
+    lastName: member.last_name || '',
+    birthDate: member.birth_date || '',
+    contact: member.contact_number || '',
+    email: String(member.email || '').trim().toLowerCase(),
+    address: member.address || '',
+    status: member.status || 'Active',
+    firstAttendedYouthCamp: member.first_attended_youth_camp || '',
+    accessLevel: member.access_level || 'member',
+    services: Array.isArray(previous.services) ? previous.services : [],
+    chapterName: previous.chapterName || '',
+    cloudBacked: true
+  };
+}
+
+async function syncMemberPortalCloudCache() {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return;
+
+  const [membersPayload, syncPayload] = await Promise.all([
+    portalBackendApi('/api/members'),
+    portalBackendApi('/api/sync')
+  ]);
+
+  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  const previousMembers = Array.isArray(data.members) ? data.members : [];
+  const cloudMembers = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
+  const chapters = Array.isArray(syncPayload?.chapters) ? syncPayload.chapters : [];
+  const services = Array.isArray(syncPayload?.services) ? syncPayload.services : [];
+  const serviceLinks = Array.isArray(syncPayload?.memberServices) ? syncPayload.memberServices : [];
+  const chapterNameById = new Map(chapters.map(row => [String(row.id), row.name]));
+  const serviceNameById = new Map(services.map(row => [String(row.id), row.name]));
+  const servicesByMember = new Map();
+
+  serviceLinks.forEach(link => {
+    const memberId = String(link.member_id || '');
+    const name = serviceNameById.get(String(link.service_id || ''));
+    if (!memberId || !name) return;
+    if (!servicesByMember.has(memberId)) servicesByMember.set(memberId, []);
+    servicesByMember.get(memberId).push(name);
+  });
+
+  data.members = cloudMembers.map(row => {
+    const previous = previousMembers.find(item => String(item.id) === String(row.id)) || {};
+    const member = portalCloudMember(row, previous);
+    member.chapterName = member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '';
+    member.services = servicesByMember.get(String(member.id)) || [];
+    return member;
+  });
+
+  data.chapters = chapters.map(row => ({ id: row.id, name: row.name, areaId: row.area_id, cloudBacked: true }));
+  data.services = services.map(row => row.name).filter(Boolean);
+  data.events = (Array.isArray(syncPayload?.events) ? syncPayload.events : []).map(row => {
+    let localDateTime = '';
+    if (row.starts_at) {
+      const date = new Date(row.starts_at);
+      if (!Number.isNaN(date.getTime())) {
+        localDateTime = new Date(date.getTime() + (8 * 60 * 60 * 1000)).toISOString().slice(0, 16);
+      }
+    }
+    return {
+      id: row.id,
+      name: row.name || '',
+      date: localDateTime,
+      venue: row.venue || '',
+      fee: Number(row.fee || 0),
+      peopleAttended: Number(row.manual_attendance || 0),
+      description: row.description || '',
+      cloudBacked: true
+    };
+  });
+  data.participants = (Array.isArray(syncPayload?.participants) ? syncPayload.participants : []).map(row => ({
+    id: row.id,
+    eventId: row.event_id,
+    memberId: row.member_id,
+    paymentMode: row.mode_of_payment || 'Cash',
+    paymentStatus: row.payment_status || 'Unpaid',
+    attended: Boolean(row.attended),
+    cloudBacked: true
+  }));
+
+  localStorage.setItem(DB_KEY, JSON.stringify(data));
+}
+
 function previewMemberFromSession(currentSession) {
   const name = String(currentSession?.name || currentSession?.email || 'Area Servant').trim();
   const parts = name.split(/\s+/).filter(Boolean);
@@ -145,6 +255,13 @@ function previewMemberFromSession(currentSession) {
     services: []
   };
 }
+
+async function bootstrapMemberPortal() {
+  try {
+    await syncMemberPortalCloudCache();
+  } catch (error) {
+    console.warn('Member Portal cloud sync skipped:', error?.message || error);
+  }
 
 if (!session) {
   navigateWithLoader('/', true);
@@ -322,3 +439,11 @@ if (!previewMode) {
     navigateWithLoader('/change-password');
   });
 }
+
+}
+
+bootstrapMemberPortal().catch(error => {
+  console.error('Member Portal failed to load:', error);
+  const root = document.getElementById('memberPortalContent');
+  if (root) root.innerHTML = `<div class="member-empty-card"><strong>Unable to load the Member Portal.</strong><span>Please refresh and try again.</span></div>`;
+});

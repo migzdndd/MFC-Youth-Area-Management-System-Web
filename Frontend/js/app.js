@@ -1,12 +1,12 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Application
-// Browser-only data layer currently active. Backend Phase 6.1 lives under /api; page-by-page migration will replace db()/save().
+// Supabase-backed application. localStorage is used only as a fast UI cache/fallback for authenticated cloud data and demo mode.
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
 const USER_KEY = 'mfc_demo_users';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 let activeModalCleanup = null;
 
 const SERVICES = [
@@ -167,24 +167,140 @@ async function syncBackendMembersIntoLocalDb() {
   const payload = await backendApi('/api/members');
   const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
   const data = db();
-  const currentMembers = Array.isArray(data.members) ? data.members : [];
+  const previousMembers = Array.isArray(data.members) ? data.members : [];
 
-  cloudMembers.forEach(cloudMember => {
+  // In authenticated cloud mode, Supabase is the source of truth. localStorage
+  // only keeps a fast render cache so deleted/stale prototype records cannot
+  // reappear after a refresh.
+  data.members = cloudMembers.map(cloudMember => {
     const email = String(cloudMember.email || '').trim().toLowerCase();
-    const index = currentMembers.findIndex(localMember =>
+    const previous = previousMembers.find(localMember =>
       String(localMember.id) === String(cloudMember.id) ||
       (email && String(localMember.email || '').trim().toLowerCase() === email)
-    );
-
-    if (index >= 0) {
-      currentMembers[index] = cloudMemberToLocal(cloudMember, currentMembers[index]);
-    } else {
-      currentMembers.push(cloudMemberToLocal(cloudMember));
-    }
+    ) || {};
+    return cloudMemberToLocal(cloudMember, previous);
   });
 
-  data.members = currentMembers;
   save(data);
+  return true;
+}
+
+function cloudEventToLocal(row) {
+  let localDateTime = '';
+  if (row.starts_at) {
+    const date = new Date(row.starts_at);
+    if (!Number.isNaN(date.getTime())) {
+      const phTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+      localDateTime = phTime.toISOString().slice(0, 16);
+    }
+  }
+
+  return {
+    id: row.id,
+    areaId: row.area_id,
+    name: row.name || '',
+    date: localDateTime,
+    fee: Number(row.fee || 0),
+    venue: row.venue || '',
+    peopleAttended: Number(row.manual_attendance || 0),
+    description: row.description || '',
+    cloudBacked: true
+  };
+}
+
+function cloudParticipantToLocal(row) {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    memberId: row.member_id,
+    paymentMode: row.mode_of_payment || 'Cash',
+    paymentStatus: row.payment_status || 'Unpaid',
+    attended: Boolean(row.attended),
+    cloudBacked: true
+  };
+}
+
+function cloudGigToLocal(row) {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    chapterId: row.chapter_id || null,
+    date: row.contribution_date,
+    amount: Number(row.amount || 0),
+    note: row.notes || '',
+    cloudBacked: true
+  };
+}
+
+async function syncCloudModulesIntoLocalDb() {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+
+  const payload = await backendApi('/api/sync', { timeoutMs: 10000 });
+  const data = db();
+
+  const chapters = Array.isArray(payload?.chapters) ? payload.chapters : [];
+  const services = Array.isArray(payload?.services) ? payload.services : [];
+  const memberServices = Array.isArray(payload?.memberServices) ? payload.memberServices : [];
+  const events = Array.isArray(payload?.events) ? payload.events : [];
+  const participants = Array.isArray(payload?.participants) ? payload.participants : [];
+  const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+  const gig = Array.isArray(payload?.gig) ? payload.gig : [];
+
+  data.chapters = chapters.map(row => ({
+    id: row.id,
+    areaId: row.area_id,
+    name: row.name || '',
+    cloudBacked: true
+  }));
+
+  data.services = services.map(row => row.name).filter(Boolean);
+  const serviceNameById = new Map(services.map(row => [String(row.id), row.name]));
+  const serviceNamesByMember = new Map();
+  memberServices.forEach(link => {
+    const memberId = String(link.member_id || '');
+    const serviceName = serviceNameById.get(String(link.service_id || ''));
+    if (!memberId || !serviceName) return;
+    if (!serviceNamesByMember.has(memberId)) serviceNamesByMember.set(memberId, []);
+    serviceNamesByMember.get(memberId).push(serviceName);
+  });
+
+  const chapterNameById = new Map(data.chapters.map(chapter => [String(chapter.id), chapter.name]));
+  data.members = data.members.map(member => ({
+    ...member,
+    chapterName: member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '',
+    services: serviceNamesByMember.get(String(member.id)) || []
+  }));
+
+  data.events = events.map(cloudEventToLocal);
+  data.participants = participants.map(cloudParticipantToLocal);
+  data.reports = reports.map(row => ({
+    id: row.id,
+    areaId: row.area_id,
+    chapterId: row.chapter_id || null,
+    chapter: row.chapter_id ? (chapterNameById.get(String(row.chapter_id)) || row.chapter_name_snapshot || '') : (row.chapter_name_snapshot || ''),
+    type: row.report_type || '',
+    date: row.activity_date || '',
+    title: row.title || '',
+    activity: row.activity || '',
+    preparedBy: row.prepared_by_name || '',
+    participants: Number(row.participant_count || 0),
+    location: row.location || '',
+    eventId: row.event_id || null,
+    description: row.notes || '',
+    cloudBacked: true
+  }));
+  data.gig = gig.map(cloudGigToLocal);
+  data.cloudDashboard = payload?.dashboard || null;
+
+  save(data);
+  return true;
+}
+
+async function refreshAllCloudData({ render = true } = {}) {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+  await syncBackendMembersIntoLocalDb();
+  await syncCloudModulesIntoLocalDb();
+  if (render) renderPageSafely();
   return true;
 }
 
@@ -551,14 +667,12 @@ function normalizeDatabase(input) {
     ? data.reports
       .filter(report => report && typeof report === 'object')
       .map(report => {
-        const eventId = report.eventId
-          ? Number(report.eventId)
+        const eventId = report.eventId !== null && report.eventId !== undefined && String(report.eventId).trim()
+          ? report.eventId
           : null;
 
         const linkedParticipants = eventId
-          ? participants.filter(
-            item => Number(item.eventId) === eventId
-          )
+          ? participants.filter(item => String(item.eventId) === String(eventId))
           : [];
 
         const attendedCount = linkedParticipants.filter(
@@ -599,7 +713,10 @@ function normalizeDatabase(input) {
     participants,
     gig: Array.isArray(data.gig)
       ? data.gig.filter(item => item && typeof item === 'object')
-      : []
+      : [],
+    cloudDashboard: data.cloudDashboard && typeof data.cloudDashboard === 'object'
+      ? data.cloudDashboard
+      : null
   };
 }
 
@@ -1370,39 +1487,43 @@ if (sidebar && menuBtn) {
 function renderDashboard() {
   const data = db();
 
+  const cloudSummary = session?.backendAuth && !session?.demo
+    ? data.cloudDashboard
+    : null;
+
   const cards = [
     [
       'members',
       'Total Members',
-      data.members.length,
+      cloudSummary?.members ?? data.members.length,
       'People currently on record'
     ],
 
     [
       'chapters',
       'Chapters',
-      data.chapters.length,
+      cloudSummary?.chapters ?? data.chapters.length,
       'Registered chapters'
     ],
 
     [
       'services',
       'Services',
-      data.services.length,
+      cloudSummary?.services ?? data.services.length,
       'Available service roles'
     ],
 
     [
       'reports',
       'Activity Reports',
-      data.reports.length,
+      cloudSummary?.reports ?? data.reports.length,
       'Reports currently filed'
     ],
 
     [
       'events',
       'Events',
-      data.events.length,
+      cloudSummary?.events ?? data.events.length,
       'Events currently recorded'
     ]
   ];
@@ -1414,8 +1535,8 @@ function renderDashboard() {
 
         count: data.members.filter(
           member =>
-            member.chapterId ===
-            chapter.id
+            String(member.chapterId) ===
+            String(chapter.id)
         ).length
       }))
       .sort(
@@ -1461,24 +1582,20 @@ function renderDashboard() {
     )
     .slice(0, 5);
 
-  const activeMembers =
-    data.members.filter(
-      member =>
-        member.status === 'Active'
-    ).length;
+  const activeMembers = cloudSummary?.activeMembers ?? data.members.filter(
+    member => member.status === 'Active'
+  ).length;
 
-  const attended =
-    data.participants.filter(
-      participant =>
-        participant.attended
-    ).length;
+  const attended = cloudSummary?.attended ?? data.participants.filter(
+    participant => participant.attended
+  ).length;
 
   content.innerHTML =
     pageHeader(
       'Dashboard',
       `Welcome, ${esc(
         session?.name || 'Area User'
-      )}. Here is a quick overview of your Area records.`
+      )}. Here is a quick overview of your Area cloud records.`
     ) +
     `
     <section>
@@ -1486,7 +1603,7 @@ function renderDashboard() {
         <h2>Area Summary</h2>
 
         <p>
-          Current totals across your browser records
+          Current totals from your Area cloud database
         </p>
 
         <div class="section-line"></div>
@@ -1533,7 +1650,7 @@ function renderDashboard() {
 
       <span>
         <strong>
-          ${data.participants.length}
+          ${cloudSummary?.registrations ?? data.participants.length}
         </strong>
         Event Registrations
       </span>
@@ -2614,8 +2731,8 @@ function memberModal(id = null) {
         chapter => `
                 <option
                   value="${chapter.id}"
-                  ${member.chapterId ===
-            chapter.id
+                  ${String(member.chapterId) ===
+            String(chapter.id)
             ? 'selected'
             : ''
           }
@@ -2763,7 +2880,7 @@ function memberModal(id = null) {
       if (
         data.members.some(
           item =>
-            item.id !== id &&
+            String(item.id) !== String(id || '') &&
             item.contact === contact
         )
       ) {
@@ -2779,7 +2896,7 @@ function memberModal(id = null) {
         email &&
         data.members.some(
           item =>
-            item.id !== id &&
+            String(item.id) !== String(id || '') &&
             (
               item.email || ''
             ).toLowerCase() ===
@@ -2794,23 +2911,16 @@ function memberModal(id = null) {
         return;
       }
 
-      const chapterId =
-        Number(
-          document.getElementById(
-            'mChapter'
-          ).value
-        ) || null;
+      const chapterId = document.getElementById('mChapter').value || null;
 
-      const chapter =
-        data.chapters.find(
-          item =>
-            item.id === chapterId
-        );
+      const chapter = data.chapters.find(
+        item => String(item.id) === String(chapterId || '')
+      );
 
       if (
         !id &&
         isChapterServantSession() &&
-        (!chapterServantChapter || chapterId !== chapterServantChapter.id)
+        (!chapterServantChapter || String(chapterId || '') !== String(chapterServantChapter.id))
       ) {
         toast('You can only add members to your assigned chapter.', 'error');
         return;
@@ -2984,16 +3094,18 @@ window.deleteMember = async id => {
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
     try {
       await backendApi(`/api/members?id=${encodeURIComponent(member.id)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
     } catch (error) {
       toast(error?.message || 'Unable to delete this member from Supabase.', 'error');
       return;
     }
+  } else {
+    data.members = data.members.filter(item => String(item.id) !== String(id));
+    data.gig = data.gig.filter(item => String(item.memberId) !== String(id));
+    data.participants = data.participants.filter(item => String(item.memberId) !== String(id));
+    removeMemberAccount(id);
+    save(data);
   }
-
-  data.members = data.members.filter(item => String(item.id) !== String(id));
-  data.gig = data.gig.filter(item => String(item.memberId) !== String(id));
-  removeMemberAccount(id);
-  save(data);
 
   if (String(session?.memberId || '') === String(id)) {
     localStorage.removeItem(SESSION_KEY);
@@ -3061,25 +3173,29 @@ window.serviceMember = id => {
       </div>
     `,
 
-    close => {
-      member.services = [
-        ...document.querySelectorAll(
-          '#serviceChecks input:checked'
-        )
-      ].map(
-        input =>
-          input.value
-      );
+    async close => {
+      const selectedServices = [
+        ...document.querySelectorAll('#serviceChecks input:checked')
+      ].map(input => input.value);
 
-      save(data);
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/services', {
+            method: 'PATCH',
+            body: JSON.stringify({ memberId: member.id, serviceNames: selectedServices })
+          });
+          await refreshAllCloudData({ render: false });
+        } else {
+          member.services = selectedServices;
+          save(data);
+        }
 
-      close();
-
-      toast(
-        'Services updated.'
-      );
-
-      renderMembers();
+        close();
+        toast('Services updated.');
+        renderMembers();
+      } catch (error) {
+        toast(error?.message || 'Unable to update services.', 'error');
+      }
     }
   );
 };
@@ -3103,7 +3219,7 @@ window.gigMember = id => {
     data.gig
       .filter(
         item =>
-          item.memberId === id
+          String(item.memberId) === String(id)
       )
       .sort(
         (a, b) =>
@@ -3225,105 +3341,66 @@ window.gigMember = id => {
       </div>
     `,
 
-    close => {
-      const amount =
-        Number(
-          document.getElementById(
-            'gAmount'
-          ).value
-        );
+    async close => {
+      const amount = Number(document.getElementById('gAmount').value);
+      const date = document.getElementById('gDate').value;
+      const note = document.getElementById('gNote').value.trim();
 
-      const date =
-        document.getElementById(
-          'gDate'
-        ).value;
-
-      if (
-        !date ||
-        amount <= 0
-      ) {
-        toast(
-          'Enter a valid contribution date and amount.',
-          'error'
-        );
-
+      if (!date || amount <= 0) {
+        toast('Enter a valid contribution date and amount.', 'error');
         return;
       }
 
-      data.gig.push({
-        id: uid(),
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/gig', {
+            method: 'POST',
+            body: JSON.stringify({ memberId: id, date, amount, note })
+          });
+          await refreshAllCloudData({ render: false });
+        } else {
+          data.gig.push({ id: uid(), memberId: id, date, amount, note });
+          save(data);
+        }
 
-        memberId: id,
-
-        date,
-
-        amount,
-
-        note:
-          document
-            .getElementById(
-              'gNote'
-            )
-            .value.trim()
-      });
-
-      save(data);
-
-      close();
-
-      toast(
-        'GIG contribution added.'
-      );
-
-      renderMembers();
+        close();
+        toast('GIG contribution added.');
+        renderMembers();
+      } catch (error) {
+        toast(error?.message || 'Unable to save the GIG contribution.', 'error');
+      }
     },
 
     'Add Contribution'
   );
 };
 
-window.deleteGigContribution = (
-  memberId,
-  contributionId
-) => {
+window.deleteGigContribution = async (memberId, contributionId) => {
   const accessData = db();
-  const accessMember = accessData.members.find(
-    member => String(member.id) === String(memberId)
-  );
+  const accessMember = accessData.members.find(member => String(member.id) === String(memberId));
 
   if (!canManageOwnChapterMember(accessData, accessMember)) {
     toast('You can only manage GIG records for members in your assigned chapter.', 'error');
     return;
   }
+  if (!confirm('Delete this GIG contribution?')) return;
 
-  if (
-    !confirm(
-      'Delete this GIG contribution?'
-    )
-  ) {
-    return;
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi(`/api/gig?id=${encodeURIComponent(contributionId)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
+    } else {
+      const data = db();
+      data.gig = data.gig.filter(item => String(item.id) !== String(contributionId));
+      save(data);
+    }
+
+    toast('Contribution deleted.');
+    activeModalCleanup?.();
+    window.gigMember(memberId);
+  } catch (error) {
+    toast(error?.message || 'Unable to delete the contribution.', 'error');
   }
-
-  const data = db();
-
-  data.gig =
-    data.gig.filter(
-      item =>
-        item.id !==
-        contributionId
-    );
-
-  save(data);
-
-  toast(
-    'Contribution deleted.'
-  );
-
-  activeModalCleanup?.();
-
-  window.gigMember(
-    memberId
-  );
 };
 
 // =========================================================
@@ -3373,6 +3450,9 @@ function renderChapterServantDashboard(data) {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const unassignedCount = data.members.filter(isUnassignedMember).length;
+  const unassignedLabel = session?.backendAuth && !session?.demo
+    ? 'Unassigned members available on demand'
+    : `${unassignedCount} unassigned member${unassignedCount === 1 ? '' : 's'} available`;
 
   content.innerHTML =
     pageHeader(
@@ -3394,7 +3474,7 @@ function renderChapterServantDashboard(data) {
         <span class="member-eyebrow">CHAPTER SERVANT ACCESS</span>
         <strong>${esc(chapter.name)} Chapter</strong>
       </div>
-      <span class="scope-chip">${unassignedCount} unassigned member${unassignedCount === 1 ? '' : 's'} available</span>
+      <span class="scope-chip">${esc(unassignedLabel)}</span>
     </div>
 
     <div class="stat-grid">
@@ -3603,8 +3683,8 @@ function renderChapters() {
             const members =
               data.members.filter(
                 member =>
-                  member.chapterId ===
-                  chapter.id
+                  String(member.chapterId) ===
+                  String(chapter.id)
               );
 
             return `
@@ -3636,28 +3716,28 @@ function renderChapters() {
                           >
                             <button
                               class="btn"
-                              onclick="viewChapter(${chapter.id})"
+                              onclick='viewChapter(${inlineJsArg(chapter.id)})'
                             >
                               View Members
                             </button>
 
                             <button
                               class="btn"
-                              onclick="window.addMembersToChapter(${chapter.id})"
+                              onclick='window.addMembersToChapter(${inlineJsArg(chapter.id)})'
                             >
                               + Add Members
                             </button>
 
                             <button
                               class="btn"
-                              onclick="editChapter(${chapter.id})"
+                              onclick='editChapter(${inlineJsArg(chapter.id)})'
                             >
                               Rename
                             </button>
 
                             <button
                               class="btn red"
-                              onclick="deleteChapter(${chapter.id})"
+                              onclick='deleteChapter(${inlineJsArg(chapter.id)})'
                             >
                               Delete
                             </button>
@@ -3731,93 +3811,46 @@ function chapterModal(id = null) {
       'required maxlength="100"'
     ),
 
-    close => {
-      const name =
-        document
-          .getElementById('cName')
-          .value.trim();
+    async close => {
+      const name = document.getElementById('cName').value.trim();
 
       if (!name) {
-        toast(
-          'Chapter name is required.',
-          'error'
-        );
-
+        toast('Chapter name is required.', 'error');
         return;
       }
 
-      if (
-        data.chapters.some(
-          item =>
-            item.id !== id &&
-            item.name.toLowerCase() ===
-            name.toLowerCase()
-        )
-      ) {
-        toast(
-          'That chapter already exists.',
-          'error'
-        );
-
+      if (data.chapters.some(item =>
+        String(item.id) !== String(id || '') &&
+        item.name.toLowerCase() === name.toLowerCase()
+      )) {
+        toast('That chapter already exists.', 'error');
         return;
       }
 
-      if (id) {
-        const oldName =
-          chapter.name;
-
-        chapter.name =
-          name;
-
-        data.members
-          .filter(
-            member =>
-              member.chapterId === id
-          )
-          .forEach(member => {
-            member.chapterName =
-              name;
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/chapters', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify(id ? { id, name } : { name })
           });
+          await refreshAllCloudData({ render: false });
+        } else if (id) {
+          const oldName = chapter.name;
+          chapter.name = name;
+          data.members.filter(member => String(member.chapterId) === String(id)).forEach(member => { member.chapterName = name; });
+          data.reports.filter(report => report.chapter === oldName).forEach(report => { report.chapter = name; });
+          save(data);
+        } else {
+          data.chapters.push({ id: uid(), name });
+          save(data);
+        }
 
-        data.reports
-          .filter(
-            report =>
-              report.chapter ===
-              oldName
-          )
-          .forEach(report => {
-            report.chapter =
-              name;
-          });
-
-        data.participants
-          .filter(
-            participant =>
-              participant.chapter ===
-              oldName
-          )
-          .forEach(participant => {
-            participant.chapter =
-              name;
-          });
-      } else {
-        data.chapters.push({
-          id: uid(),
-          name
-        });
+        close();
+        toast(id ? 'Chapter renamed.' : 'Chapter added.');
+        renderChapters();
+      } catch (error) {
+        toast(error?.message || 'Unable to save the chapter.', 'error');
       }
-
-      save(data);
-
-      close();
-
-      toast(
-        id
-          ? 'Chapter renamed.'
-          : 'Chapter added.'
-      );
-
-      renderChapters();
     }
   );
 }
@@ -3825,42 +3858,28 @@ function chapterModal(id = null) {
 window.editChapter =
   chapterModal;
 
-window.deleteChapter = id => {
+window.deleteChapter = async id => {
   if (denyUnlessSuperAdmin()) return;
 
   const data = db();
-
-  if (
-    data.members.some(
-      member =>
-        member.chapterId === id
-    )
-  ) {
-    alert(
-      'Move or remove members from this chapter before deleting it.'
-    );
-
+  if (data.members.some(member => String(member.chapterId) === String(id))) {
+    alert('Move or remove members from this chapter before deleting it.');
     return;
   }
+  if (!confirm('Delete this chapter?')) return;
 
-  if (
-    confirm(
-      'Delete this chapter?'
-    )
-  ) {
-    data.chapters =
-      data.chapters.filter(
-        chapter =>
-          chapter.id !== id
-      );
-
-    save(data);
-
-    toast(
-      'Chapter deleted.'
-    );
-
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi(`/api/chapters?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
+    } else {
+      data.chapters = data.chapters.filter(chapter => String(chapter.id) !== String(id));
+      save(data);
+    }
+    toast('Chapter deleted.');
     renderChapters();
+  } catch (error) {
+    toast(error?.message || 'Unable to delete the chapter.', 'error');
   }
 };
 
@@ -3885,7 +3904,7 @@ window.viewChapter = id => {
   const members =
     data.members.filter(
       member =>
-        member.chapterId === id
+        String(member.chapterId) === String(id)
     );
 
   openModal(
@@ -3932,7 +3951,7 @@ window.viewChapter = id => {
 };
 
 
-window.addMembersToChapter = id => {
+window.addMembersToChapter = async id => {
   const data = db();
 
   const chapter = data.chapters.find(
@@ -3956,11 +3975,41 @@ window.addMembersToChapter = id => {
     return;
   }
 
-  const unassigned = data.members
-    .filter(isUnassignedMember)
-    .sort((a, b) =>
-      fullName(a).localeCompare(fullName(b))
-    );
+  let unassigned = [];
+
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      // Chapter Servants intentionally receive only their own chapter roster from
+      // /api/members. Fetch the Area's unassigned-member pool only when this
+      // assignment dialog is opened, through the scoped backend endpoint.
+      const result = await backendApi(
+        `/api/chapters/assign-members?chapterId=${encodeURIComponent(chapter.id)}`,
+        { timeoutMs: 8000 }
+      );
+
+      unassigned = (Array.isArray(result?.members) ? result.members : [])
+        .map(row => ({
+          id: row.id,
+          firstName: row.first_name || '',
+          middleName: row.middle_name || '',
+          lastName: row.last_name || '',
+          email: row.email || '',
+          contact: row.contact_number || '',
+          status: row.status || 'Active',
+          chapterId: null,
+          chapterName: '',
+          cloudBacked: true
+        }))
+        .sort((a, b) => fullName(a).localeCompare(fullName(b)));
+    } else {
+      unassigned = data.members
+        .filter(isUnassignedMember)
+        .sort((a, b) => fullName(a).localeCompare(fullName(b)));
+    }
+  } catch (error) {
+    toast(error?.message || 'Unable to load unassigned members.', 'error');
+    return;
+  }
 
   if (!unassigned.length) {
     openModal(
@@ -3994,7 +4043,7 @@ window.addMembersToChapter = id => {
           <input
             type="checkbox"
             name="chapterMember"
-            value="${member.id}"
+            value="${esc(member.id)}"
           >
 
           <span>
@@ -4032,47 +4081,48 @@ window.addMembersToChapter = id => {
         No unassigned members match your search.
       </p>
     `,
-    close => {
+    async close => {
       const selectedIds = [
-        ...document.querySelectorAll(
-          'input[name="chapterMember"]:checked'
-        )
-      ]
-        .map(input => Number(input.value))
-        .filter(Number.isFinite);
+        ...document.querySelectorAll('input[name="chapterMember"]:checked')
+      ].map(input => String(input.value)).filter(Boolean);
 
       if (!selectedIds.length) {
         toast('Select at least one member.', 'error');
         return;
       }
 
-      let assignedCount = 0;
-
-      data.members.forEach(member => {
-        if (
-          selectedIds.includes(member.id) &&
-          isUnassignedMember(member)
-        ) {
-          member.chapterId = chapter.id;
-          member.chapterName = chapter.name;
-          syncMemberAccount(member);
-          assignedCount += 1;
+      try {
+        let assignedCount = 0;
+        if (session?.backendAuth && !session?.demo) {
+          const result = await backendApi('/api/chapters/assign-members', {
+            method: 'POST',
+            body: JSON.stringify({ chapterId: chapter.id, memberIds: selectedIds })
+          });
+          assignedCount = Number(result?.assignedCount || 0);
+          await refreshAllCloudData({ render: false });
+        } else {
+          data.members.forEach(member => {
+            if (selectedIds.includes(String(member.id)) && isUnassignedMember(member)) {
+              member.chapterId = chapter.id;
+              member.chapterName = chapter.name;
+              syncMemberAccount(member);
+              assignedCount += 1;
+            }
+          });
+          save(data);
         }
-      });
 
-      if (!assignedCount) {
-        toast('The selected members are no longer available for assignment.', 'error');
-        return;
+        if (!assignedCount) {
+          toast('The selected members are no longer available for assignment.', 'error');
+          return;
+        }
+
+        close();
+        toast(`${assignedCount} member${assignedCount === 1 ? '' : 's'} added to ${chapter.name} Chapter.`);
+        renderChapters();
+      } catch (error) {
+        toast(error?.message || 'Unable to assign the selected members.', 'error');
       }
-
-      save(data);
-      close();
-
-      toast(
-        `${assignedCount} member${assignedCount === 1 ? '' : 's'} added to ${chapter.name} Chapter.`
-      );
-
-      renderChapters();
     },
     'Add Selected Members'
   );
@@ -5118,14 +5168,14 @@ function renderReports() {
                         >
                           <button
                             class="btn"
-                            onclick="reportModal(${report.id})"
+                            onclick='reportModal(${inlineJsArg(report.id)})'
                           >
                             Edit
                           </button>
 
                           <button
                             class="btn red"
-                            onclick="deleteReport(${report.id})"
+                            onclick='deleteReport(${inlineJsArg(report.id)})'
                           >
                             Delete
                           </button>
@@ -5279,8 +5329,8 @@ window.reportModal = function (
     report?.eventId
       ? data.events.find(
         event =>
-          event.id ===
-          report.eventId
+          String(event.id) ===
+          String(report.eventId)
       )
       : null;
 
@@ -5294,8 +5344,8 @@ window.reportModal = function (
         event => `
           <option
             value="${event.id}"
-            ${report?.eventId ===
-            event.id
+            ${String(report?.eventId || '') ===
+            String(event.id)
             ? 'selected'
             : ''
           }
@@ -5535,185 +5585,80 @@ window.reportModal = function (
 
     body,
 
-    close => {
-      const title =
-        document
-          .getElementById('rTitle')
-          .value.trim();
+    async close => {
+      const title = document.getElementById('rTitle').value.trim();
+      const date = document.getElementById('rDate').value;
+      const reportType = document.getElementById('rType').value.trim();
+      const participants = Number(document.getElementById('rParticipants').value || 0);
 
-      const date =
-        document.getElementById(
-          'rDate'
-        ).value;
-
-      const reportType =
-        document
-          .getElementById('rType')
-          .value.trim();
-
-      const participants =
-        Number(
-          document.getElementById(
-            'rParticipants'
-          ).value || 0
-        );
-
-      if (
-        !title ||
-        !date
-      ) {
-        toast(
-          'Report title and date are required.',
-          'error'
-        );
-
+      if (!title || !date) {
+        toast('Report title and date are required.', 'error');
         return;
       }
-
       if (!reportType) {
-        toast(
-          'Please select a report type.',
-          'error'
-        );
-
+        toast('Please select a report type.', 'error');
+        return;
+      }
+      const isLegacyTypeBeingPreserved = Boolean(
+        id && report?.type && !REPORT_TYPES.includes(report.type) && reportType === report.type
+      );
+      if (!REPORT_TYPES.includes(reportType) && !isLegacyTypeBeingPreserved) {
+        toast('Please select one of the available report types.', 'error');
+        return;
+      }
+      if (date > todayISO()) {
+        toast('Report date cannot be in the future.', 'error');
+        return;
+      }
+      if (!Number.isInteger(participants) || participants < 0) {
+        toast('Participants must be a whole number of zero or more.', 'error');
         return;
       }
 
-      const isLegacyTypeBeingPreserved =
-        Boolean(
-          id &&
-          report?.type &&
-          !REPORT_TYPES.includes(report.type) &&
-          reportType === report.type
-        );
-
-      if (
-        !REPORT_TYPES.includes(reportType) &&
-        !isLegacyTypeBeingPreserved
-      ) {
-        toast(
-          'Please select one of the available report types.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        date > todayISO()
-      ) {
-        toast(
-          'Report date cannot be in the future.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        !Number.isInteger(
-          participants
-        ) ||
-        participants < 0
-      ) {
-        toast(
-          'Participants must be a whole number of zero or more.',
-          'error'
-        );
-
-        return;
-      }
-
-      const eventId =
-        Number(
-          document.getElementById(
-            'rEvent'
-          ).value
-        ) || null;
-
+      const chapterName = isChapterServantSession() && chapterScope
+        ? chapterScope.name
+        : document.getElementById('rChapter').value;
+      const chapterId = chapterName
+        ? (data.chapters.find(chapter => chapter.name === chapterName)?.id || null)
+        : null;
+      const eventId = document.getElementById('rEvent').value || null;
       const record = {
-        id:
-          id ||
-          uid(),
-
+        id: id || uid(),
         title,
-
-        chapter:
-          isChapterServantSession() && chapterScope
-            ? chapterScope.name
-            : document.getElementById(
-                'rChapter'
-              ).value,
-
-        type:
-          document
-            .getElementById(
-              'rType'
-            )
-            .value.trim(),
-
-        activity:
-          document
-            .getElementById(
-              'rActivity'
-            )
-            .value.trim(),
-
+        chapter: chapterName,
+        chapterId,
+        type: reportType,
+        activity: document.getElementById('rActivity').value.trim(),
         date,
-
-        preparedBy:
-          isChapterServantSession()
-            ? (session?.name || '')
-            : document
-                .getElementById(
-                  'rPrepared'
-                )
-                .value.trim(),
-
+        preparedBy: isChapterServantSession() ? (session?.name || '') : document.getElementById('rPrepared').value.trim(),
         participants,
-
-        location:
-          document
-            .getElementById(
-              'rLocation'
-            )
-            .value.trim(),
-
+        location: document.getElementById('rLocation').value.trim(),
         eventId,
-
-        description:
-          document
-            .getElementById(
-              'rDescription'
-            )
-            .value.trim()
+        description: document.getElementById('rDescription').value.trim()
       };
 
-      if (id) {
-        Object.assign(
-          data.reports.find(
-            item =>
-              item.id === id
-          ),
-          record
-        );
-      } else {
-        data.reports.push(
-          record
-        );
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/reports', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify({ ...record, chapterName, id: id || undefined })
+          });
+          await refreshAllCloudData({ render: false });
+        } else if (id) {
+          const target = data.reports.find(item => String(item.id) === String(id));
+          if (target) Object.assign(target, record);
+          save(data);
+        } else {
+          data.reports.push(record);
+          save(data);
+        }
+
+        close();
+        toast(id ? 'Report updated.' : 'Report added.');
+        renderReports();
+      } catch (error) {
+        toast(error?.message || 'Unable to save the activity report.', 'error');
       }
-
-      save(data);
-
-      close();
-
-      toast(
-        id
-          ? 'Report updated.'
-          : 'Report added.'
-      );
-
-      renderReports();
     }
   );
 
@@ -5725,22 +5670,17 @@ window.reportModal = function (
   eventSelect?.addEventListener(
     'change',
     () => {
-      const event =
-        data.events.find(
-          item =>
-            item.id ===
-            Number(
-              eventSelect.value
-            )
-        );
+      const event = data.events.find(
+        item => String(item.id) === String(eventSelect.value)
+      );
 
       if (!event) return;
 
       const eventParticipants =
         data.participants.filter(
           item =>
-            item.eventId ===
-            event.id
+            String(item.eventId) ===
+            String(event.id)
         );
 
       const attended =
@@ -5780,13 +5720,12 @@ window.reportModal = function (
   );
 };
 
-window.deleteReport = id => {
+window.deleteReport = async id => {
   const data = db();
 
   if (isChapterServantSession()) {
     const chapter = scopedChapter(data);
     const report = data.reports.find(item => String(item.id) === String(id));
-
     if (!chapter || !report || report.chapter !== chapter.name) {
       toast('You can only delete activity reports for your assigned chapter.', 'error');
       return;
@@ -5795,28 +5734,21 @@ window.deleteReport = id => {
     toast('You do not have permission to delete activity reports.', 'error');
     return;
   }
+  if (!confirm('Delete this activity report?')) return;
 
-  if (
-    !confirm(
-      'Delete this activity report?'
-    )
-  ) {
-    return;
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi(`/api/reports?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
+    } else {
+      data.reports = data.reports.filter(report => String(report.id) !== String(id));
+      save(data);
+    }
+    toast('Report deleted.');
+    renderReports();
+  } catch (error) {
+    toast(error?.message || 'Unable to delete the activity report.', 'error');
   }
-
-  data.reports =
-    data.reports.filter(
-      report =>
-        report.id !== id
-    );
-
-  save(data);
-
-  toast(
-    'Report deleted.'
-  );
-
-  renderReports();
 };
 
 // =========================================================
@@ -6858,8 +6790,8 @@ function eventAttendance(
   const participants =
     data.participants.filter(
       participant =>
-        participant.eventId ===
-        event.id
+        String(participant.eventId) ===
+        String(event.id)
     );
 
   const attended =
@@ -6996,8 +6928,8 @@ function renderEvents() {
             const participants =
               data.participants.filter(
                 participant =>
-                  participant.eventId ===
-                  event.id
+                  String(participant.eventId) ===
+                  String(event.id)
               );
 
             const upcoming =
@@ -7071,7 +7003,7 @@ function renderEvents() {
                           >
                             <button
                               class="btn"
-                              onclick="viewEvent(${event.id})"
+                              onclick='viewEvent(${inlineJsArg(event.id)})'
                             >
                               View
                             </button>
@@ -7080,14 +7012,14 @@ function renderEvents() {
                               ? `
                                 <button
                                   class="btn"
-                                  onclick="eventModal(${event.id})"
+                                  onclick='eventModal(${inlineJsArg(event.id)})'
                                 >
                                   Edit
                                 </button>
 
                                 <button
                                   class="btn red"
-                                  onclick="deleteEvent(${event.id})"
+                                  onclick='deleteEvent(${inlineJsArg(event.id)})'
                                 >
                                   Delete
                                 </button>
@@ -7247,156 +7179,78 @@ window.eventModal = function (
 
     body,
 
-    close => {
-      const name =
-        document
-          .getElementById('eName')
-          .value.trim();
+    async close => {
+      const name = document.getElementById('eName').value.trim();
+      const date = document.getElementById('eDate').value;
+      const attendance = Number(document.getElementById('eAttended').value || 0);
 
-      const date =
-        document.getElementById(
-          'eDate'
-        ).value;
-
-      const attendance =
-        Number(
-          document.getElementById(
-            'eAttended'
-          ).value || 0
-        );
-
-      if (
-        !name ||
-        !date
-      ) {
-        toast(
-          'Event name and date are required.',
-          'error'
-        );
-
+      if (!name || !date) {
+        toast('Event name and date are required.', 'error');
         return;
       }
-
-      if (
-        !Number.isInteger(
-          attendance
-        ) ||
-        attendance < 0
-      ) {
-        toast(
-          'Manual attendance must be a whole number of zero or more.',
-          'error'
-        );
-
+      if (!Number.isInteger(attendance) || attendance < 0) {
+        toast('Manual attendance must be a whole number of zero or more.', 'error');
         return;
       }
 
       const record = {
-        id:
-          id ||
-          uid(),
-
+        id: id || uid(),
         name,
-
         date,
-
-        fee:
-          Number(
-            document.getElementById(
-              'eFee'
-            ).value || 0
-          ),
-
-        venue:
-          document
-            .getElementById(
-              'eVenue'
-            )
-            .value.trim(),
-
-        peopleAttended:
-          attendance,
-
-        description:
-          document
-            .getElementById(
-              'eDescription'
-            )
-            .value.trim()
+        fee: Number(document.getElementById('eFee').value || 0),
+        venue: document.getElementById('eVenue').value.trim(),
+        peopleAttended: attendance,
+        description: document.getElementById('eDescription').value.trim()
       };
 
-      if (id) {
-        Object.assign(
-          data.events.find(
-            item =>
-              item.id === id
-          ),
-          record
-        );
-      } else {
-        data.events.push(
-          record
-        );
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/events', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify({ ...record, id: id || undefined })
+          });
+          await refreshAllCloudData({ render: false });
+        } else if (id) {
+          const target = data.events.find(item => String(item.id) === String(id));
+          if (target) Object.assign(target, record);
+          save(data);
+        } else {
+          data.events.push(record);
+          save(data);
+        }
+
+        close();
+        toast(id ? 'Event updated.' : 'Event added.');
+        renderEvents();
+      } catch (error) {
+        toast(error?.message || 'Unable to save the event.', 'error');
       }
-
-      save(data);
-
-      close();
-
-      toast(
-        id
-          ? 'Event updated.'
-          : 'Event added.'
-      );
-
-      renderEvents();
     }
   );
 };
 
-window.deleteEvent = id => {
+window.deleteEvent = async id => {
   if (denyUnlessSuperAdmin('Only Super Admin access levels can delete Area events.')) return;
+  if (!confirm('Delete this event and all of its participant records?')) return;
 
-  if (
-    !confirm(
-      'Delete this event and all of its participant records?'
-    )
-  ) {
-    return;
-  }
-
-  const data = db();
-
-  data.events =
-    data.events.filter(
-      event =>
-        event.id !== id
-    );
-
-  data.participants =
-    data.participants.filter(
-      participant =>
-        participant.eventId !== id
-    );
-
-  data.reports.forEach(
-    report => {
-      if (
-        report.eventId === id
-      ) {
-        report.eventId =
-          null;
-      }
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi(`/api/events?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
+    } else {
+      const data = db();
+      data.events = data.events.filter(event => String(event.id) !== String(id));
+      data.participants = data.participants.filter(participant => String(participant.eventId) !== String(id));
+      data.reports.forEach(report => {
+        if (String(report.eventId || '') === String(id)) report.eventId = null;
+      });
+      save(data);
     }
-  );
-
-  save(data);
-
-  toast(
-    'Event deleted.'
-  );
-
-  renderEvents();
+    toast('Event deleted.');
+    renderEvents();
+  } catch (error) {
+    toast(error?.message || 'Unable to delete the event.', 'error');
+  }
 };
 
 window.viewEvent = id => {
@@ -7413,7 +7267,7 @@ window.viewEvent = id => {
   const participants =
     data.participants.filter(
       participant =>
-        participant.eventId === id
+        String(participant.eventId) === String(id)
     );
 
   const paid =
@@ -7522,14 +7376,14 @@ window.viewEvent = id => {
                           ? `
                             <button
                               class="btn"
-                              onclick="participantModal(${id}, ${participant.id})"
+                              onclick='participantModal(${inlineJsArg(id)}, ${inlineJsArg(participant.id)})'
                             >
                               Edit
                             </button>
 
                             <button
                               class="btn red"
-                              onclick="deleteParticipant(${id}, ${participant.id})"
+                              onclick='deleteParticipant(${inlineJsArg(id)}, ${inlineJsArg(participant.id)})'
                             >
                               Delete
                             </button>
@@ -7661,7 +7515,7 @@ window.viewEvent = id => {
           <button
             class="btn blue"
             type="button"
-            onclick="participantModal(${id})"
+            onclick='participantModal(${inlineJsArg(id)})'
           >
             + Register Participant
           </button>
@@ -7701,8 +7555,8 @@ window.participantModal = (
   const registeredMemberIds = new Set(
     data.participants
       .filter(item =>
-        item.eventId === eventId &&
-        item.id !== id &&
+        String(item.eventId) === String(eventId) &&
+        String(item.id) !== String(id || '') &&
         item.memberId !== null &&
         item.memberId !== undefined
       )
@@ -7867,161 +7721,73 @@ window.participantModal = (
 
     body,
 
-    close => {
+    async close => {
       let member = linkedMember;
 
       if (!id) {
-        const selectedMember = document.querySelector(
-          'input[name="pMember"]:checked'
-        );
-
+        const selectedMember = document.querySelector('input[name="pMember"]:checked');
         if (!selectedMember) {
-          toast(
-            data.members.length
-              ? 'Select a registered member.'
-              : 'Add a member in the Members tab before registering a participant.',
-            'error'
-          );
-
+          toast(data.members.length ? 'Select a registered member.' : 'Add a member in the Members tab before registering a participant.', 'error');
           return;
         }
-
-        member = data.members.find(
-          item => String(item.id) === String(selectedMember.value)
-        );
-
+        member = data.members.find(item => String(item.id) === String(selectedMember.value));
         if (!member) {
-          toast(
-            'The selected member could not be found. Refresh and try again.',
-            'error'
-          );
-
+          toast('The selected member could not be found. Refresh and try again.', 'error');
           return;
         }
-
-        if (
-          data.participants.some(
-            item =>
-              item.eventId === eventId &&
-              item.id !== id &&
-              String(item.memberId) === String(member.id)
-          )
-        ) {
-          toast(
-            'That member is already registered for this event.',
-            'error'
-          );
-
+        if (data.participants.some(item =>
+          String(item.eventId) === String(eventId) &&
+          String(item.id) !== String(id || '') &&
+          String(item.memberId) === String(member.id)
+        )) {
+          toast('That member is already registered for this event.', 'error');
           return;
         }
       }
 
       const record = {
-        id:
-          id ||
-          uid(),
-
+        id: id || uid(),
         eventId,
-
-        memberId:
-          member?.id ??
-          participant?.memberId ??
-          null,
-
-        // Keep a compact participant snapshot for historical compatibility.
-        first:
-          member?.firstName ??
-          participant?.first ??
-          '',
-
-        last:
-          member?.lastName ??
-          participant?.last ??
-          '',
-
-        mi:
-          member?.middleName
-            ? String(member.middleName).trim().charAt(0).toUpperCase()
-            : participant?.mi ?? '',
-
-        age:
-          member
-            ? calculateAge(member.birthDate) || 0
-            : participant?.age || 0,
-
-        contact:
-          member?.contact ??
-          participant?.contact ??
-          '',
-
-        address:
-          member?.address ??
-          participant?.address ??
-          '',
-
-        chapter:
-          member?.chapterName ??
-          participant?.chapter ??
-          '',
-
-        service:
-          member
-            ? (member.services || []).join(', ')
-            : participant?.service ?? '',
-
-        paymentMode:
-          document.getElementById(
-            'pMode'
-          ).value,
-
-        paymentStatus:
-          document.getElementById(
-            'pPay'
-          ).value,
-
-        attended:
-          document.getElementById(
-            'pAttended'
-          ).checked
+        memberId: member?.id ?? participant?.memberId ?? null,
+        first: member?.firstName ?? participant?.first ?? '',
+        last: member?.lastName ?? participant?.last ?? '',
+        mi: member?.middleName ? String(member.middleName).trim().charAt(0).toUpperCase() : participant?.mi ?? '',
+        age: member ? calculateAge(member.birthDate) || 0 : participant?.age || 0,
+        contact: member?.contact ?? participant?.contact ?? '',
+        address: member?.address ?? participant?.address ?? '',
+        chapter: member?.chapterName ?? participant?.chapter ?? '',
+        service: member ? (member.services || []).join(', ') : participant?.service ?? '',
+        paymentMode: document.getElementById('pMode').value,
+        paymentStatus: document.getElementById('pPay').value,
+        attended: document.getElementById('pAttended').checked
       };
 
-      if (id) {
-        const target = data.participants.find(
-          item => String(item.id) === String(id)
-        );
-
-        if (!target) {
-          toast(
-            'Participant record could not be found.',
-            'error'
-          );
-
-          return;
+      try {
+        if (session?.backendAuth && !session?.demo) {
+          await backendApi('/api/participants', {
+            method: id ? 'PATCH' : 'POST',
+            body: JSON.stringify({ ...record, id: id || undefined })
+          });
+          await refreshAllCloudData({ render: false });
+        } else if (id) {
+          const target = data.participants.find(item => String(item.id) === String(id));
+          if (!target) {
+            toast('Participant record could not be found.', 'error');
+            return;
+          }
+          Object.assign(target, record);
+          save(data);
+        } else {
+          data.participants.push(record);
+          save(data);
         }
 
-        Object.assign(
-          target,
-          record
-        );
-      } else {
-        data.participants.push(
-          record
-        );
+        close();
+        toast(id ? 'Participant updated.' : 'Participant registered.');
+        window.viewEvent(eventId);
+      } catch (error) {
+        toast(error?.message || 'Unable to save the participant.', 'error');
       }
-
-      save(data);
-
-      close();
-
-      toast(
-        id
-          ? 'Participant updated.'
-          : 'Participant registered.'
-      );
-
-      window.viewEvent(
-        eventId
-      );
     }
   );
 
@@ -8049,39 +7815,25 @@ window.participantModal = (
   }
 };
 
-window.deleteParticipant = (
-  eventId,
-  id
-) => {
+window.deleteParticipant = async (eventId, id) => {
   if (denyUnlessSuperAdmin('Only Super Admin access levels can manage event participants.')) return;
+  if (!confirm('Delete this participant?')) return;
 
-  if (
-    !confirm(
-      'Delete this participant?'
-    )
-  ) {
-    return;
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi(`/api/participants?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await refreshAllCloudData({ render: false });
+    } else {
+      const data = db();
+      data.participants = data.participants.filter(participant => String(participant.id) !== String(id));
+      save(data);
+    }
+    toast('Participant deleted.');
+    activeModalCleanup?.();
+    window.viewEvent(eventId);
+  } catch (error) {
+    toast(error?.message || 'Unable to delete the participant.', 'error');
   }
-
-  const data = db();
-
-  data.participants =
-    data.participants.filter(
-      participant =>
-        participant.id !== id
-    );
-
-  save(data);
-
-  toast(
-    'Participant deleted.'
-  );
-
-  activeModalCleanup?.();
-
-  window.viewEvent(
-    eventId
-  );
 };
 
 
@@ -8326,22 +8078,19 @@ function renderPageSafely() {
   }
 }
 
-async function refreshCloudMembersInBackground() {
+async function refreshCloudDataInBackground() {
   try {
-    const changed = await syncBackendMembersIntoLocalDb();
-
-    if (changed) {
-      renderPageSafely();
-    }
+    await refreshAllCloudData({ render: true });
   } catch (error) {
-    // Cached/local data remains usable when the network is unavailable.
-    console.warn('Background member sync skipped:', error?.message || error);
+    // Cached data remains usable when the network is unavailable. Supabase is
+    // still the source of truth and will reconcile on the next successful sync.
+    console.warn('Background cloud sync skipped:', error?.message || error);
   }
 }
 
 function scheduleBackgroundSync() {
   const run = () => {
-    refreshCloudMembersInBackground().catch(error => {
+    refreshCloudDataInBackground().catch(error => {
       console.warn('Background refresh failed:', error?.message || error);
     });
   };

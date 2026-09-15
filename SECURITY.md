@@ -13,3 +13,9 @@ Do not add endpoints that concatenate user input into SQL or PostgREST filter ex
 
 ## Database access
 Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scripts. It revokes direct table privileges from `anon` and `authenticated`, keeps RLS enforced, and grants server-side access to `service_role`.
+
+## Area and role isolation
+- All cloud module endpoints authenticate the Supabase access token on the Backend.
+- Queries are scoped by `profiles.area_id`; Chapter Servants are additionally constrained to their assigned Chapter where applicable.
+- Regular Members receive only their own member-linked service/GIG/participant data while Area events remain visible to the Member Portal.
+- Run `Backend/supabase/005_cloud_modules.sql` after migrations 001-004 on an existing project.

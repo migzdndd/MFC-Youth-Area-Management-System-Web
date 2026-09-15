@@ -1,8 +1,8 @@
 # Performance & Resilience Update
 
 ## Page loading
-- Management pages render immediately from cached/browser data instead of waiting for the cloud member sync.
-- Supabase/member synchronization now runs in the background after the initial render.
+- Management pages render immediately from cached/browser data instead of waiting for cloud synchronization.
+- Supabase synchronization for Members, Chapters, Services, Events, Participants, Reports, GIG, and Dashboard analytics now runs in the background after the initial render.
 - Page-specific skeleton loaders are injected before `app.js` executes and mirror dashboard cards, toolbars, tables, service cards, events, reports, and the Member Portal.
 - Internal links are prefetched during idle time and on hover.
 - Navigation no longer has an artificial delay.

@@ -1,6 +1,6 @@
-# Backend Phase 6.2 — Admin Registration & Area Onboarding
+# Backend Phase 6.6 — Supabase Cloud Data Modules
 
-This phase starts the real backend without breaking the current localStorage prototype.
+The backend is now the production source of truth for Auth, Areas, Members, Chapters, Services, Events, Event Participants, Activity Reports and GIG. The browser keeps only a fast UI cache/demo fallback.
 
 ## Architecture
 
@@ -53,8 +53,15 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - `POST /api/areas/select`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`
-- `GET /api/members`
-- `POST /api/members`
+- `GET/POST/PATCH/DELETE /api/members`
+- `GET/POST/PATCH/DELETE /api/chapters`
+- `POST /api/chapters/assign-members`
+- `GET/PATCH /api/services`
+- `GET/POST/PATCH/DELETE /api/events`
+- `GET/POST/PATCH/DELETE /api/participants`
+- `GET/POST/PATCH/DELETE /api/reports`
+- `GET/POST/DELETE /api/gig`
+- `GET /api/sync` for one-request Area data + dashboard analytics hydration
 - Member creation automatically provisions a Supabase Auth account and returns a temporary password once.
 - Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
 - Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
@@ -64,14 +71,15 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 
 1. Create a Supabase project.
 2. Open Supabase SQL Editor and run `Backend/supabase/001_initial_schema.sql`.
-3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the initial Area name/code.
-4. In Vercel Project Settings -> Environment Variables, add:
+3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the Area seed values.
+4. Run `Backend/supabase/003_security_hardening.sql`, `004_servant_leader_password_policy.sql`, and `005_cloud_modules.sql` in order on an existing project.
+5. In Vercel Project Settings -> Environment Variables, add:
    - `SUPABASE_URL`
    - `SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SECRET_KEY`
    - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration password)
-5. Redeploy.
-6. Visit `/api/health`. It should report `configured: true`.
+6. Redeploy.
+7. Visit `/api/health`. It should report `configured: true`.
 
 ## First management / Servant Leader account
 
