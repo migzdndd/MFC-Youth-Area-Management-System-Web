@@ -6,7 +6,6 @@ import authAdminRegister from '../server/auth/admin-register.js';
 import authChangePassword from '../server/auth/change-password.js';
 import authLogin from '../server/auth/login.js';
 import authMe from '../server/auth/me.js';
-import authMemberClaim from '../server/auth/member-claim.js';
 import chapters from '../server/chapters/index.js';
 import chapterAssignMembers from '../server/chapters/assign-members.js';
 import events from '../server/events/index.js';
@@ -27,7 +26,6 @@ const ROUTES = new Map([
   ['auth/change-password', authChangePassword],
   ['auth/login', authLogin],
   ['auth/me', authMe],
-  ['auth/member-claim', authMemberClaim],
   ['chapters', chapters],
   ['chapters/assign-members', chapterAssignMembers],
   ['events', events],

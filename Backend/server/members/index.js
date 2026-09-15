@@ -10,6 +10,7 @@ import {
   isValidEmail,
   apiError
 } from '../_lib/http.js';
+import { generateTemporaryPassword } from '../_lib/password.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -96,7 +97,9 @@ async function createMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email)) return sendJson(res, 400, { ok: false, error: 'A valid email is required.' });
+  if (!isValidEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid email is required because it is used for member login.' });
+  }
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
   let accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
@@ -130,28 +133,78 @@ async function createMember(req, res) {
     return sendJson(res, 409, { ok: false, error: 'A member with that email already exists.' });
   }
 
-  const { data: createdMember, error: memberError } = await supabase
-    .from('members')
-    .insert({
-      area_id: areaId,
-      chapter_id: chapterId,
-      first_name: firstName,
-      middle_name: middleName,
-      last_name: lastName,
-      birth_date: birthDate,
-      contact_number: contactNumber,
-      email,
-      address,
-      status,
-      first_attended_youth_camp: firstAttendedYouthCamp,
-      access_level: accessLevel,
-      created_by: user.id
-    })
-    .select('*')
-    .single();
-  if (memberError) throw memberError;
+  const temporaryPassword = generateTemporaryPassword();
+  let createdMember = null;
+  let createdAuthUserId = null;
 
-  return sendJson(res, 201, { ok: true, member: createdMember });
+  try {
+    const { data: member, error: memberError } = await supabase
+      .from('members')
+      .insert({
+        area_id: areaId,
+        chapter_id: chapterId,
+        first_name: firstName,
+        middle_name: middleName,
+        last_name: lastName,
+        birth_date: birthDate,
+        contact_number: contactNumber,
+        email,
+        address,
+        status,
+        first_attended_youth_camp: firstAttendedYouthCamp,
+        access_level: accessLevel,
+        created_by: user.id
+      })
+      .select('*')
+      .single();
+    if (memberError) throw memberError;
+    createdMember = member;
+
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password: temporaryPassword,
+      email_confirm: true,
+      user_metadata: {
+        display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
+        registration_type: 'admin_provisioned_member',
+        password_origin: 'temporary'
+      }
+    });
+    if (authError || !authData?.user) throw authError || new Error('Unable to create login account.');
+    createdAuthUserId = authData.user.id;
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: createdAuthUserId,
+        member_id: createdMember.id,
+        role: accessLevel,
+        area_id: areaId,
+        chapter_id: chapterId,
+        must_change_password: true,
+        is_active: status !== 'Inactive'
+      });
+    if (profileError) throw profileError;
+
+    return sendJson(res, 201, {
+      ok: true,
+      member: createdMember,
+      account: {
+        email,
+        temporaryPassword,
+        mustChangePassword: true,
+        role: accessLevel
+      }
+    });
+  } catch (error) {
+    if (createdAuthUserId) {
+      await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => {});
+    }
+    if (createdMember?.id) {
+      await supabase.from('members').delete().eq('id', createdMember.id).catch(() => {});
+    }
+    throw error;
+  }
 }
 
 async function updateMember(req, res) {
@@ -292,10 +345,8 @@ async function deleteMember(req, res) {
   }
 
   if (linkedProfile?.id) {
-    return sendJson(res, 409, {
-      ok: false,
-      error: 'This Member is linked to a portal account. Delete the account explicitly before deleting the Member record.'
-    });
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(linkedProfile.id);
+    if (authDeleteError) throw authDeleteError;
   }
 
   const { error: memberDeleteError } = await supabase
@@ -308,7 +359,7 @@ async function deleteMember(req, res) {
   return sendJson(res, 200, {
     ok: true,
     deleted: true,
-    deletedAuthUser: false,
+    deletedAuthUser: Boolean(linkedProfile?.id),
     memberId
   });
 }

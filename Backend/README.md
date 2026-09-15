@@ -62,8 +62,7 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - `GET/POST/PATCH/DELETE /api/reports`
 - `GET/POST/DELETE /api/gig`
 - `GET /api/sync` for one-request Area data + dashboard analytics hydration
-- Member creation creates only the organizational Member record. Optional portal access is claimed separately by the Member.
-- `POST /api/auth/member-claim` creates a self-chosen portal account after matching the verified email to an existing Member record.
+- Member creation automatically provisions a Supabase Auth account and returns a temporary password once.
 - Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
 - Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
 - RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
@@ -139,9 +138,5 @@ an Area but still have `member_id = NULL`.
 ## Password provisioning policy
 
 - Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
-- Admin-added Members receive only an organizational `public.members` record. Member Portal access is optional and is claimed by the Member with their verified email and self-chosen password.
+- Admin-added Members receive a generated temporary password and use `must_change_password = true` until they replace it.
 - The Servant Leader registration code authorizes registration only; it is never used as the user account password.
-
-Member records and login accounts are separate. A Member Portal claim matches the verified
-Supabase Auth email to `lower(public.members.email)`, rejects missing or already-linked
-records, and creates the `profiles` link server-side without creating a duplicate member.

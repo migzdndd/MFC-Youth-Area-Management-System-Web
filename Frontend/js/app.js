@@ -369,6 +369,22 @@ function canManageOwnChapterMember(data, member) {
 }
 
 
+// =========================================================
+// FRONTEND ACCOUNT PROVISIONING
+// Member records are the source of truth. Adding a member creates a linked
+// linked account with a one-time temporary password. In production this must be
+// moved to the backend and passwords must be hashed, never stored in plaintext.
+// =========================================================
+
+function getAuthUsers() {
+  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
+  return Array.isArray(users) ? users : [];
+}
+
+function saveAuthUsers(users) {
+  localStorage.setItem(USER_KEY, JSON.stringify(users));
+}
+
 function authEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
@@ -387,6 +403,166 @@ function isOwnMemberRecord(member) {
   const currentEmail = authEmail(session?.email || '');
   const recordEmail = authEmail(member.email || '');
   return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
+}
+
+function findMemberAccount(member, users = getAuthUsers()) {
+  if (!member) return null;
+
+  const byMemberId = users.find(
+    user => user.memberId !== null && user.memberId !== undefined && String(user.memberId) === String(member.id)
+  );
+  if (byMemberId) return byMemberId;
+
+  const email = authEmail(member.email);
+  if (!email) return null;
+
+  return users.find(
+    user =>
+      authEmail(user.email) === email &&
+      (
+        ACCESS_ROLE_VALUES.has(String(user.role || '').trim().toLowerCase()) ||
+        String(user.role || '').trim().toLowerCase() === 'area_admin' ||
+        (user.role || 'legacy') === 'legacy'
+      )
+  ) || null;
+}
+
+function accountEmailConflict(email, memberId = null) {
+  const normalized = authEmail(email);
+  if (!normalized) return null;
+
+  if (normalized === 'admin@mfcyouth.local') {
+    return 'That email is reserved for the built-in administrator account.';
+  }
+
+  const conflict = getAuthUsers().find(user => {
+    if (authEmail(user.email) !== normalized) return false;
+
+    // The account already linked to this member is allowed.
+    if (
+      memberId !== null &&
+      memberId !== undefined &&
+      user.memberId !== null &&
+      user.memberId !== undefined &&
+      String(user.memberId) === String(memberId)
+    ) {
+      return false;
+    }
+
+    // Old unlinked public-signup accounts can be claimed by an administrator
+    // when the matching member is added. Their password will be reset.
+    if ((user.role || 'legacy') === 'legacy' && (user.memberId === null || user.memberId === undefined)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return conflict ? 'That email address is already being used by another login account.' : null;
+}
+
+function generateTemporaryPassword() {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const all = letters + digits;
+  const randomInt = max => {
+    if (window.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      window.crypto.getRandomValues(values);
+      return values[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  };
+
+  let password = `M${letters[randomInt(letters.length)]}${digits[randomInt(digits.length)]}`;
+  for (let i = 0; i < 7; i += 1) {
+    password += all[randomInt(all.length)];
+  }
+  return password;
+}
+
+function provisionMemberAccount(member, { resetPassword = false } = {}) {
+  if (!member?.email) {
+    throw new Error('A valid email address is required to create an account login.');
+  }
+
+  const users = getAuthUsers();
+  let account = findMemberAccount(member, users);
+  const wasUnlinked = !account || account.memberId === null || account.memberId === undefined || account.role === 'legacy';
+  const issueTemporaryPassword = resetPassword || wasUnlinked;
+  const temporaryPassword = issueTemporaryPassword ? generateTemporaryPassword() : null;
+  const now = new Date().toISOString();
+
+  if (!account) {
+    account = {
+      id: uid(),
+      createdAt: now
+    };
+    users.push(account);
+  }
+
+  Object.assign(account, {
+    memberId: member.id,
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    name: fullName(member),
+    email: authEmail(member.email),
+    role: normalizeAccessRole(member.accessLevel),
+    chapterId: member.chapterId ?? null,
+    isActive: String(member.status || 'Active') !== 'Inactive',
+    updatedAt: now
+  });
+
+  if (temporaryPassword) {
+    account.password = temporaryPassword;
+    account.mustChangePassword = true;
+    account.temporaryPasswordIssuedAt = now;
+  } else if (account.mustChangePassword === undefined) {
+    account.mustChangePassword = false;
+  }
+
+  saveAuthUsers(users);
+  return { account, temporaryPassword, created: wasUnlinked };
+}
+
+function syncMemberAccount(member) {
+  const users = getAuthUsers();
+  const account = findMemberAccount(member, users);
+  if (!account) return false;
+
+  Object.assign(account, {
+    memberId: member.id,
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    name: fullName(member),
+    email: authEmail(member.email),
+    role: normalizeAccessRole(member.accessLevel),
+    chapterId: member.chapterId ?? null,
+    isActive: String(member.status || 'Active') !== 'Inactive',
+    updatedAt: new Date().toISOString()
+  });
+  saveAuthUsers(users);
+  return true;
+}
+
+function removeMemberAccount(memberId) {
+  const users = getAuthUsers().filter(
+    user => String(user.memberId) !== String(memberId)
+  );
+  saveAuthUsers(users);
+}
+
+function memberAccountState(member) {
+  const account = findMemberAccount(member);
+  if (!account && member?.cloudBacked) {
+    return String(member.status || 'Active') === 'Inactive'
+      ? { label: 'Disabled', className: 'inactive' }
+      : { label: 'Active', className: 'active' };
+  }
+  if (!account) return { label: 'Not Provisioned', className: 'inactive' };
+  if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
+  if (account.mustChangePassword) return { label: 'Temporary Password', className: 'pending' };
+  return { label: 'Active', className: 'active' };
 }
 
 function normalizeDatabase(input) {
@@ -912,6 +1088,114 @@ function openModal(
       ?.focus()
   );
 }
+
+function showTemporaryCredentials(member, temporaryPassword) {
+  if (!member || !temporaryPassword) return;
+
+  openModal(
+    'Account Login Created',
+    `
+      <div class="credential-panel">
+        <div class="credential-notice">
+          <strong>Give these temporary credentials to ${esc(fullName(member))}.</strong>
+          <p>The member must change this password immediately after the first successful login.</p>
+        </div>
+
+        <div class="credential-row">
+          <span>Email</span>
+          <code>${esc(member.email)}</code>
+        </div>
+
+        <div class="credential-row">
+          <span>Access Level</span>
+          <code>${esc(accessRoleLabel(member.accessLevel))}</code>
+        </div>
+
+        <div class="credential-row">
+          <span>Temporary Password</span>
+          <code>${esc(temporaryPassword)}</code>
+        </div>
+
+        <button class="btn blue" id="copyMemberCredentials" type="button">
+          Copy Credentials
+        </button>
+
+        <p class="field-help">
+          ${member.cloudBacked ? 'This temporary password was issued securely by the backend and must be changed on first sign-in.' : 'Prototype account: this temporary password is stored only in the local browser data layer.'}
+        </p>
+      </div>
+    `
+  );
+
+  const copyButton = document.getElementById('copyMemberCredentials');
+  if (copyButton) {
+    copyButton.onclick = async () => {
+      const text = `MFC Youth Account Login\nEmail: ${member.email}\nAccess Level: ${accessRoleLabel(member.accessLevel)}\nTemporary Password: ${temporaryPassword}\n\nPlease change your password after signing in.`;
+      try {
+        await navigator.clipboard.writeText(text);
+        copyButton.textContent = 'Copied!';
+      } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+        copyButton.textContent = 'Copied!';
+      }
+    };
+  }
+}
+
+window.manageMemberLogin = async id => {
+  if (denyUnlessSuperAdmin()) return;
+
+  const data = db();
+  const member = data.members.find(item => String(item.id) === String(id));
+  if (!member) return;
+
+  if (!member.email || !validEmail(member.email)) {
+    toast('Add a valid email address to this member before creating a login.', 'error');
+    return;
+  }
+
+  if (member.cloudBacked && session?.backendAuth && !session?.demo) {
+    if (!confirm(`Reset the Supabase login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`)) return;
+
+    try {
+      const payload = await backendApi('/api/members/login', {
+        method: 'POST',
+        body: JSON.stringify({ memberId: member.id })
+      });
+      toast('Account login reset.');
+      showTemporaryCredentials(member, payload?.account?.temporaryPassword);
+    } catch (error) {
+      toast(error?.message || 'Unable to reset this member account.', 'error');
+    }
+    return;
+  }
+
+  const conflict = accountEmailConflict(member.email, member.id);
+  if (conflict) {
+    toast(conflict, 'error');
+    return;
+  }
+
+  const existing = findMemberAccount(member);
+  const action = existing ? 'reset' : 'create';
+  const prompt = existing
+    ? `Reset the account login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`
+    : `Create an account login for ${fullName(member)}? A temporary password will be issued.`;
+
+  if (!confirm(prompt)) return;
+
+  const result = provisionMemberAccount(member, { resetPassword: true });
+  renderMembers();
+  toast(action === 'reset' ? 'Account login reset.' : 'Account login created.');
+  showTemporaryCredentials(member, result.temporaryPassword);
+};
 
 function field(
   label,
@@ -1971,6 +2255,7 @@ function renderMembers() {
                   <th>Chapter</th>
                   <th>Status</th>
                   <th>Services</th>
+                  <th>Account</th>
                   <th>Access</th>
                   <th>Contact Number</th>
                   <th>Actions</th>
@@ -2037,6 +2322,12 @@ function renderMembers() {
                         </td>
 
                         <td>
+                          <span class="badge ${memberAccountState(member).className}">
+                            ${esc(memberAccountState(member).label)}
+                          </span>
+                        </td>
+
+                        <td>
                           ${esc(accessRoleLabel(member.accessLevel))}
                         </td>
 
@@ -2076,6 +2367,13 @@ function renderMembers() {
                             onclick='gigMember(${inlineJsArg(member.id)})'
                           >
                             GIG
+                          </button>
+
+                          <button
+                            class="btn"
+                            onclick='manageMemberLogin(${inlineJsArg(member.id)})'
+                          >
+                            Login
                           </button>
 
                           ${isOwnMemberRecord(member)
@@ -2294,6 +2592,13 @@ window.viewMember = function(id) {
         <div class="detail-item">
           <span class="detail-label">System Access</span>
           <div class="detail-value">${esc(accessRoleLabel(member.accessLevel))}</div>
+        </div>
+
+        <div class="detail-item">
+          <span class="detail-label">Login Account</span>
+          <div class="detail-value">
+            <span class="badge ${memberAccountState(member).className}">${esc(memberAccountState(member).label)}</span>
+          </div>
         </div>
 
         <div class="detail-item">
@@ -2622,6 +2927,13 @@ function memberModal(id = null) {
         return;
       }
 
+      const loginConflict = accountEmailConflict(email, id);
+
+      if (loginConflict) {
+        toast(loginConflict, 'error');
+        return;
+      }
+
       if (
         data.members.some(
           item =>
@@ -2739,6 +3051,7 @@ function memberModal(id = null) {
           member.services || []
       };
 
+      let provisionResult = null;
       let savedRecord = record;
 
       if (session?.backendAuth && !session?.demo) {
@@ -2762,6 +3075,7 @@ function memberModal(id = null) {
           });
 
           savedRecord = cloudMemberToLocal(payload.member, record);
+          provisionResult = payload.account || null;
 
           const existingIndex = data.members.findIndex(item =>
             String(item.id) === String(savedRecord.id) ||
@@ -2792,8 +3106,14 @@ function memberModal(id = null) {
           record
         );
 
+        if (findMemberAccount(record)) {
+          syncMemberAccount(record);
+        } else {
+          provisionResult = provisionMemberAccount(record);
+        }
       } else {
         data.members.push(record);
+        provisionResult = provisionMemberAccount(record);
       }
 
       save(data);
@@ -2803,10 +3123,15 @@ function memberModal(id = null) {
       toast(
         id
           ? 'Member updated.'
-          : 'Member added.'
+          : 'Member added and login account created.'
       );
 
       renderMembers();
+
+      const temporaryPassword = provisionResult?.temporaryPassword || provisionResult?.account?.temporaryPassword;
+      if (temporaryPassword) {
+        showTemporaryCredentials(savedRecord, temporaryPassword);
+      }
     }
   );
 }
@@ -2826,7 +3151,7 @@ window.deleteMember = async id => {
     return;
   }
 
-  if (!confirm('Delete this member and their GIG contribution records? This cannot be undone.')) return;
+  if (!confirm('Delete this member, their linked login account, and their GIG contribution records? This cannot be undone.')) return;
 
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
     try {
@@ -2840,6 +3165,7 @@ window.deleteMember = async id => {
     data.members = data.members.filter(item => String(item.id) !== String(id));
     data.gig = data.gig.filter(item => String(item.memberId) !== String(id));
     data.participants = data.participants.filter(item => String(item.memberId) !== String(id));
+    removeMemberAccount(id);
     save(data);
   }
 
@@ -3841,6 +4167,7 @@ window.addMembersToChapter = async id => {
             if (selectedIds.includes(String(member.id)) && isUnassignedMember(member)) {
               member.chapterId = chapter.id;
               member.chapterName = chapter.name;
+              syncMemberAccount(member);
               assignedCount += 1;
             }
           });

@@ -4450,3 +4450,233 @@ html.page-is-loading body {
   border-color: rgba(107, 196, 250, .28);
   box-shadow: 0 32px 86px rgba(0,0,0,.30), 0 0 0 1px rgba(89, 183, 240, .05);
 }
+
+/* =========================================================
+   UNIVERSAL BUTTON SYSTEM — Uiverse.io by yaasiinaxmed
+   Applied to every usable button/button-like control while
+   preserving responsive sizing and semantic danger/success colors.
+   ========================================================= */
+
+/* Base interaction: outlined control with expanding circular fill. */
+button,
+.btn,
+.btn-auth,
+.link-button,
+.sidebar-nav a,
+.sidebar-account-action,
+.logout-link,
+.member-portal-nav a,
+.auth-slide-button {
+  --color: #0077ff;
+  position: relative !important;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden !important;
+  cursor: pointer;
+  z-index: 1;
+  color: var(--color) !important;
+  border: 2px solid var(--color) !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  font-family: inherit;
+  text-decoration: none;
+  box-shadow: none;
+  transition:
+    color .3s ease,
+    border-color .3s ease,
+    transform .18s ease,
+    box-shadow .18s ease !important;
+}
+
+button::before,
+.btn::before,
+.btn-auth::before,
+.link-button::before,
+.sidebar-nav a::before,
+.sidebar-account-action::before,
+.logout-link::before,
+.member-portal-nav a::before,
+.auth-slide-button::before {
+  position: absolute !important;
+  content: "" !important;
+  background: var(--color) !important;
+  width: 150px !important;
+  height: 200px !important;
+  z-index: -1 !important;
+  border-radius: 50% !important;
+  top: 100% !important;
+  left: 100% !important;
+  right: auto !important;
+  transform: none !important;
+  transition: .3s all !important;
+  pointer-events: none;
+}
+
+button:not(:disabled):hover,
+button:not(:disabled):focus-visible,
+.btn:not([aria-disabled="true"]):hover,
+.btn:not([aria-disabled="true"]):focus-visible,
+.btn-auth:not(:disabled):hover,
+.btn-auth:not(:disabled):focus-visible,
+.link-button:hover,
+.link-button:focus-visible,
+.sidebar-nav a:hover,
+.sidebar-nav a:focus-visible,
+.sidebar-account-action:not(:disabled):hover,
+.sidebar-account-action:not(:disabled):focus-visible,
+.logout-link:not(:disabled):hover,
+.logout-link:not(:disabled):focus-visible,
+.member-portal-nav a:hover,
+.member-portal-nav a:focus-visible,
+.auth-slide-button:not(:disabled):hover,
+.auth-slide-button:not(:disabled):focus-visible {
+  color: #fff !important;
+  background: transparent !important;
+  border-color: var(--color) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color) 22%, transparent) !important;
+}
+
+button:not(:disabled):hover::before,
+button:not(:disabled):focus-visible::before,
+.btn:not([aria-disabled="true"]):hover::before,
+.btn:not([aria-disabled="true"]):focus-visible::before,
+.btn-auth:not(:disabled):hover::before,
+.btn-auth:not(:disabled):focus-visible::before,
+.link-button:hover::before,
+.link-button:focus-visible::before,
+.sidebar-nav a:hover::before,
+.sidebar-nav a:focus-visible::before,
+.sidebar-account-action:not(:disabled):hover::before,
+.sidebar-account-action:not(:disabled):focus-visible::before,
+.logout-link:not(:disabled):hover::before,
+.logout-link:not(:disabled):focus-visible::before,
+.member-portal-nav a:hover::before,
+.member-portal-nav a:focus-visible::before,
+.auth-slide-button:not(:disabled):hover::before,
+.auth-slide-button:not(:disabled):focus-visible::before {
+  top: -30px !important;
+  left: -30px !important;
+  right: auto !important;
+  width: 150px !important;
+}
+
+/* Default action sizing follows the supplied 6em x 2.6em concept,
+   but uses min-width instead of a hard width so labels never clip. */
+button:not(.icon-btn):not(.password-toggle):not(#menuBtn),
+.btn,
+.btn-auth,
+.link-button,
+.sidebar-account-action,
+.logout-link,
+.auth-slide-button {
+  width: auto;
+  min-width: 6em;
+  min-height: 2.6em;
+  line-height: 1.15;
+  padding: .66em 1em;
+  margin: 0;
+  font-size: 17px;
+}
+
+/* Sidebar/navigation buttons keep full-width layouts but use the same effect. */
+.sidebar-nav a,
+.member-portal-nav a {
+  width: 100%;
+  min-height: 2.6em;
+  margin: 0;
+  font-size: .9rem;
+  justify-content: flex-start;
+}
+
+.sidebar-nav a.active,
+.sidebar-nav a.active:hover,
+.sidebar-nav a.active:focus-visible {
+  color: #fff !important;
+  border-color: var(--color) !important;
+  background: var(--color) !important;
+}
+
+.sidebar-nav a.active::before {
+  display: none !important;
+}
+
+/* Compact controls still use the exact fill interaction without breaking forms/modals. */
+.icon-btn,
+.password-toggle,
+#menuBtn {
+  min-width: 2.6em;
+  width: auto;
+  min-height: 2.6em;
+  height: 2.6em;
+  margin: 0;
+  padding: 0 .65em;
+  line-height: 1;
+}
+
+.icon-btn {
+  width: 2.6em;
+  padding: 0;
+}
+
+/* Preserve semantic meaning while keeping one universal component. */
+.btn.red,
+.delete-account-button,
+.logout-link {
+  --color: #d83a45;
+}
+
+.btn.green {
+  --color: #2f8c5a;
+}
+
+/* Dashboard buttons now use the same blue universal control. */
+.dashboard-hero .btn {
+  --color: #0077ff;
+  color: var(--color) !important;
+  border-color: var(--color) !important;
+  background: #fff !important;
+}
+
+.dashboard-hero .btn::before {
+  background: var(--color) !important;
+}
+
+.dashboard-hero .btn:hover,
+.dashboard-hero .btn:focus-visible {
+  color: #fff !important;
+  background: #fff !important;
+}
+
+/* Disabled/unavailable controls do not animate. */
+button:disabled,
+.btn[aria-disabled="true"],
+.sidebar-account-action:disabled,
+.auth-slide-button:disabled {
+  opacity: .5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+button:disabled::before,
+.btn[aria-disabled="true"]::before,
+.sidebar-account-action:disabled::before,
+.auth-slide-button:disabled::before {
+  display: none !important;
+}
+
+/* Fallback for browsers without color-mix support. */
+@supports not (color: color-mix(in srgb, #000 50%, #fff)) {
+  button:not(:disabled):hover,
+  .btn:hover,
+  .btn-auth:not(:disabled):hover,
+  .sidebar-nav a:hover,
+  .sidebar-account-action:not(:disabled):hover,
+  .logout-link:not(:disabled):hover,
+  .member-portal-nav a:hover {
+    box-shadow: 0 8px 18px rgba(0, 119, 255, .22) !important;
+  }
+}

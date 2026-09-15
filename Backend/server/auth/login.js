@@ -1,6 +1,5 @@
 import { createSupabaseAuthClient, createSupabaseAdmin } from '../_lib/supabase.js';
 import { sendJson, methodNotAllowed, normalizeEmail, isValidEmail, apiError } from '../_lib/http.js';
-import { claimMemberRecord } from '../_lib/member-claim.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
@@ -28,14 +27,7 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (profileError) throw profileError;
-    let linkedProfile = profile;
-    if (!linkedProfile) {
-      if (!data.user.email_confirmed_at) {
-        return sendJson(res, 403, { ok: false, error: 'Verify your email address before accessing the Member Portal.' });
-      }
-      linkedProfile = (await claimMemberRecord({ supabase: admin, user: data.user })).profile;
-    }
-    if (linkedProfile.is_active === false) {
+    if (!profile || profile.is_active === false) {
       return sendJson(res, 403, { ok: false, error: 'This account is not active.' });
     }
 
@@ -50,11 +42,11 @@ export default async function handler(req, res) {
         id: data.user.id,
         email: data.user.email,
         name: data.user.user_metadata?.display_name || data.user.email,
-        memberId: linkedProfile.member_id,
-        role: linkedProfile.role,
-        areaId: linkedProfile.area_id,
-        chapterId: linkedProfile.chapter_id,
-        mustChangePassword: linkedProfile.must_change_password
+        memberId: profile.member_id,
+        role: profile.role,
+        areaId: profile.area_id,
+        chapterId: profile.chapter_id,
+        mustChangePassword: profile.must_change_password
       }
     });
   } catch (error) {

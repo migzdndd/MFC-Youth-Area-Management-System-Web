@@ -15,7 +15,7 @@ export function isChapterServantRole(role) {
   return String(role || '').trim().toLowerCase() === 'chapter_servant';
 }
 
-export async function requireAuthenticatedUser(req) {
+export async function requireAuthenticatedProfile(req) {
   const token = readBearerToken(req);
   if (!token) {
     const error = new Error('Authentication required.');
@@ -33,15 +33,10 @@ export async function requireAuthenticatedUser(req) {
     throw error;
   }
 
-  return { supabase, user: userData.user, token };
-}
-
-export async function requireAuthenticatedProfile(req) {
-  const { supabase, user, token } = await requireAuthenticatedUser(req);
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', userData.user.id)
     .maybeSingle();
 
   if (profileError) throw profileError;
@@ -52,5 +47,5 @@ export async function requireAuthenticatedProfile(req) {
     throw error;
   }
 
-  return { supabase, user, profile, token };
+  return { supabase, user: userData.user, profile, token };
 }
