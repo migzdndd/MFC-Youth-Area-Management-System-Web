@@ -318,12 +318,31 @@ async function deleteMember(req, res) {
   const member = await loadAreaMember(supabase, memberId, profile.area_id);
   if (!member) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
 
+  // A signed-in leader must never be able to remove their own member record
+  // through the Members management endpoint. Full self-deletion is handled
+  // separately by /api/auth/account so it is an explicit account action.
+  if (String(profile.member_id || '') === String(memberId)) {
+    return sendJson(res, 403, {
+      ok: false,
+      error: 'You cannot delete your own member record from the Members tab. Use Delete Account if you intend to permanently remove your account.'
+    });
+  }
+
   const { data: linkedProfile, error: profileError } = await supabase
     .from('profiles')
     .select('id')
     .eq('member_id', memberId)
     .maybeSingle();
   if (profileError) throw profileError;
+
+  // Defense in depth for legacy profiles whose member_id may not have been
+  // hydrated yet: never delete the profile/auth user making this request.
+  if (linkedProfile?.id && String(linkedProfile.id) === String(profile.id)) {
+    return sendJson(res, 403, {
+      ok: false,
+      error: 'You cannot delete your own member record from the Members tab. Use Delete Account if you intend to permanently remove your account.'
+    });
+  }
 
   if (linkedProfile?.id) {
     const { error: authDeleteError } = await supabase.auth.admin.deleteUser(linkedProfile.id);

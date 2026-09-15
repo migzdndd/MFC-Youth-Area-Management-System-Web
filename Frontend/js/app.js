@@ -372,6 +372,22 @@ function authEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
+function isOwnMemberRecord(member) {
+  if (!member) return false;
+
+  const currentMemberId = String(session?.memberId || '').trim();
+  const recordMemberId = String(member.id || '').trim();
+  if (currentMemberId && recordMemberId && currentMemberId === recordMemberId) {
+    return true;
+  }
+
+  // Email is a safe fallback for older/self-healed sessions where memberId
+  // has not been hydrated yet. Member emails are unique in the cloud schema.
+  const currentEmail = authEmail(session?.email || '');
+  const recordEmail = authEmail(member.email || '');
+  return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
+}
+
 function findMemberAccount(member, users = getAuthUsers()) {
   if (!member) return null;
 
@@ -2330,12 +2346,23 @@ function renderMembers() {
                             Login
                           </button>
 
-                          <button
-                            class="btn red"
-                            onclick='deleteMember(${inlineJsArg(member.id)})'
-                          >
-                            Delete
-                          </button>
+                          ${isOwnMemberRecord(member)
+                            ? `
+                              <span
+                                class="badge active"
+                                title="Your own member record cannot be deleted from the Members tab."
+                              >
+                                Your Account
+                              </span>
+                            `
+                            : `
+                              <button
+                                class="btn red"
+                                onclick='deleteMember(${inlineJsArg(member.id)})'
+                              >
+                                Delete
+                              </button>
+                            `}
                         </td>
 
                       </tr>
@@ -3088,6 +3115,11 @@ window.deleteMember = async id => {
   const data = db();
   const member = data.members.find(item => String(item.id) === String(id));
   if (!member) return;
+
+  if (isOwnMemberRecord(member)) {
+    toast('You cannot delete your own member record from the Members tab. Use Delete Account only if you intend to permanently remove your account.', 'error');
+    return;
+  }
 
   if (!confirm('Delete this member, their linked login account, and their GIG contribution records? This cannot be undone.')) return;
 
