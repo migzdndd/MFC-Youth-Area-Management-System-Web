@@ -453,6 +453,54 @@ if (adminRegistrationForm) {
   });
 }
 
+// ---------------- MEMBER PORTAL ACCOUNT CLAIM ----------------
+const memberClaimForm = document.getElementById('memberClaimForm');
+if (memberClaimForm) {
+  memberClaimForm.addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const submit = document.getElementById('memberClaimButton');
+    const email = normalizeEmail(document.getElementById('memberClaimEmail')?.value || '');
+    const password = String(document.getElementById('memberClaimPassword')?.value || '');
+    const confirmation = String(document.getElementById('memberClaimPasswordConfirm')?.value || '');
+
+    if (!isValidEmail(email)) {
+      showMessage('memberClaimMessage', 'Enter the email address stored in your Member record.');
+      return;
+    }
+    const pError = passwordError(password);
+    if (pError) {
+      showMessage('memberClaimMessage', pError);
+      return;
+    }
+    if (password !== confirmation) {
+      showMessage('memberClaimMessage', 'Passwords do not match.');
+      return;
+    }
+
+    setButtonBusy(submit, true, 'Creating Account…');
+    try {
+      const payload = await apiJson('/api/auth/member-claim', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+
+      if (payload.verificationRequired) {
+        setButtonBusy(submit, false);
+        showMessage('memberClaimMessage', payload.message || 'Check your email to verify your account, then sign in.', 'success');
+        return;
+      }
+
+      const session = backendSessionFromResponse(payload, false);
+      showMessage('memberClaimMessage', 'Your Member Portal account is ready. Redirecting…', 'success');
+      setTimeout(() => navigateWithLoader(destinationFor(session)), 550);
+    } catch (error) {
+      setButtonBusy(submit, false);
+      showMessage('memberClaimMessage', error?.message || 'Unable to create your Member Portal account. Please try again.');
+    }
+  });
+}
+
 // ---------------- CHANGE PASSWORD ----------------
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
@@ -478,7 +526,7 @@ if (forcePasswordForm) {
     if (accountEmail) accountEmail.textContent = session.email;
     if (session.mustChangePassword) {
       if (pageTitle) pageTitle.textContent = 'Secure Your Account';
-      if (pageIntro) pageIntro.textContent = 'Your administrator issued a temporary password. Create your own password before continuing.';
+      if (pageIntro) pageIntro.textContent = 'Your account requires a password update before continuing.';
     }
 
     forcePasswordForm.addEventListener('submit', event => {
@@ -501,7 +549,7 @@ if (forcePasswordForm) {
         return;
       }
       if (password === currentPassword) {
-        showMessage('passwordMessage', 'Choose a new password that is different from your temporary/current password.');
+        showMessage('passwordMessage', 'Choose a new password that is different from your current password.');
         return;
       }
 

@@ -20,5 +20,5 @@ Real `.env.local` files are intentionally excluded from distribution. Configure 
 ## Password provisioning policy
 
 - Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
-- Admin-added Members receive a generated temporary password and use `must_change_password = true` until they replace it.
+- Admin-added Members receive only a Member record. Optional portal access is claimed by the Member with a verified email and self-chosen password.
 - The Servant Leader registration code authorizes registration only; it is never used as the user account password.

@@ -22,25 +22,35 @@
           <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
           <span class="brand-tag">Member Access</span>
           <h1 id="firstAccessTitle">First-Time Access</h1>
-          <p>Regular member accounts are created automatically when an authorized Servant Leader adds a member to the official database.</p>
+          <p>Member records are maintained by authorized Servant Leaders. Portal access is optional and must be created by the Member.</p>
         </div>
         <div class="login-form account-provision-info">
           <div class="verification-badge">
             <span>How member access works</span>
-            <strong>Member record → temporary login → secure password</strong>
+            <strong>Member record → verified email → private portal password</strong>
           </div>
           <ol class="account-steps">
             <li>An authorized Servant Leader adds you to the Members database using your official email address.</li>
-            <li>The system creates your linked Member account and issues a temporary password.</li>
-            <li>Sign in using that email address and temporary password.</li>
-            <li>You will be required to create your own password before continuing to the portal assigned to your access level.</li>
+            <li>Use the same email address already stored in your Member record.</li>
+            <li>Create your own private password and verify your email address.</li>
+            <li>After verification, sign in to access the Member Portal.</li>
           </ol>
-          <p class="prototype-note">Regular Members do not self-register. This prevents duplicate or unlinked member accounts.</p>
+          <form class="login-form member-claim-form" id="memberClaimForm" novalidate>
+            <p class="login-heading">Create / Claim Member Portal Account</p>
+            <div id="memberClaimMessage"></div>
+            <label class="auth-field-label" for="memberClaimEmail">Member Email Address</label>
+            <label class="login-field" for="memberClaimEmail"><input class="login-input" id="memberClaimEmail" type="email" placeholder="Member Email Address" autocomplete="email" required></label>
+            <label class="auth-field-label" for="memberClaimPassword">Create Password</label>
+            <label class="login-field" for="memberClaimPassword"><input class="login-input" id="memberClaimPassword" type="password" placeholder="Create Password" autocomplete="new-password" required></label>
+            <label class="auth-field-label" for="memberClaimPasswordConfirm">Confirm Password</label>
+            <label class="login-field" for="memberClaimPasswordConfirm"><input class="login-input" id="memberClaimPasswordConfirm" type="password" placeholder="Confirm Password" autocomplete="new-password" required></label>
+            <div class="login-buttons"><button class="btn-auth btn-primary" id="memberClaimButton" type="submit">Create Portal Account</button></div>
+          </form>
           <div class="login-buttons">
             <button class="btn-auth btn-primary" type="button" onclick="navigateWithLoader('/')">Back to Sign In</button>
           </div>
         </div>
-        <div class="auth-bottom">Not yet in the database? Contact an authorized Servant Leader.</div>
+        <div class="auth-bottom">Your email must already belong to a Member record. Contact an authorized Servant Leader if it does not.</div>
       </section>
 
       <section class="login-card auth-card admin-registration-card" aria-labelledby="adminRegisterTitle">
