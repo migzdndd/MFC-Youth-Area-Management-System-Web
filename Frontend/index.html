@@ -14,106 +14,107 @@
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
 
-<body class="auth-body">
-  <main class="auth-page">
-    <div class="auth-layout">
-      <section class="login-card animate-in" aria-labelledby="loginTitle">
-        <div class="login-header">
-          <div class="brand-mark-wrap">
-            <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
+<body class="auth-body auth-body-modern">
+  <main class="auth-page auth-page-modern">
+    <div class="auth-layout auth-layout-modern">
+      <aside class="auth-info login-hero animate-in" aria-label="MFC Youth Area Management System overview">
+        <div class="login-hero-brand">
+          <img src="/img/logo.png" class="login-hero-logo" alt="MFC Youth">
+          <span class="login-hero-chip"><span class="status-dot"></span> Cloud connected</span>
+        </div>
+
+        <div class="login-hero-copy">
+          <span class="login-eyebrow">AREA MANAGEMENT SYSTEM</span>
+          <h2>Lead your Area with one clear, secure workspace.</h2>
+          <p>Members, chapters, services, events, reports, and GIG records stay organized in a single cloud-backed dashboard built for MFC Youth leaders.</p>
+        </div>
+
+        <div class="login-feature-grid" aria-label="Key system features">
+          <article>
+            <strong>Members</strong>
+            <span>Profiles, access, chapters and service assignments</span>
+          </article>
+          <article>
+            <strong>Events</strong>
+            <span>Registration, payment and attendance tracking</span>
+          </article>
+          <article>
+            <strong>Reports</strong>
+            <span>Activity reports and Area-level analytics</span>
+          </article>
+          <article>
+            <strong>Secure</strong>
+            <span>Role-based access through Supabase Auth</span>
+          </article>
+        </div>
+
+        <div class="login-hero-footer">
+          <span><strong>4</strong> NCR Areas ready</span>
+          <span><strong>1</strong> Connected workspace</span>
+          <span><strong>24/7</strong> Web access</span>
+        </div>
+      </aside>
+
+      <section class="login-card login-card-modern animate-in" aria-labelledby="loginTitle">
+        <div class="login-card-top">
+          <div class="login-mobile-brand">
+            <img src="/img/logo-2.png" alt="MFC Youth Logo">
+            <div><strong>MFC YOUTH</strong><span>Area Management System</span></div>
           </div>
-          <h1 id="loginTitle">MFC Youth Area Management System</h1>
-          <p>Manage your Area with just a few clicks of a button.</p>
+          <span class="secure-login-badge">Secure leader access</span>
         </div>
 
-        <div class="login-meta-row" aria-label="Trust indicators">
-          <span>Secure Access</span>
-          <span>Member Tracking</span>
-          <span>Reports</span>
+        <div class="login-header login-header-modern">
+          <span class="login-eyebrow">WELCOME BACK</span>
+          <h1 id="loginTitle">Sign in to your Area</h1>
+          <p>Use your registered MFC Youth account to continue to the management dashboard.</p>
         </div>
 
-        <form class="login-form" id="loginForm" novalidate>
-          <p class="login-heading">Sign In</p>
+        <form class="login-form login-form-modern" id="loginForm" novalidate>
           <div id="loginMessage"></div>
+
+          <label class="auth-control-label" for="loginEmail">Email Address</label>
           <label class="login-field" for="loginEmail">
             <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
               <path d="M14 14s-1-5-6-5-6 5-6 5 2 2 6 2 6-2 6-2z" />
             </svg>
-            <input class="login-input" id="loginEmail" type="email" placeholder="Email Address" autocomplete="email"
-              required>
+            <input class="login-input" id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
           </label>
+
+          <label class="auth-control-label" for="loginPassword">Password</label>
           <div class="login-field">
             <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
+              <path d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
             </svg>
-            <input class="login-input" id="loginPassword" type="password" placeholder="Password"
-              autocomplete="current-password" required aria-label="Password">
-            <button class="password-toggle" type="button" data-password-toggle="loginPassword"
-              aria-label="Show password">Show</button>
+            <input class="login-input" id="loginPassword" type="password" placeholder="Enter your password" autocomplete="current-password" required aria-label="Password">
+            <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button>
           </div>
+
           <div class="form-options">
             <label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember me</span></label>
-            <a href="/recover">Forgot Password?</a>
+            <a href="/recover">Forgot password?</a>
           </div>
-          <div class="login-buttons">
-            <button class="btn-auth btn-primary" type="submit">Sign In</button>
-            <button class="btn-auth btn-dark" type="button" onclick="navigateWithLoader('/register')">First-Time
-              Access</button>
+
+          <div class="login-buttons login-buttons-modern">
+            <button class="btn-auth auth-slide-button auth-slide-primary" type="submit">Sign In</button>
+            <button class="btn-auth auth-slide-button auth-slide-secondary" type="button" onclick="navigateWithLoader('/register')">First-Time Access</button>
           </div>
-          <button class="btn-auth btn-demo" id="demoLoginButton" type="button">Demo Login</button>
-          <p class="demo-login-note">Opens an Area Servant demo session for presentation and testing.</p>
-          <p class="prototype-note">Accounts are created automatically by authorized Servant Leaders when a member is
-            added to the database.</p>
+
+          <div class="login-divider"><span>or</span></div>
+          <button class="btn-auth auth-slide-button auth-slide-demo" id="demoLoginButton" type="button">Open Demo Dashboard</button>
+          <p class="demo-login-note">Presentation mode only. Demo data is kept separate from your live Area records.</p>
         </form>
-        <div class="auth-bottom">Not yet in the database? Contact your Chapter Servant. <a href="/register">How access
-            works</a></div>
+
+        <div class="auth-bottom auth-bottom-modern">
+          <span>Not yet in the database? Contact your Chapter Servant.</span>
+          <a href="/register">Learn how access works</a>
+        </div>
       </section>
-
-      <aside class="auth-info animate-in" aria-label="Database system overview">
-        <div class="info-topline">
-          <span class="info-badge">Database System Web App</span>
-          <span class="info-status"><span class="status-dot"></span> Live Dashboard</span>
-        </div>
-
-        <h2>Everything your area needs in one secure digital hub.</h2>
-        <p>From member records and chapter updates to events, reports, and service tracking, this platform helps leaders
-          manage operations with clarity and speed.</p>
-
-        <div class="info-pills" aria-label="Key features">
-          <span>Members</span>
-          <span>Events</span>
-          <span>Reports</span>
-          <span>Services</span>
-        </div>
-
-        <ul class="info-list">
-          <li>Member profiles, membership status, and chapter tracking</li>
-          <li>Event planning with schedules, attendance, and follow-ups</li>
-          <li>Reports and service records for better decision-making</li>
-          <li>Access-controlled dashboard for Servant Leaders and Couple Coordinators</li>
-        </ul>
-
-        <div class="info-stats">
-          <div class="animate-in">
-            <strong>24/7</strong>
-            <span>Access</span>
-          </div>
-          <div class="animate-in">
-            <strong>1 Hub</strong>
-            <span>Operations</span>
-          </div>
-          <div class="animate-in">
-            <strong>Secure</strong>
-            <span>Login</span>
-          </div>
-        </div>
-      </aside>
     </div>
   </main>
-  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank"
-      rel="noopener noreferrer">mfcyouth.org</a></footer>
+
+  <footer class="auth-footer">MFC Youth Area Management System · <a href="https://mfcyouth.org" target="_blank" rel="noopener noreferrer">Visit mfcyouth.org</a></footer>
   <script src="/js/loader.js"></script>
   <script src="/js/auth.js"></script>
 </body>

@@ -1623,14 +1623,27 @@ function renderDashboard() {
     participant => participant.attended
   ).length;
 
-  content.innerHTML =
-    pageHeader(
-      'Dashboard',
-      `Welcome, ${esc(
-        session?.name || 'Area User'
-      )}. Here is a quick overview of your Area cloud records.`
-    ) +
-    `
+  const dashboardAreaName = session?.areaName || 'Your Area';
+  const dashboardRole = accessRoleLabel(session?.role);
+
+  content.innerHTML = `
+    <section class="dashboard-hero animate-in is-visible">
+      <div class="dashboard-hero-copy">
+        <div class="dashboard-kicker"><span class="dashboard-live-dot"></span> Cloud workspace</div>
+        <h1>Welcome back, ${esc(session?.name || 'Area User')}.</h1>
+        <p>Here is the latest overview of ${esc(dashboardAreaName)}. Your records are organized, synced, and ready for action.</p>
+        <div class="dashboard-identity-row">
+          <span>${esc(dashboardRole)}</span>
+          <span>${esc(dashboardAreaName)}</span>
+          <span>Supabase connected</span>
+        </div>
+      </div>
+      <div class="dashboard-hero-actions">
+        <a class="btn blue" href="/members">View Members</a>
+        <a class="btn" href="/events">Manage Events</a>
+      </div>
+    </section>
+
     <section>
       <div class="section-heading">
         <h2>Area Summary</h2>
