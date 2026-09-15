@@ -57,3 +57,7 @@ Chapter Servants continue to receive only their own chapter roster during normal
 ## Dashboard
 
 Dashboard counts and quick analytics are hydrated from `/api/sync` and therefore reflect Supabase data after reconciliation rather than independent browser-only records.
+
+## Vercel deployment architecture
+
+To remain compatible with Vercel Hobby limits, the Backend exposes one serverless router function and keeps route implementations under `Backend/server/`. The Frontend uses an external rewrite for `/api/:path*` instead of generating proxy functions. Public API paths remain unchanged.

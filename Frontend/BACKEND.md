@@ -1,41 +1,13 @@
-# Backend connection
+# Frontend ↔ Backend Routing
 
-The real backend is stored in the sibling folder:
+The production frontend calls relative `/api/...` URLs.
 
-```text
-Web-Source/
-├── Backend/
-└── Frontend/
-```
+On Vercel, `Frontend/vercel.json` rewrites those requests directly to:
 
-The `Frontend/api/` files are only lightweight proxy routes. They do not contain backend business logic.
-They forward the existing public `/api/*` URLs to the separately deployed Backend project using the
-`BACKEND_URL` environment variable.
+`https://mfc-youth-area-management-backend.vercel.app/api/:path*`
 
-Example:
+This keeps browser requests same-origin from the application's point of view while avoiding a separate Frontend serverless proxy function for every endpoint.
 
-```text
-Frontend request
-POST /api/auth/login
-        ↓
-Frontend/api/auth/login.js
-        ↓
-BACKEND_URL/api/auth/login
-        ↓
-Backend/api/auth/login.js
-```
+The Backend then dispatches all API paths through one Vercel Function (`Backend/api/router.js`). This keeps both projects within the Vercel Hobby function-count limit and reduces unnecessary proxy-function cold starts.
 
-## Vercel setup
-
-1. Create/deploy a Vercel project with **Root Directory = `Backend`**.
-2. Add these Backend environment variables:
-   - `SUPABASE_URL`
-   - `SUPABASE_PUBLISHABLE_KEY`
-   - `SUPABASE_SECRET_KEY`
-   - `ADMIN_REGISTRATION_CODE` (Backend only)
-3. Create/deploy the existing frontend Vercel project with **Root Directory = `Frontend`**.
-4. In the Frontend project, set:
-   - `BACKEND_URL=https://your-backend-project.vercel.app`
-5. Redeploy the Frontend project.
-
-The browser can continue using `/api/...`; the Frontend proxy sends those requests to the Backend project.
+If the stable Backend production domain changes, update the destination in `Frontend/vercel.json`.

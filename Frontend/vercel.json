@@ -40,5 +40,11 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://mfc-youth-area-management-backend.vercel.app/api/:path*"
+    }
   ]
 }

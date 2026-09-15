@@ -1,6 +1,6 @@
 {
   "name": "mfc-youth-area-management-system-backend",
-  "version": "0.7.0",
+  "version": "0.7.1-vercel-router",
   "private": true,
   "type": "module",
   "description": "Backend API for the MFC Youth Area Management System with Supabase Auth, Area-scoped cloud CRUD, and analytics sync.",

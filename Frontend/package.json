@@ -1,9 +1,9 @@
 {
   "name": "mfc-youth-area-management-system-frontend",
-  "version": "0.6.0-backend.1",
+  "version": "0.6.1-vercel-router",
   "private": true,
   "type": "module",
-  "description": "Frontend for the MFC Youth Area Management System with API proxy routes to the dedicated Backend project.",
+  "description": "Frontend for the MFC Youth Area Management System using a direct Vercel rewrite to the dedicated Backend API.",
   "engines": {
     "node": ">=20"
   }
