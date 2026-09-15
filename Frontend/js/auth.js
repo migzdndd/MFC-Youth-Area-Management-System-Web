@@ -453,11 +453,23 @@ if (adminRegistrationForm) {
   });
 }
 
-// ---------------- CHANGE PASSWORD ----------------
+// ---------------- CHANGE / SET PASSWORD ----------------
+function passwordLinkSession() {
+  const params = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  const accessToken = params.get('access_token') || '';
+  if (!accessToken) return null;
+  return {
+    accessToken,
+    refreshToken: params.get('refresh_token') || '',
+    type: params.get('type') || 'invite'
+  };
+}
+
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
   backToLoginButton.addEventListener('click', () => {
     clearSession();
+    history.replaceState(null, '', window.location.pathname);
     navigateWithLoader('/index.html');
   });
 }
@@ -465,30 +477,51 @@ if (backToLoginButton) {
 const forcePasswordForm = document.getElementById('forcePasswordForm');
 if (forcePasswordForm) {
   const session = getSession();
+  const linkSession = passwordLinkSession();
   const accountEmail = document.getElementById('passwordAccountEmail');
   const pageTitle = document.getElementById('passwordPageTitle');
   const pageIntro = document.getElementById('passwordPageIntro');
+  const currentPassword = document.getElementById('currentPassword');
+  const currentPasswordGroup = document.getElementById('currentPasswordGroup');
+  const submit = forcePasswordForm.querySelector('[type="submit"]');
 
-  if (!session) {
+  if (!session && !linkSession) {
     navigateWithLoader('/', true);
-  } else if (session.demo) {
+  } else if (session?.demo && !linkSession) {
     showMessage('passwordMessage', 'The built-in demo administrator password cannot be changed from this prototype.', 'error');
     forcePasswordForm.querySelectorAll('input, button[type="submit"]').forEach(el => { el.disabled = true; });
   } else {
-    if (accountEmail) accountEmail.textContent = session.email;
-    if (session.mustChangePassword) {
-      if (pageTitle) pageTitle.textContent = 'Secure Your Account';
-      if (pageIntro) pageIntro.textContent = 'Your administrator issued a temporary password. Create your own password before continuing.';
+    if (linkSession) {
+      if (pageTitle) pageTitle.textContent = linkSession.type === 'recovery' ? 'Create a New Password' : 'Set Up Your Password';
+      if (pageIntro) pageIntro.textContent = 'Choose the permanent password you want to use for your MFC Youth account. No temporary password is required.';
+      if (currentPasswordGroup) currentPasswordGroup.hidden = true;
+      if (currentPassword) currentPassword.required = false;
+
+      apiJson('/api/auth/me', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${linkSession.accessToken}` }
+      }).then(payload => {
+        if (accountEmail) accountEmail.textContent = payload?.user?.email || 'Verified account';
+      }).catch(error => {
+        showMessage('passwordMessage', error?.message || 'This password setup link is invalid or expired. Ask a Servant Leader to send a new setup email.');
+        if (submit) submit.disabled = true;
+      });
+    } else {
+      if (accountEmail) accountEmail.textContent = session.email;
+      if (session.mustChangePassword) {
+        if (pageTitle) pageTitle.textContent = 'Update Your Password';
+        if (pageIntro) pageIntro.textContent = 'Create the password you want to use before continuing.';
+      }
     }
 
-    forcePasswordForm.addEventListener('submit', event => {
+    forcePasswordForm.addEventListener('submit', async event => {
       event.preventDefault();
-      const currentPassword = document.getElementById('currentPassword').value;
+      const current = currentPassword?.value || '';
       const password = document.getElementById('newPassword').value;
       const confirmation = document.getElementById('newPasswordConfirm').value;
       const pError = passwordError(password);
 
-      if (!currentPassword) {
+      if (!linkSession && !current) {
         showMessage('passwordMessage', 'Enter your current password.');
         return;
       }
@@ -500,29 +533,71 @@ if (forcePasswordForm) {
         showMessage('passwordMessage', 'New passwords do not match.');
         return;
       }
-      if (password === currentPassword) {
-        showMessage('passwordMessage', 'Choose a new password that is different from your temporary/current password.');
+      if (!linkSession && password === current) {
+        showMessage('passwordMessage', 'Choose a new password that is different from your current password.');
         return;
       }
 
-      const users = getUsers();
-      const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
-      if (!user || user.password !== currentPassword) {
-        showMessage('passwordMessage', 'Your current password is incorrect.');
-        return;
+      setButtonBusy(submit, true, linkSession ? 'Setting Password…' : 'Updating Password…');
+
+      try {
+        if (linkSession) {
+          await apiJson('/api/auth/change-password', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${linkSession.accessToken}` },
+            body: JSON.stringify({ newPassword: password })
+          });
+
+          clearSession();
+          history.replaceState(null, '', window.location.pathname);
+          showMessage('passwordMessage', 'Password created successfully. You can now sign in with your email and new password.', 'success');
+          setTimeout(() => { navigateWithLoader('/'); }, 800);
+          return;
+        }
+
+        if (session?.backendAuth) {
+          // Verify the current password through Supabase before changing it.
+          const verification = await apiJson('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: session.email, password: current })
+          });
+          const verifiedAccessToken = verification?.session?.accessToken;
+          if (!verifiedAccessToken) throw new Error('Unable to verify your current password.');
+
+          await apiJson('/api/auth/change-password', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${verifiedAccessToken}` },
+            body: JSON.stringify({ newPassword: password })
+          });
+
+          clearSession();
+          showMessage('passwordMessage', 'Password updated successfully. Sign in again with your new password.', 'success');
+          setTimeout(() => { navigateWithLoader('/'); }, 800);
+          return;
+        }
+
+        // Browser-only demo/prototype account fallback.
+        const users = getUsers();
+        const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
+        if (!user || user.password !== current) {
+          throw new Error('Your current password is incorrect.');
+        }
+
+        user.password = password;
+        user.mustChangePassword = false;
+        user.passwordSetupRequired = false;
+        user.passwordUpdatedAt = new Date().toISOString();
+        saveUsers(users);
+
+        const updatedSession = { ...session, mustChangePassword: false };
+        updateSession(updatedSession);
+        showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
+        setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
+      } catch (error) {
+        setButtonBusy(submit, false);
+        showMessage('passwordMessage', error?.message || 'Unable to update the password.');
       }
-
-      user.password = password;
-      user.mustChangePassword = false;
-      user.passwordUpdatedAt = new Date().toISOString();
-      saveUsers(users);
-
-      const updatedSession = { ...session, mustChangePassword: false };
-      updateSession(updatedSession);
-      showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
-      setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
     });
   }
 }
-
 attachPasswordToggles();

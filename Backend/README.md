@@ -62,7 +62,7 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - `GET/POST/PATCH/DELETE /api/reports`
 - `GET/POST/DELETE /api/gig`
 - `GET /api/sync` for one-request Area data + dashboard analytics hydration
-- Member creation automatically provisions a Supabase Auth account and returns a temporary password once.
+- Member creation automatically provisions a Supabase Auth account and sends a secure email setup link. The Member chooses their own permanent password; no temporary password is generated or returned.
 - Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
 - Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
 - RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
@@ -78,8 +78,10 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
    - `SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SECRET_KEY`
    - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration password)
-6. Redeploy.
-7. Visit `/api/health`. It should report `configured: true`.
+   - `FRONTEND_URL` (public Frontend origin used by Member invite/password-reset links)
+6. In Supabase Auth URL Configuration, allow `${FRONTEND_URL}/change-password` as a redirect URL.
+7. Redeploy.
+8. Visit `/api/health`. It should report `configured: true`.
 
 ## First management / Servant Leader account
 
@@ -138,5 +140,5 @@ an Area but still have `member_id = NULL`.
 ## Password provisioning policy
 
 - Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
-- Admin-added Members receive a generated temporary password and use `must_change_password = true` until they replace it.
+- Admin-added Members receive a secure Supabase email invite. They create their own permanent password from the setup link. No temporary password is generated, displayed, or shared, and `must_change_password` remains `false`.
 - The Servant Leader registration code authorizes registration only; it is never used as the user account password.

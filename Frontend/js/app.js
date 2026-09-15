@@ -371,9 +371,9 @@ function canManageOwnChapterMember(data, member) {
 
 // =========================================================
 // FRONTEND ACCOUNT PROVISIONING
-// Member records are the source of truth. Adding a member creates a linked
-// linked account with a one-time temporary password. In production this must be
-// moved to the backend and passwords must be hashed, never stored in plaintext.
+// Member records are the source of truth. Production Member accounts are
+// provisioned by the backend through a secure email setup link so the Member
+// chooses their own password. The local browser path only mirrors account state.
 // =========================================================
 
 function getAuthUsers() {
@@ -461,27 +461,7 @@ function accountEmailConflict(email, memberId = null) {
   return conflict ? 'That email address is already being used by another login account.' : null;
 }
 
-function generateTemporaryPassword() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  const digits = '23456789';
-  const all = letters + digits;
-  const randomInt = max => {
-    if (window.crypto?.getRandomValues) {
-      const values = new Uint32Array(1);
-      window.crypto.getRandomValues(values);
-      return values[0] % max;
-    }
-    return Math.floor(Math.random() * max);
-  };
-
-  let password = `M${letters[randomInt(letters.length)]}${digits[randomInt(digits.length)]}`;
-  for (let i = 0; i < 7; i += 1) {
-    password += all[randomInt(all.length)];
-  }
-  return password;
-}
-
-function provisionMemberAccount(member, { resetPassword = false } = {}) {
+function provisionMemberAccount(member) {
   if (!member?.email) {
     throw new Error('A valid email address is required to create an account login.');
   }
@@ -489,8 +469,6 @@ function provisionMemberAccount(member, { resetPassword = false } = {}) {
   const users = getAuthUsers();
   let account = findMemberAccount(member, users);
   const wasUnlinked = !account || account.memberId === null || account.memberId === undefined || account.role === 'legacy';
-  const issueTemporaryPassword = resetPassword || wasUnlinked;
-  const temporaryPassword = issueTemporaryPassword ? generateTemporaryPassword() : null;
   const now = new Date().toISOString();
 
   if (!account) {
@@ -510,21 +488,14 @@ function provisionMemberAccount(member, { resetPassword = false } = {}) {
     role: normalizeAccessRole(member.accessLevel),
     chapterId: member.chapterId ?? null,
     isActive: String(member.status || 'Active') !== 'Inactive',
+    mustChangePassword: false,
+    passwordSetupRequired: !account.password,
     updatedAt: now
   });
 
-  if (temporaryPassword) {
-    account.password = temporaryPassword;
-    account.mustChangePassword = true;
-    account.temporaryPasswordIssuedAt = now;
-  } else if (account.mustChangePassword === undefined) {
-    account.mustChangePassword = false;
-  }
-
   saveAuthUsers(users);
-  return { account, temporaryPassword, created: wasUnlinked };
+  return { account, setupRequired: !account.password, created: wasUnlinked };
 }
-
 function syncMemberAccount(member) {
   const users = getAuthUsers();
   const account = findMemberAccount(member, users);
@@ -561,7 +532,7 @@ function memberAccountState(member) {
   }
   if (!account) return { label: 'Not Provisioned', className: 'inactive' };
   if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
-  if (account.mustChangePassword) return { label: 'Temporary Password', className: 'pending' };
+  if (account.passwordSetupRequired || !account.password) return { label: 'Setup Required', className: 'pending' };
   return { label: 'Active', className: 'active' };
 }
 
@@ -1089,16 +1060,16 @@ function openModal(
   );
 }
 
-function showTemporaryCredentials(member, temporaryPassword) {
-  if (!member || !temporaryPassword) return;
+function showMemberSetupNotice(member, message = '') {
+  if (!member) return;
 
   openModal(
-    'Account Login Created',
+    'Member Account Access',
     `
       <div class="credential-panel">
         <div class="credential-notice">
-          <strong>Give these temporary credentials to ${esc(fullName(member))}.</strong>
-          <p>The member must change this password immediately after the first successful login.</p>
+          <strong>${esc(fullName(member))} chooses their own password.</strong>
+          <p>${esc(message || 'A secure account setup email has been sent to the Member. No temporary password is generated or shown to the Servant Leader.')}</p>
         </div>
 
         <div class="credential-row">
@@ -1111,42 +1082,12 @@ function showTemporaryCredentials(member, temporaryPassword) {
           <code>${esc(accessRoleLabel(member.accessLevel))}</code>
         </div>
 
-        <div class="credential-row">
-          <span>Temporary Password</span>
-          <code>${esc(temporaryPassword)}</code>
-        </div>
-
-        <button class="btn blue" id="copyMemberCredentials" type="button">
-          Copy Credentials
-        </button>
-
         <p class="field-help">
-          ${member.cloudBacked ? 'This temporary password was issued securely by the backend and must be changed on first sign-in.' : 'Prototype account: this temporary password is stored only in the local browser data layer.'}
+          The Member should open the email from MFC Youth/Supabase, follow the secure setup link, create their permanent password, and then sign in normally.
         </p>
       </div>
     `
   );
-
-  const copyButton = document.getElementById('copyMemberCredentials');
-  if (copyButton) {
-    copyButton.onclick = async () => {
-      const text = `MFC Youth Account Login\nEmail: ${member.email}\nAccess Level: ${accessRoleLabel(member.accessLevel)}\nTemporary Password: ${temporaryPassword}\n\nPlease change your password after signing in.`;
-      try {
-        await navigator.clipboard.writeText(text);
-        copyButton.textContent = 'Copied!';
-      } catch {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-        copyButton.textContent = 'Copied!';
-      }
-    };
-  }
 }
 
 window.manageMemberLogin = async id => {
@@ -1157,22 +1098,22 @@ window.manageMemberLogin = async id => {
   if (!member) return;
 
   if (!member.email || !validEmail(member.email)) {
-    toast('Add a valid email address to this member before creating a login.', 'error');
+    toast('Add a valid email address to this member before configuring account access.', 'error');
     return;
   }
 
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
-    if (!confirm(`Reset the Supabase login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`)) return;
+    if (!confirm(`Send a secure password setup/reset email to ${fullName(member)}? No temporary password will be generated.`)) return;
 
     try {
       const payload = await backendApi('/api/members/login', {
         method: 'POST',
         body: JSON.stringify({ memberId: member.id })
       });
-      toast('Account login reset.');
-      showTemporaryCredentials(member, payload?.account?.temporaryPassword);
+      toast(payload?.message || 'Account setup email sent.');
+      showMemberSetupNotice(member, payload?.message);
     } catch (error) {
-      toast(error?.message || 'Unable to reset this member account.', 'error');
+      toast(error?.message || 'Unable to send the member account setup email.', 'error');
     }
     return;
   }
@@ -1183,20 +1124,14 @@ window.manageMemberLogin = async id => {
     return;
   }
 
-  const existing = findMemberAccount(member);
-  const action = existing ? 'reset' : 'create';
-  const prompt = existing
-    ? `Reset the account login for ${fullName(member)}? Their current password will stop working and a new temporary password will be issued.`
-    : `Create an account login for ${fullName(member)}? A temporary password will be issued.`;
-
-  if (!confirm(prompt)) return;
-
-  const result = provisionMemberAccount(member, { resetPassword: true });
+  provisionMemberAccount(member);
   renderMembers();
-  toast(action === 'reset' ? 'Account login reset.' : 'Account login created.');
-  showTemporaryCredentials(member, result.temporaryPassword);
+  toast('Member account marked for setup.');
+  showMemberSetupNotice(
+    member,
+    'The browser-only demo does not issue temporary passwords. Connect the cloud backend to send the Member a secure password setup email.'
+  );
 };
-
 function field(
   label,
   id,
@@ -2373,7 +2308,7 @@ function renderMembers() {
                             class="btn"
                             onclick='manageMemberLogin(${inlineJsArg(member.id)})'
                           >
-                            Login
+                            Access
                           </button>
 
                           ${isOwnMemberRecord(member)
@@ -3123,14 +3058,15 @@ function memberModal(id = null) {
       toast(
         id
           ? 'Member updated.'
-          : 'Member added and login account created.'
+          : (provisionResult?.setupEmailSent
+            ? 'Member added. Secure password setup email sent.'
+            : 'Member added. Account setup is required.')
       );
 
       renderMembers();
 
-      const temporaryPassword = provisionResult?.temporaryPassword || provisionResult?.account?.temporaryPassword;
-      if (temporaryPassword) {
-        showTemporaryCredentials(savedRecord, temporaryPassword);
+      if (!id && provisionResult?.setupEmailSent) {
+        showMemberSetupNotice(savedRecord, 'A secure setup email was sent. The Member will create their own permanent password from the email link.');
       }
     }
   );

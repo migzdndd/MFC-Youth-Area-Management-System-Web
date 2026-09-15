@@ -10,7 +10,7 @@ import {
   isValidEmail,
   apiError
 } from '../_lib/http.js';
-import { generateTemporaryPassword } from '../_lib/password.js';
+import { passwordSetupRedirectUrl } from '../_lib/frontend-url.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -98,7 +98,7 @@ async function createMember(req, res) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
   if (!isValidEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid email is required because it is used for member login.' });
+    return sendJson(res, 400, { ok: false, error: 'A valid email is required because the member receives their account setup link by email.' });
   }
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
@@ -133,7 +133,6 @@ async function createMember(req, res) {
     return sendJson(res, 409, { ok: false, error: 'A member with that email already exists.' });
   }
 
-  const temporaryPassword = generateTemporaryPassword();
   let createdMember = null;
   let createdAuthUserId = null;
 
@@ -160,17 +159,15 @@ async function createMember(req, res) {
     if (memberError) throw memberError;
     createdMember = member;
 
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password: temporaryPassword,
-      email_confirm: true,
-      user_metadata: {
+    const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      redirectTo: passwordSetupRedirectUrl(req),
+      data: {
         display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
         registration_type: 'admin_provisioned_member',
-        password_origin: 'temporary'
+        onboarding_method: 'email_invite'
       }
     });
-    if (authError || !authData?.user) throw authError || new Error('Unable to create login account.');
+    if (authError || !authData?.user) throw authError || new Error('Unable to send the member account setup email.');
     createdAuthUserId = authData.user.id;
 
     const { error: profileError } = await supabase
@@ -181,7 +178,7 @@ async function createMember(req, res) {
         role: accessLevel,
         area_id: areaId,
         chapter_id: chapterId,
-        must_change_password: true,
+        must_change_password: false,
         is_active: status !== 'Inactive'
       });
     if (profileError) throw profileError;
@@ -191,9 +188,10 @@ async function createMember(req, res) {
       member: createdMember,
       account: {
         email,
-        temporaryPassword,
-        mustChangePassword: true,
-        role: accessLevel
+        setupEmailSent: true,
+        mustChangePassword: false,
+        role: accessLevel,
+        onboardingMethod: 'email_invite'
       }
     });
   } catch (error) {
@@ -206,7 +204,6 @@ async function createMember(req, res) {
     throw error;
   }
 }
-
 async function updateMember(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isSuperAdminRole(profile.role)) {
