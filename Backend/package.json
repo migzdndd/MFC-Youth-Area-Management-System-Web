@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Backend API for the MFC Youth Area Management System with Supabase Auth, Area-scoped cloud CRUD, and analytics sync.",
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0"

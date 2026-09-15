@@ -5,6 +5,6 @@
   "type": "module",
   "description": "Frontend for the MFC Youth Area Management System using a direct Vercel rewrite to the dedicated Backend API.",
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   }
 }
