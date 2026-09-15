@@ -265,7 +265,7 @@ async function bootstrapMemberPortal() {
 
 if (!session) {
   navigateWithLoader('/', true);
-} else if (session.mustChangePassword) {
+} else if (session.role !== 'member' && session.mustChangePassword) {
   navigateWithLoader('/change-password', true);
 } else if (session.role !== 'member' && !previewMode) {
   navigateWithLoader(

@@ -1,43 +1,28 @@
-# Member Account Onboarding Fix
+# Account Onboarding Policy
 
-## New rule
+This document supersedes the earlier temporary-password onboarding design.
 
-When a Servant Leader/Admin creates a Member account, the system **does not generate, display, or share a temporary password**.
+## Regular Members
 
-## New production flow
+- Admin/Servant Leader supplies the Member's `@gmail.com` address.
+- The backend provisions the Auth identity without a password.
+- Supabase sends a Gmail OTP.
+- The Member enters the OTP to access the Member Portal.
+- Password remains optional.
 
-1. An authorized Servant Leader adds the Member using the Member's official email address.
-2. The backend creates the Member record in Supabase.
-3. The backend provisions the linked Supabase Auth user with `inviteUserByEmail()`.
-4. Supabase sends the Member a secure email setup link.
-5. The Member opens `/change-password` through that secure link.
-6. The Member chooses their own permanent password.
-7. The Member signs in normally with their email and chosen password.
+## Admin-provisioned Servant Leaders
 
-## Existing-account reset flow
+- Admin supplies the Servant Leader's `@gmail.com` address and access level.
+- The account is provisioned without a password.
+- Supabase sends a Gmail OTP.
+- OTP verification is required before first-time password creation.
+- The verified Servant Leader creates their permanent password.
 
-The Members **Access** action no longer resets a Member to an admin-visible password. It sends a secure password setup/reset email instead. The Member chooses the replacement password from the email link.
+## Self-registered Servant Leaders/Admins
 
-## Deployment requirements
+- Registration requires a valid Gmail address and the private Administrator Registration Code.
+- Supabase sends a Gmail OTP before the application profile is finalized.
+- The profile is created only after successful OTP verification.
+- No temporary password is generated.
 
-Set this backend environment variable:
-
-```env
-FRONTEND_URL=https://mfc-youth-area-management-system.vercel.app
-```
-
-In **Supabase Dashboard → Authentication → URL Configuration**, add the frontend password page to the allowed Redirect URLs:
-
-```text
-https://mfc-youth-area-management-system.vercel.app/change-password
-```
-
-Add equivalent localhost redirect URLs when testing locally.
-
-## Security result
-
-- No Member temporary password is generated.
-- No Member password is revealed to a Servant Leader/Admin.
-- Member passwords are chosen by the Member.
-- Setup/recovery proof comes from the Supabase email link.
-- Existing `must_change_password` database compatibility remains, but new Member invite onboarding uses `false`.
+See `ALL-REGISTRATION-GMAIL-OTP.md` for deployment and SMTP configuration.

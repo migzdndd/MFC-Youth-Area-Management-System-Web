@@ -372,8 +372,8 @@ function canManageOwnChapterMember(data, member) {
 // =========================================================
 // FRONTEND ACCOUNT PROVISIONING
 // Member records are the source of truth. Production Member accounts are
-// provisioned by the backend through a secure email setup link so the Member
-// chooses their own password. The local browser path only mirrors account state.
+// provisioned by the backend using the Member email. Regular Members sign in
+// with a one-time email code; a password is optional. The local browser path only mirrors account state.
 // =========================================================
 
 function getAuthUsers() {
@@ -450,7 +450,7 @@ function accountEmailConflict(email, memberId = null) {
     }
 
     // Old unlinked public-signup accounts can be claimed by an administrator
-    // when the matching member is added. Their password will be reset.
+    // when the matching member is added.
     if ((user.role || 'legacy') === 'legacy' && (user.memberId === null || user.memberId === undefined)) {
       return false;
     }
@@ -489,12 +489,12 @@ function provisionMemberAccount(member) {
     chapterId: member.chapterId ?? null,
     isActive: String(member.status || 'Active') !== 'Inactive',
     mustChangePassword: false,
-    passwordSetupRequired: !account.password,
+    passwordSetupRequired: false,
     updatedAt: now
   });
 
   saveAuthUsers(users);
-  return { account, setupRequired: !account.password, created: wasUnlinked };
+  return { account, setupRequired: false, created: wasUnlinked };
 }
 function syncMemberAccount(member) {
   const users = getAuthUsers();
@@ -532,7 +532,6 @@ function memberAccountState(member) {
   }
   if (!account) return { label: 'Not Provisioned', className: 'inactive' };
   if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
-  if (account.passwordSetupRequired || !account.password) return { label: 'Setup Required', className: 'pending' };
   return { label: 'Active', className: 'active' };
 }
 
@@ -914,6 +913,11 @@ function validEmail(value) {
   );
 }
 
+function validGmailEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return Boolean(email) && validEmail(email) && email.endsWith('@gmail.com');
+}
+
 // =========================================================
 // TOAST NOTIFICATIONS
 // =========================================================
@@ -1063,17 +1067,26 @@ function openModal(
 function showMemberSetupNotice(member, message = '') {
   if (!member) return;
 
+  const role = normalizeAccessRole(member.accessLevel || 'member');
+  const regularMember = role === 'member';
+  const defaultMessage = regularMember
+    ? 'A Gmail verification/sign-in code has been sent. No password is required.'
+    : 'A Gmail verification code has been sent. After verification, this Servant Leader will be prompted to create their account password.';
+  const guidance = regularMember
+    ? 'Open the email from MFC Youth/Supabase and enter the one-time code when prompted. A password is optional and may be added later.'
+    : 'Open the email from MFC Youth/Supabase, enter the one-time code when prompted, then create the Servant Leader account password. OTP verification is required before leadership access is activated.';
+
   openModal(
-    'Member Account Access',
+    'Account Verification',
     `
       <div class="credential-panel">
         <div class="credential-notice">
-          <strong>${esc(fullName(member))} chooses their own password.</strong>
-          <p>${esc(message || 'A secure account setup email has been sent to the Member. No temporary password is generated or shown to the Servant Leader.')}</p>
+          <strong>${esc(fullName(member))} must verify their Gmail account.</strong>
+          <p>${esc(message || defaultMessage)}</p>
         </div>
 
         <div class="credential-row">
-          <span>Email</span>
+          <span>Gmail</span>
           <code>${esc(member.email)}</code>
         </div>
 
@@ -1082,9 +1095,7 @@ function showMemberSetupNotice(member, message = '') {
           <code>${esc(accessRoleLabel(member.accessLevel))}</code>
         </div>
 
-        <p class="field-help">
-          The Member should open the email from MFC Youth/Supabase, follow the secure setup link, create their permanent password, and then sign in normally.
-        </p>
+        <p class="field-help">${esc(guidance)}</p>
       </div>
     `
   );
@@ -1097,23 +1108,23 @@ window.manageMemberLogin = async id => {
   const member = data.members.find(item => String(item.id) === String(id));
   if (!member) return;
 
-  if (!member.email || !validEmail(member.email)) {
-    toast('Add a valid email address to this member before configuring account access.', 'error');
+  if (!member.email || !validGmailEmail(member.email)) {
+    toast('Add a valid Gmail address ending in @gmail.com before configuring account access.', 'error');
     return;
   }
 
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
-    if (!confirm(`Send a secure password setup/reset email to ${fullName(member)}? No temporary password will be generated.`)) return;
+    if (!confirm(`Send a new Gmail verification/access code to ${fullName(member)} at ${member.email}?`)) return;
 
     try {
       const payload = await backendApi('/api/members/login', {
         method: 'POST',
         body: JSON.stringify({ memberId: member.id })
       });
-      toast(payload?.message || 'Account setup email sent.');
+      toast(payload?.message || 'Gmail verification code sent.');
       showMemberSetupNotice(member, payload?.message);
     } catch (error) {
-      toast(error?.message || 'Unable to send the member account setup email.', 'error');
+      toast(error?.message || 'Unable to send the Gmail verification code.', 'error');
     }
     return;
   }
@@ -1126,10 +1137,10 @@ window.manageMemberLogin = async id => {
 
   provisionMemberAccount(member);
   renderMembers();
-  toast('Member account marked for setup.');
+  toast('Member account is ready for email-code access.');
   showMemberSetupNotice(
     member,
-    'The browser-only demo does not issue temporary passwords. Connect the cloud backend to send the Member a secure password setup email.'
+    'Email-code access requires the cloud backend. No password is required for regular Members.'
   );
 };
 function field(
@@ -1229,7 +1240,7 @@ const session = getSession();
 
 if (!session) {
   navigateWithLoader('/', true);
-} else if (session.mustChangePassword) {
+} else if (session.role !== 'member' && session.mustChangePassword) {
   navigateWithLoader('/change-password', true);
 } else if (session.role === 'member') {
   navigateWithLoader('/member', true);
@@ -2641,11 +2652,11 @@ function memberModal(id = null) {
   )}
 
       ${field(
-    'Email Address',
+    'Gmail Address',
     'mEmail',
     'email',
     member.email || '',
-    'required autocomplete="email"'
+    'required autocomplete="email" placeholder="name@gmail.com"'
   )}
 
       ${selectField(
@@ -2852,10 +2863,10 @@ function memberModal(id = null) {
       }
 
       if (
-        !validEmail(email)
+        !validGmailEmail(email)
       ) {
         toast(
-          'Enter a valid email address.',
+          'Enter a valid Gmail address ending in @gmail.com.',
           'error'
         );
 
@@ -3058,15 +3069,21 @@ function memberModal(id = null) {
       toast(
         id
           ? 'Member updated.'
-          : (provisionResult?.setupEmailSent
-            ? 'Member added. Secure password setup email sent.'
-            : 'Member added. Account setup is required.')
+          : (provisionResult?.codeSent
+            ? (record.accessLevel === 'member'
+              ? 'Member added. Gmail verification/sign-in code sent.'
+              : 'Servant Leader added. Gmail verification code sent for first-time account activation.')
+            : (record.accessLevel === 'member'
+              ? 'Member added. The Member can request a Gmail sign-in code at any time.'
+              : 'Servant Leader added. Gmail account verification is still required.'))
       );
 
       renderMembers();
 
-      if (!id && provisionResult?.setupEmailSent) {
-        showMemberSetupNotice(savedRecord, 'A secure setup email was sent. The Member will create their own permanent password from the email link.');
+      if (!id && provisionResult?.codeSent) {
+        showMemberSetupNotice(savedRecord, provisionResult?.role === 'member'
+          ? 'A Gmail verification/sign-in code was sent. No password is required.'
+          : 'A Gmail verification code was sent. After verification, the Servant Leader will create their password.');
       }
     }
   );

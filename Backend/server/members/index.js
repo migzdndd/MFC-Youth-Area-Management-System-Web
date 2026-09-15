@@ -8,9 +8,10 @@ import {
   methodNotAllowed,
   normalizeEmail,
   isValidEmail,
+  isGmailEmail,
   apiError
 } from '../_lib/http.js';
-import { passwordSetupRedirectUrl } from '../_lib/frontend-url.js';
+import { createSupabaseAuthClient } from '../_lib/supabase.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -97,8 +98,8 @@ async function createMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid email is required because the member receives their account setup link by email.' });
+  if (!isValidEmail(email) || !isGmailEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid Gmail address ending in @gmail.com is required for account verification.' });
   }
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
@@ -159,17 +160,24 @@ async function createMember(req, res) {
     if (memberError) throw memberError;
     createdMember = member;
 
-    const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
-      redirectTo: passwordSetupRedirectUrl(req),
-      data: {
+    const onboardingMethod = 'email_otp';
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: {
         display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
-        registration_type: 'admin_provisioned_member',
-        onboarding_method: 'email_invite'
+        registration_type: accessLevel === 'member'
+          ? 'admin_provisioned_member'
+          : 'admin_provisioned_leader',
+        onboarding_method: 'email_otp',
+        requested_role: accessLevel
       }
     });
-    if (authError || !authData?.user) throw authError || new Error('Unable to send the member account setup email.');
+
+    if (authError || !authData?.user) throw authError || new Error('Unable to provision the account.');
     createdAuthUserId = authData.user.id;
 
+    const leaderNeedsPasswordSetup = accessLevel !== 'member';
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -178,21 +186,48 @@ async function createMember(req, res) {
         role: accessLevel,
         area_id: areaId,
         chapter_id: chapterId,
-        must_change_password: false,
+        must_change_password: leaderNeedsPasswordSetup,
         is_active: status !== 'Inactive'
       });
     if (profileError) throw profileError;
+
+    let codeSent = false;
+    let onboardingWarning = '';
+    if (status !== 'Inactive') {
+      const authClient = createSupabaseAuthClient();
+      const { error: otpError } = await authClient.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false }
+      });
+      if (otpError) {
+        onboardingWarning = accessLevel === 'member'
+          ? 'Member account created, but the initial Gmail verification code could not be sent. Use Access to resend a code.'
+          : 'Servant Leader account created, but the initial Gmail verification code could not be sent. Use Access to resend the verification code.';
+      } else {
+        codeSent = true;
+      }
+    }
 
     return sendJson(res, 201, {
       ok: true,
       member: createdMember,
       account: {
         email,
-        setupEmailSent: true,
-        mustChangePassword: false,
+        codeSent,
+        setupEmailSent: false,
+        emailVerificationRequired: status !== 'Inactive',
+        mustChangePassword: accessLevel !== 'member',
+        passwordRequired: accessLevel !== 'member',
         role: accessLevel,
-        onboardingMethod: 'email_invite'
-      }
+        onboardingMethod
+      },
+      message: accessLevel === 'member'
+        ? (codeSent
+          ? 'Member added. A Gmail verification/sign-in code was sent. No password is required.'
+          : onboardingWarning)
+        : (codeSent
+          ? 'Servant Leader added. A Gmail verification code was sent. After verification, they will set their account password.'
+          : onboardingWarning)
     });
   } catch (error) {
     if (createdAuthUserId) {
@@ -233,8 +268,8 @@ async function updateMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid email is required.' });
+  if (!isValidEmail(email) || !isGmailEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid Gmail address ending in @gmail.com is required.' });
   }
   if (accessLevel === 'chapter_servant' && !chapterId) {
     return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });

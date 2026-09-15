@@ -17,8 +17,9 @@
 ## Security note
 Real `.env.local` files are intentionally excluded from distribution. Configure secrets locally or in Vercel environment variables only.
 
-## Password provisioning policy
+## Authentication policy
 
-- Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
-- Admin-added Members receive a secure email setup link and choose their own permanent password. No temporary password is generated or shared, and `must_change_password` remains `false`.
+- Self-registered Servant Leaders use the password they choose during registration.
+- Admin-added regular Members use passwordless email-code (OTP) access. No Member password is required or generated.
+- Members may optionally add a password later without losing email-code access.
 - The Servant Leader registration code authorizes registration only; it is never used as the user account password.

@@ -61,3 +61,13 @@ Dashboard counts and quick analytics are hydrated from `/api/sync` and therefore
 ## Vercel deployment architecture
 
 To remain compatible with Vercel Hobby limits, the Backend exposes one serverless router function and keeps route implementations under `Backend/server/`. The Frontend uses an external rewrite for `/api/:path*` instead of generating proxy functions. Public API paths remain unchanged.
+
+## Gmail OTP account verification
+
+New live registration/onboarding now requires Gmail OTP verification across account types:
+
+- Self-registered Servant Leader/Admin: Gmail OTP is verified before the profile is finalized.
+- Admin-provisioned regular Member: Gmail OTP is the default passwordless sign-in method.
+- Admin-provisioned Servant Leader: Gmail OTP is required before first-time password creation.
+
+Production delivery requires Supabase Custom SMTP and an Auth email template containing `{{ .Token }}`. See `ALL-REGISTRATION-GMAIL-OTP.md`.
