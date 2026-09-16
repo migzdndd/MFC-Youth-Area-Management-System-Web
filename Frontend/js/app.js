@@ -106,21 +106,74 @@ function updateStoredSession(nextSession) {
   }
 }
 
+async function refreshBackendSession() {
+  if (!session?.backendAuth || session?.demo || !session?.refreshToken) return false;
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: session.refreshToken })
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload?.session?.accessToken) return false;
+
+    Object.assign(session, {
+      accessToken: payload.session.accessToken,
+      refreshToken: payload.session.refreshToken || session.refreshToken,
+      expiresAt: payload.session.expiresAt || null,
+      userId: payload.user?.id ?? session.userId,
+      memberId: payload.user?.memberId ?? session.memberId,
+      email: payload.user?.email || session.email,
+      name: payload.user?.name || session.name,
+      role: normalizeAccessRole(payload.user?.role || session.role),
+      areaId: payload.user?.areaId ?? session.areaId,
+      chapterId: payload.user?.chapterId ?? session.chapterId,
+      mustChangePassword: payload.user?.mustChangePassword === true
+    });
+
+    updateStoredSession(session);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function backendApi(path, options = {}) {
+  const {
+    timeoutMs: requestedTimeout,
+    _retriedAfterRefresh = false,
+    ...fetchOptions
+  } = options;
+
   const token = session?.accessToken || '';
-  const timeoutMs = Number(options.timeoutMs || 8000);
+  const timeoutMs = Number(requestedTimeout || 8000);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(path, {
-      ...options,
+      ...fetchOptions,
       signal: controller.signal,
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
+        ...(fetchOptions.headers || {})
       }
     });
 
@@ -132,6 +185,22 @@ async function backendApi(path, options = {}) {
     }
 
     if (!response.ok) {
+      const canRefresh =
+        response.status === 401 &&
+        !_retriedAfterRefresh &&
+        session?.backendAuth &&
+        !session?.demo &&
+        Boolean(session?.refreshToken) &&
+        ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(String(body?.code || ''));
+
+      if (canRefresh && await refreshBackendSession()) {
+        return backendApi(path, {
+          ...fetchOptions,
+          timeoutMs,
+          _retriedAfterRefresh: true
+        });
+      }
+
       const error = new Error(body?.error || 'Request failed.');
       error.status = response.status;
       error.body = body;

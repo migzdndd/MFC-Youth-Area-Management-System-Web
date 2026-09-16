@@ -1,4 +1,4 @@
-import { createSupabaseAdmin } from './supabase.js';
+import { createSupabaseAdmin, createSupabaseAuthClient } from './supabase.js';
 import { readBearerToken } from './http.js';
 
 export const SUPER_ADMIN_ROLES = new Set([
@@ -15,6 +15,15 @@ export function isChapterServantRole(role) {
   return String(role || '').trim().toLowerCase() === 'chapter_servant';
 }
 
+/**
+ * Validates a user's access token with the normal Supabase Auth client, then
+ * uses the privileged backend client only for database/profile operations.
+ *
+ * Keeping token verification on the publishable/anon Auth client avoids
+ * mixing the backend secret/service-role authorization header with an end-user
+ * bearer token. This is especially important when using Supabase's newer
+ * publishable + secret API key format.
+ */
 export async function requireAuthenticatedProfile(req) {
   const token = readBearerToken(req);
   if (!token) {
@@ -24,8 +33,8 @@ export async function requireAuthenticatedProfile(req) {
     throw error;
   }
 
-  const supabase = createSupabaseAdmin();
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const authClient = createSupabaseAuthClient();
+  const { data: userData, error: userError } = await authClient.auth.getUser(token);
   if (userError || !userData?.user) {
     const error = new Error('Session is invalid or expired.');
     error.statusCode = 401;
@@ -33,6 +42,7 @@ export async function requireAuthenticatedProfile(req) {
     throw error;
   }
 
+  const supabase = createSupabaseAdmin();
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
