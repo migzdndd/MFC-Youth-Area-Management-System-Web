@@ -144,6 +144,12 @@ export async function ensureMemberAuthAccount({
         role: normalizedRole,
         area_id: member.area_id,
         chapter_id: member.chapter_id || null,
+        // Members -> Access is an explicit account setup/reset action. When
+        // requirePasswordSetup is requested, keep the account in Setup Pending
+        // until /api/auth/change-password completes successfully.
+        must_change_password: requirePasswordSetup
+          ? true
+          : Boolean(memberProfile?.must_change_password),
         is_active: String(member.status || 'Active') !== 'Inactive',
         updated_at: new Date().toISOString()
       })

@@ -42,3 +42,6 @@ A cloud cache is cleared on explicit logout/account removal. The legacy global c
 
 A failed cloud sign-in now fails closed instead of falling back to browser-stored prototype credentials. Explicit Demo mode remains available independently and does not gain cloud privileges.
 
+## Account provisioning state
+
+Member listing hydrates `account_setup_required` from `profiles.must_change_password`, so cached UI state can be corrected by the next cloud refresh. Password setup clears that flag server-side only after the password update succeeds.

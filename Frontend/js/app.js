@@ -1121,11 +1121,11 @@ function showMemberSetupNotice(member, message = '') {
   const role = normalizeAccessRole(member.accessLevel || 'member');
   const regularMember = role === 'member';
   const defaultMessage = regularMember
-    ? 'Optional Member Portal account access has been prepared.'
-    : 'Servant Leader account access has been prepared.';
+    ? 'Optional Member Portal setup is pending until the Member creates a password.'
+    : 'Servant Leader account setup is pending until the password is created.';
   const guidance = regularMember
-    ? 'A regular Member record does not require a password. If Portal access is wanted, the Member can use the secure setup email to choose a password.'
-    : 'Use the secure setup email to choose the Servant Leader account password. No temporary password is used.';
+    ? 'A regular Member record still does not require a login or password. Only the optional provisioned Portal account stays Setup Pending until the secure setup link is completed.'
+    : 'Use the secure setup email to create the Servant Leader account password. The account becomes Active only after setup succeeds. No temporary password is used.';
 
   openModal(
     'Account Access',

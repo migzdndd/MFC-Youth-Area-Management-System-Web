@@ -65,3 +65,6 @@ This prevents cached Area A data from being rendered for Area B or another signe
 
 The normal sign-in form is cloud-only and uses the backend/Supabase authentication path. The obsolete `mfc_demo_users` browser credential registry is not trusted and is removed by the updated frontend. Legacy browser-only sessions are rejected. Demo mode is entered explicitly through the Demo button and remains isolated from authenticated cloud APIs and scoped live Area data.
 
+## Account setup state
+
+Provisioned login accounts are not considered setup-complete until the password setup endpoint succeeds. `profiles.must_change_password` is the source of truth for **Setup Pending** vs **Active** in the Members UI. Re-running Members -> Access intentionally returns the login account to Setup Pending while a new secure setup link is outstanding.

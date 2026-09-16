@@ -82,3 +82,6 @@ Authenticated Supabase sessions now store frontend cache data under an Area/acco
 
 Production authentication no longer falls back to browser-created prototype users. Cloud accounts authenticate through the backend/Supabase only; Demo mode remains a separate local presentation path.
 
+## Part 5 - Account setup state
+
+Admin-provisioned login accounts now have an explicit Setup Pending -> Active transition using the existing `profiles.must_change_password` field. No database schema migration is required for this phase.

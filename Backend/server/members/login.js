@@ -33,11 +33,14 @@ export default async function handler(req, res) {
     const role = String(member.access_level || 'member').trim().toLowerCase();
     const leaderAccount = role !== 'member';
 
+    // A Member record itself never requires a login/password. However, once an
+    // Admin explicitly enables optional Member Portal access, that provisioned
+    // login must remain Setup Pending until the Member creates a password.
     const account = await ensureMemberAuthAccount({
       supabase,
       member,
       role,
-      requirePasswordSetup: leaderAccount
+      requirePasswordSetup: true
     });
 
     let setupEmailSent = false;
@@ -57,14 +60,16 @@ export default async function handler(req, res) {
         setupEmailSent,
         existingAccount: !account.createdAccount,
         mustChangePassword: account.profile?.must_change_password === true,
-        passwordRequired: leaderAccount,
+        // Password is required only for the provisioned login account. A plain
+        // Member record still has no password requirement.
+        passwordRequired: true,
         role,
         onboardingMethod: 'admin_password_setup'
       },
       message: setupEmailSent
         ? (leaderAccount
-          ? 'Servant Leader account access is ready. A secure password setup link was sent to the Member email.'
-          : 'Optional Member Portal access is ready. A secure password setup link was sent to the Member email.')
+          ? 'Servant Leader account setup is pending. A secure password setup link was sent to the Member email.'
+          : 'Optional Member Portal setup is pending. A secure password setup link was sent to the Member email.')
         : emailWarning
     });
   } catch (error) {

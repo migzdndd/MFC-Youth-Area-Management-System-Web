@@ -72,3 +72,6 @@ If the registration email matches an existing Member record, the account is link
 - Demo access is explicit and isolated through the Demo button.
 - Member Portal requires a real cloud-authenticated Member session.
 
+## Part 5 - Account setup status
+
+Provisioned Member Portal and Servant Leader accounts now remain **Setup Pending** while `must_change_password = true`. Completing the secure password setup clears the flag and changes the Members UI to **Active**. A Member record itself still does not require a login/password.

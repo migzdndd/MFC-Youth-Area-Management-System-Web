@@ -359,7 +359,9 @@ async function updateMember(req, res) {
       role: accessLevel,
       existingAccount: true,
       setupEmailSent: false,
-      passwordRequired: accessLevel !== 'member'
+      mustChangePassword: linkedProfile.must_change_password === true,
+      // This describes the provisioned login account, not the Member record.
+      passwordRequired: true
     };
   } else if (accessLevel !== 'member') {
     const provisioned = await ensureMemberAuthAccount({
