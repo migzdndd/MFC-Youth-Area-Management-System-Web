@@ -386,16 +386,44 @@ function portalCloudMember(member, previous = {}) {
 }
 
 async function syncMemberPortalCloudCache() {
-  if (!session?.backendAuth || !session?.areaId) return;
+  if (!session?.backendAuth || !session?.areaId) return false;
 
-  const [membersPayload, syncPayload] = await Promise.all([
-    portalBackendApi('/api/members'),
-    portalBackendApi('/api/sync')
-  ]);
+  // One unified request now returns the Member record, assignments, events,
+  // participants, and authoritative profile metadata.
+  const syncPayload = await portalBackendApi('/api/sync');
+  if (!session) return false;
+
+  if (syncPayload?.user) {
+    const previousKey = databaseStorageKey(session);
+    Object.assign(session, {
+      userId: syncPayload.user.id ?? session.userId,
+      memberId: syncPayload.user.memberId ?? session.memberId,
+      email: syncPayload.user.email || session.email,
+      name: syncPayload.user.name || session.name,
+      role: String(syncPayload.user.role || session.role || '').trim().toLowerCase(),
+      areaId: syncPayload.user.areaId ?? session.areaId,
+      chapterId: syncPayload.user.chapterId ?? session.chapterId,
+      mustChangePassword: syncPayload.user.mustChangePassword === true,
+      needsAreaSetup: syncPayload.user.role !== 'member' && !(syncPayload.user.areaId ?? session.areaId)
+    });
+    updateStoredSession(session);
+
+    const nextKey = databaseStorageKey(session);
+    if (previousKey !== nextKey && previousKey !== DB_KEY) localStorage.removeItem(previousKey);
+
+    if (session.mustChangePassword) {
+      navigateWithLoader('/change-password', true);
+      return false;
+    }
+    if (session.role !== 'member' && !previewMode) {
+      navigateWithLoader(session.role === 'chapter_servant' ? '/chapters' : '/dashboard', true);
+      return false;
+    }
+  }
 
   const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
   const previousMembers = Array.isArray(data.members) ? data.members : [];
-  const cloudMembers = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
+  const cloudMembers = Array.isArray(syncPayload?.members) ? syncPayload.members : [];
   const chapters = Array.isArray(syncPayload?.chapters) ? syncPayload.chapters : [];
   const services = Array.isArray(syncPayload?.services) ? syncPayload.services : [];
   const serviceLinks = Array.isArray(syncPayload?.memberServices) ? syncPayload.memberServices : [];
@@ -449,8 +477,21 @@ async function syncMemberPortalCloudCache() {
     attended: Boolean(row.attended),
     cloudBacked: true
   }));
+  data.cloudSyncedAt = Number(syncPayload?.syncedAt || Date.now());
 
   localStorage.setItem(databaseStorageKey(session), JSON.stringify(data));
+  return true;
+}
+
+function memberPortalCacheIsFresh(maxAgeMs = 30000) {
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
+  const syncedAt = Number(data.cloudSyncedAt || 0);
+  const members = Array.isArray(data.members) ? data.members : [];
+  const linked = members.some(item =>
+    String(item.id) === String(session?.memberId) ||
+    String(item.email || '').trim().toLowerCase() === String(session?.email || '').trim().toLowerCase()
+  );
+  return linked && syncedAt > 0 && (Date.now() - syncedAt) < maxAgeMs;
 }
 
 function previewMemberFromSession(currentSession) {
@@ -506,11 +547,15 @@ async function bootstrapMemberPortal() {
     }
   }
 
-  try {
-    await syncMemberPortalCloudCache();
-  } catch (error) {
-    if (!session) return;
-    console.warn('Member Portal cloud sync skipped:', error?.message || error);
+  // Recent account/Area-scoped cache makes repeat portal visits immediate.
+  // First load or stale cache performs one unified /api/sync request.
+  if (!memberPortalCacheIsFresh()) {
+    try {
+      await syncMemberPortalCloudCache();
+    } catch (error) {
+      if (!session) return;
+      console.warn('Member Portal cloud sync skipped:', error?.message || error);
+    }
   }
 
   if (!session) return;

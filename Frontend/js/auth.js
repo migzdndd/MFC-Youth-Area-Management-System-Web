@@ -601,4 +601,35 @@ if (forcePasswordForm) {
     });
   }
 }
+
+function warmBackendOnLoginPage() {
+  if (!document.getElementById('loginForm')) return;
+
+  const run = async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2500);
+    try {
+      // Best-effort warm-up only. This can reduce the first-login cold-start
+      // penalty on serverless hosting, but never blocks the login form.
+      await fetch('/api/health', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+    } catch {
+      // Ignore: actual login will show any real connectivity problem.
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(run, { timeout: 600 });
+  } else {
+    window.setTimeout(run, 150);
+  }
+}
+
+warmBackendOnLoginPage();
 attachPasswordToggles();

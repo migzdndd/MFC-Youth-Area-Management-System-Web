@@ -60,6 +60,8 @@ GET /api/sync
 
 `POST /api/members/login` is retained as the existing account-management endpoint name. It now creates/links account access for the selected Member and sends a secure password setup/reset email.
 
+`GET /api/sync` is the optimized protected-page bootstrap endpoint. It now returns authoritative profile scope, complete scoped Member records with account state, Chapters, Services/assignments, Events/Participants, Reports, GIG, and Dashboard totals in one response. This replaces the older startup sequence that separately called `/api/auth/me`, `/api/members`, and `/api/sync`.
+
 ## Account policy
 
 ### Regular Member
@@ -70,7 +72,7 @@ A regular Member record:
 - does **not** automatically require a Supabase Auth login,
 - does **not** require a password simply to exist in the database.
 
-If Portal access is wanted, an authorized Super Admin uses **Members → Access**. The Backend creates or links the Supabase Auth user and sends a secure password setup email to the Member's stored email address.
+If Portal access is wanted, an authorized Super Admin uses the state-aware Member login action (**Enable Login / Resend Setup / Reset Login / Manage Login**). The Backend creates or links the Supabase Auth user and sends a secure password setup email to the Member's stored email address.
 
 ### Servant Leader / Admin
 

@@ -20,7 +20,7 @@ function initializeMotionEffects() {
   }
 
   revealTargets.forEach((element, index) => {
-    element.style.animationDelay = `${index * 80}ms`;
+    element.style.animationDelay = `${Math.min(index * 35, 210)}ms`;
     requestAnimationFrame(() => element.classList.add('is-visible'));
   });
 }
@@ -367,30 +367,6 @@ function cloudMemberToLocal(member, previous = {}) {
   };
 }
 
-async function syncBackendMembersIntoLocalDb() {
-  if (!session?.backendAuth || !session?.areaId) return false;
-
-  const payload = await backendApi('/api/members');
-  const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
-  const data = db();
-  const previousMembers = Array.isArray(data.members) ? data.members : [];
-
-  // In authenticated cloud mode, Supabase is the source of truth. localStorage
-  // only keeps a fast render cache so deleted/stale prototype records cannot
-  // reappear after a refresh.
-  data.members = cloudMembers.map(cloudMember => {
-    const email = String(cloudMember.email || '').trim().toLowerCase();
-    const previous = previousMembers.find(localMember =>
-      String(localMember.id) === String(cloudMember.id) ||
-      (email && String(localMember.email || '').trim().toLowerCase() === email)
-    ) || {};
-    return cloudMemberToLocal(cloudMember, previous);
-  });
-
-  save(data);
-  return true;
-}
-
 function cloudEventToLocal(row) {
   let localDateTime = '';
   if (row.starts_at) {
@@ -441,9 +417,54 @@ function cloudGigToLocal(row) {
 async function syncCloudModulesIntoLocalDb() {
   if (!session?.backendAuth || !session?.areaId) return false;
 
+  const previousSession = { ...session };
+  const previousStorageKey = databaseStorageKey(previousSession);
   const payload = await backendApi('/api/sync', { timeoutMs: 10000 });
-  const data = db();
+  if (!session) return false;
 
+  // /api/sync now doubles as the lightweight authoritative session/profile
+  // revalidation used during background refresh. This removes the old blocking
+  // /api/auth/me request from every protected page navigation.
+  if (payload?.user) {
+    Object.assign(session, {
+      userId: payload.user.id ?? session.userId,
+      memberId: payload.user.memberId ?? session.memberId,
+      email: payload.user.email || session.email,
+      name: payload.user.name || session.name,
+      role: normalizeAccessRole(payload.user.role || session.role),
+      areaId: payload.user.areaId ?? session.areaId,
+      chapterId: payload.user.chapterId ?? session.chapterId,
+      mustChangePassword: payload.user.mustChangePassword === true,
+      needsAreaSetup: payload.user.role !== 'member' && !(payload.user.areaId ?? session.areaId)
+    });
+    updateStoredSession(session);
+
+    const nextStorageKey = databaseStorageKey(session);
+    if (previousStorageKey !== nextStorageKey && previousStorageKey !== DB_KEY) {
+      localStorage.removeItem(previousStorageKey);
+    }
+
+    if (session.mustChangePassword) {
+      navigateWithLoader('/change-password', true);
+      return false;
+    }
+    if (session.role === 'member') {
+      navigateWithLoader('/member', true);
+      return false;
+    }
+    if (
+      isChapterServantSession() &&
+      !session.needsAreaSetup &&
+      !['members', 'chapters', 'reports', 'events'].includes(page)
+    ) {
+      navigateWithLoader('/chapters', true);
+      return false;
+    }
+  }
+
+  const data = db();
+  const previousMembers = Array.isArray(data.members) ? data.members : [];
+  const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
   const chapters = Array.isArray(payload?.chapters) ? payload.chapters : [];
   const services = Array.isArray(payload?.services) ? payload.services : [];
   const memberServices = Array.isArray(payload?.memberServices) ? payload.memberServices : [];
@@ -471,11 +492,17 @@ async function syncCloudModulesIntoLocalDb() {
   });
 
   const chapterNameById = new Map(data.chapters.map(chapter => [String(chapter.id), chapter.name]));
-  data.members = data.members.map(member => ({
-    ...member,
-    chapterName: member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '',
-    services: serviceNamesByMember.get(String(member.id)) || []
-  }));
+  data.members = cloudMembers.map(cloudMember => {
+    const email = String(cloudMember.email || '').trim().toLowerCase();
+    const previous = previousMembers.find(localMember =>
+      String(localMember.id) === String(cloudMember.id) ||
+      (email && String(localMember.email || '').trim().toLowerCase() === email)
+    ) || {};
+    const member = cloudMemberToLocal(cloudMember, previous);
+    member.chapterName = member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '';
+    member.services = serviceNamesByMember.get(String(member.id)) || [];
+    return member;
+  });
 
   data.events = events.map(cloudEventToLocal);
   data.participants = participants.map(cloudParticipantToLocal);
@@ -497,16 +524,28 @@ async function syncCloudModulesIntoLocalDb() {
   }));
   data.gig = gig.map(cloudGigToLocal);
   data.cloudDashboard = payload?.dashboard || null;
+  data.cloudSyncedAt = Number(payload?.syncedAt || Date.now());
 
   save(data);
   return true;
 }
 
+function cloudCacheIsFresh(maxAgeMs = 30000) {
+  const syncedAt = Number(db().cloudSyncedAt || 0);
+  return syncedAt > 0 && (Date.now() - syncedAt) < maxAgeMs;
+}
+
+function hasUsableScopedCache() {
+  if (!session?.backendAuth || !session?.areaId) return false;
+  const raw = safeParse(localStorage.getItem(databaseStorageKey(session)), null);
+  if (!raw || typeof raw !== 'object') return false;
+  return ['members', 'chapters', 'events', 'reports', 'gig'].some(key => Array.isArray(raw[key]) && raw[key].length > 0) || Boolean(raw.cloudDashboard);
+}
+
 async function refreshAllCloudData({ render = true } = {}) {
   if (!session?.backendAuth || !session?.areaId) return false;
-  await syncBackendMembersIntoLocalDb();
   await syncCloudModulesIntoLocalDb();
-  if (render) renderPageSafely();
+  if (render && session) renderPageSafely();
   return true;
 }
 
@@ -841,7 +880,8 @@ function normalizeDatabase(input) {
       : [],
     cloudDashboard: data.cloudDashboard && typeof data.cloudDashboard === 'object'
       ? data.cloudDashboard
-      : null
+      : null,
+    cloudSyncedAt: Number(data.cloudSyncedAt || 0) || 0
   };
 }
 
@@ -6414,7 +6454,52 @@ function printReportSummary(
 // EXPORT PDF
 // =========================================================
 
-function exportReportsPdf(
+let reportPdfLibraryPromise = null;
+
+function loadExternalScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-dynamic-src="${src}"]`);
+    if (existing?.dataset.loaded === '1') return resolve();
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.referrerPolicy = 'no-referrer';
+    script.dataset.dynamicSrc = src;
+    script.addEventListener('load', () => {
+      script.dataset.loaded = '1';
+      resolve();
+    }, { once: true });
+    script.addEventListener('error', () => reject(new Error('Unable to load the PDF export library.')), { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureReportPdfLibraries() {
+  if (window.jspdf?.jsPDF && typeof window.jspdf.jsPDF.prototype?.autoTable === 'function') return true;
+  if (reportPdfLibraryPromise) return reportPdfLibraryPromise;
+
+  reportPdfLibraryPromise = (async () => {
+    if (!window.jspdf?.jsPDF) {
+      await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    }
+    await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js');
+    return Boolean(window.jspdf?.jsPDF);
+  })();
+
+  try {
+    return await reportPdfLibraryPromise;
+  } finally {
+    reportPdfLibraryPromise = null;
+  }
+}
+
+async function exportReportsPdf(
   data
 ) {
   const reports =
@@ -6429,14 +6514,14 @@ function exportReportsPdf(
     return;
   }
 
-  if (
-    !window.jspdf?.jsPDF
-  ) {
+  try {
+    const ready = await ensureReportPdfLibraries();
+    if (!ready) throw new Error('PDF library unavailable.');
+  } catch (error) {
     toast(
       'PDF library failed to load. Check your internet connection and try again.',
       'error'
     );
-
     return;
   }
 
@@ -8302,7 +8387,9 @@ async function refreshCloudDataInBackground() {
   }
 }
 
-function scheduleBackgroundSync() {
+function scheduleBackgroundSync({ force = false } = {}) {
+  if (!force && cloudCacheIsFresh()) return;
+
   const run = () => {
     refreshCloudDataInBackground().catch(error => {
       console.warn('Background refresh failed:', error?.message || error);
@@ -8310,17 +8397,23 @@ function scheduleBackgroundSync() {
   };
 
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(run, { timeout: 450 });
+    window.requestIdleCallback(run, { timeout: 250 });
   } else {
-    window.setTimeout(run, 80);
+    window.setTimeout(run, 30);
   }
 }
 
 async function bootstrapApplication() {
   try {
-    // Do not render protected cached Area data for a session that is already
-    // known to be expired. Refresh first; a definitively rejected refresh
-    // clears the session/cache and returns the user to sign-in.
+    // Mandatory password setup and already-expired tokens are handled before any
+    // protected cache is rendered. Healthy sessions can render their strictly
+    // account/Area-scoped cache immediately while the server revalidates and
+    // refreshes data in the background.
+    if (session?.mustChangePassword) {
+      navigateWithLoader('/change-password', true);
+      return;
+    }
+
     if (session?.backendAuth && sessionExpiresSoon(session?.expiresAt, 0)) {
       if (!session?.refreshToken) {
         invalidateCloudSession();
@@ -8332,71 +8425,42 @@ async function bootstrapApplication() {
         invalidateCloudSession();
         return;
       }
-
       if (session?.mustChangePassword) {
         navigateWithLoader('/change-password', true);
         return;
       }
     }
 
-    // Revalidate the cloud identity before rendering protected cached Area
-    // data. This also picks up server-side role, Area, Chapter, active-status,
-    // and setup-state changes made since the last page load.
-    if (session?.backendAuth) {
-      try {
-        const me = await backendApi('/api/auth/me', { method: 'GET', timeoutMs: 5000 });
-        if (!session) return;
+    const hasCache = hasUsableScopedCache();
 
-        Object.assign(session, {
-          userId: me?.user?.id ?? session.userId,
-          memberId: me?.user?.memberId ?? session.memberId,
-          email: me?.user?.email || session.email,
-          role: normalizeAccessRole(me?.user?.role || session.role),
-          areaId: me?.user?.areaId ?? session.areaId,
-          chapterId: me?.user?.chapterId ?? session.chapterId,
-          mustChangePassword: me?.user?.mustChangePassword === true,
-          needsAreaSetup: me?.user?.role !== 'member' && !(me?.user?.areaId ?? session.areaId)
-        });
-        updateStoredSession(session);
-
-        if (session.mustChangePassword) {
-          navigateWithLoader('/change-password', true);
-          return;
-        }
-        if (session.role === 'member') {
-          navigateWithLoader('/member', true);
-          return;
-        }
-        if (
-          isChapterServantSession() &&
-          !session.needsAreaSetup &&
-          !['members', 'chapters', 'reports', 'events'].includes(page)
-        ) {
-          navigateWithLoader('/chapters', true);
-          return;
-        }
-      } catch (error) {
-        if (!session) return;
-        // A temporary network problem may still use the account/Area-scoped
-        // cache. Confirmed authentication failures are handled inside
-        // backendApi() and clear the session/cache before this point.
-        console.warn('Session validation deferred:', error?.message || error);
-      }
+    // Area onboarding is its own authenticated flow and does not need the heavy
+    // dashboard sync before the selection dialog becomes usable.
+    if (session?.needsAreaSetup || !session?.areaId) {
+      renderPageSafely();
+      showAreaOnboarding().catch(error => {
+        if (session) console.warn('Area onboarding check skipped:', error?.message || error);
+      });
+      return;
     }
 
-    // Render from the account/Area-scoped cache, then reconcile with Supabase
-    // in the background.
-    const rendered = renderPageSafely();
-    if (!rendered) return;
+    if (hasCache) {
+      // Fast path: paint cached UI synchronously. /api/sync validates the server
+      // profile and reconciles fresh data shortly afterward.
+      if (!renderPageSafely()) return;
+      scheduleBackgroundSync();
+      return;
+    }
 
+    // First visit for this account/Area: keep the skeleton visible and perform
+    // one unified sync request instead of /auth/me + /members + /sync.
     try {
-      await showAreaOnboarding();
+      await refreshAllCloudData({ render: true });
     } catch (error) {
       if (!session) return;
-      console.warn('Area onboarding check skipped:', error?.message || error);
+      // With no cache there is nothing trustworthy/useful to display, so give a
+      // clear retry state rather than an empty dashboard.
+      renderPageFailure(error);
     }
-
-    scheduleBackgroundSync();
   } catch (error) {
     if (!session) return;
     renderPageFailure(error);
