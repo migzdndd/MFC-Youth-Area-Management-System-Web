@@ -31,6 +31,7 @@ The future WinForms client should use the same Backend API so authentication, ro
 GET    /api/health
 
 POST   /api/auth/login
+POST   /api/auth/refresh
 POST   /api/auth/admin-register
 GET    /api/auth/me
 POST   /api/auth/change-password
@@ -181,6 +182,8 @@ If a matching account already exists, the profile is linked/updated rather than 
 
 - The browser never receives the Supabase secret key.
 - Cloud module operations require an authenticated Backend session.
+- User access tokens are validated through the normal Supabase Auth client; the privileged Backend client is reserved for profile/data operations.
+- Expired access tokens can be renewed through `POST /api/auth/refresh` using the stored refresh token, and authenticated frontend requests retry once after a successful refresh.
 - Queries are scoped server-side by Area and role.
 - RLS remains enabled.
 - Raw user input is not concatenated into SQL.

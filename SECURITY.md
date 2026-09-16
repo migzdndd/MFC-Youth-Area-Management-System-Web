@@ -20,6 +20,13 @@ Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scri
 - Regular Members receive only their own member-linked service/GIG/participant data while Area events remain visible to the Member Portal.
 - Run `Backend/supabase/005_cloud_modules.sql` after migrations 001-004 on an existing project.
 
+## Session security
+- End-user access tokens are validated with the normal Supabase Auth client rather than the privileged Backend client.
+- The Supabase secret/service-role client is used only for trusted profile and database operations after the user token has been validated.
+- `POST /api/auth/refresh` accepts a Supabase refresh token over HTTPS and returns a renewed access/refresh-token pair after confirming the account profile is still active.
+- Frontend authenticated requests retry at most once after a successful refresh, preventing infinite refresh loops.
+- The management frontend also performs a best-effort refresh shortly before token expiry.
+
 ## Account provisioning security
 - Regular Member records do not automatically receive login accounts.
 - Only authorized Super Admin roles can manage account access from the Members dashboard.

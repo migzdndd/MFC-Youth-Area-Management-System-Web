@@ -106,50 +106,75 @@ function updateStoredSession(nextSession) {
   }
 }
 
-async function refreshBackendSession() {
-  if (!session?.backendAuth || session?.demo || !session?.refreshToken) return false;
+let backendSessionRefreshPromise = null;
 
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+function sessionExpiresSoon(expiresAt, skewSeconds = 60) {
+  if (!expiresAt) return false;
+
+  const numeric = Number(expiresAt);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return (numeric * 1000) <= (Date.now() + (skewSeconds * 1000));
+  }
+
+  const parsed = Date.parse(String(expiresAt));
+  return Number.isFinite(parsed) && parsed <= (Date.now() + (skewSeconds * 1000));
+}
+
+async function refreshBackendSession({ force = false } = {}) {
+  if (!session?.backendAuth || session?.demo || !session?.refreshToken) return false;
+  if (!force && !sessionExpiresSoon(session?.expiresAt)) return true;
+  if (backendSessionRefreshPromise) return backendSessionRefreshPromise;
+
+  backendSessionRefreshPromise = (async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: session.refreshToken })
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload?.session?.accessToken) return false;
+
+      Object.assign(session, {
+        accessToken: payload.session.accessToken,
+        refreshToken: payload.session.refreshToken || session.refreshToken,
+        expiresAt: payload.session.expiresAt || null,
+        userId: payload.user?.id ?? session.userId,
+        memberId: payload.user?.memberId ?? session.memberId,
+        email: payload.user?.email || session.email,
+        name: payload.user?.name || session.name,
+        role: normalizeAccessRole(payload.user?.role || session.role),
+        areaId: payload.user?.areaId ?? session.areaId,
+        chapterId: payload.user?.chapterId ?? session.chapterId,
+        mustChangePassword: payload.user?.mustChangePassword === true,
+        needsAreaSetup: payload.user?.role !== 'member' && !(payload.user?.areaId ?? session.areaId)
+      });
+
+      updateStoredSession(session);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  })();
 
   try {
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      signal: controller.signal,
-      cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: session.refreshToken })
-    });
-
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-
-    if (!response.ok || !payload?.session?.accessToken) return false;
-
-    Object.assign(session, {
-      accessToken: payload.session.accessToken,
-      refreshToken: payload.session.refreshToken || session.refreshToken,
-      expiresAt: payload.session.expiresAt || null,
-      userId: payload.user?.id ?? session.userId,
-      memberId: payload.user?.memberId ?? session.memberId,
-      email: payload.user?.email || session.email,
-      name: payload.user?.name || session.name,
-      role: normalizeAccessRole(payload.user?.role || session.role),
-      areaId: payload.user?.areaId ?? session.areaId,
-      chapterId: payload.user?.chapterId ?? session.chapterId,
-      mustChangePassword: payload.user?.mustChangePassword === true
-    });
-
-    updateStoredSession(session);
-    return true;
-  } catch {
-    return false;
+    return await backendSessionRefreshPromise;
   } finally {
-    window.clearTimeout(timeout);
+    backendSessionRefreshPromise = null;
   }
 }
 
@@ -159,6 +184,21 @@ async function backendApi(path, options = {}) {
     _retriedAfterRefresh = false,
     ...fetchOptions
   } = options;
+
+  const isRefreshRequest = path === '/api/auth/refresh';
+  if (
+    !isRefreshRequest &&
+    !_retriedAfterRefresh &&
+    session?.backendAuth &&
+    !session?.demo &&
+    session?.refreshToken &&
+    sessionExpiresSoon(session?.expiresAt)
+  ) {
+    // Best-effort refresh before the access token expires. If refreshing is
+    // temporarily unavailable, still try the current token and let the normal
+    // 401 retry path decide whether a refresh is actually required.
+    await refreshBackendSession({ force: true }).catch(() => false);
+  }
 
   const token = session?.accessToken || '';
   const timeoutMs = Number(requestedTimeout || 8000);
@@ -188,12 +228,13 @@ async function backendApi(path, options = {}) {
       const canRefresh =
         response.status === 401 &&
         !_retriedAfterRefresh &&
+        !isRefreshRequest &&
         session?.backendAuth &&
         !session?.demo &&
         Boolean(session?.refreshToken) &&
         ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(String(body?.code || ''));
 
-      if (canRefresh && await refreshBackendSession()) {
+      if (canRefresh && await refreshBackendSession({ force: true })) {
         return backendApi(path, {
           ...fetchOptions,
           timeoutMs,

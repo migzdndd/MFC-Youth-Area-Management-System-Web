@@ -24,3 +24,10 @@ Real `.env.local` files are intentionally excluded from distribution. Configure 
 - Optional Member Portal access uses a secure password setup link.
 - Servant Leader/Admin access uses password authentication after Admin-controlled provisioning.
 - The private Servant Leader registration code is never used as the user's account password.
+
+## Session resilience
+- Access tokens are refreshed automatically when they are close to expiration.
+- A 401 `INVALID_SESSION` / `AUTH_REQUIRED` response triggers one refresh attempt and one retry of the original authenticated request.
+- Concurrent requests share the same in-flight refresh operation so the browser does not send multiple refresh requests at once.
+- The authentication/change-password pages can also refresh a stored backend session when an authenticated request expires.
+- If the refresh token itself is no longer valid, the request fails normally and the user must sign in again.

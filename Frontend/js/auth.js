@@ -166,12 +166,69 @@ function destinationFor(session) {
   return '/dashboard';
 }
 
+let authPageRefreshPromise = null;
+
+async function refreshStoredBackendSession() {
+  const current = getSession();
+  if (!current?.backendAuth || current?.demo || !current?.refreshToken) return null;
+  if (authPageRefreshPromise) return authPageRefreshPromise;
+
+  authPageRefreshPromise = (async () => {
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: current.refreshToken })
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload?.session?.accessToken) return null;
+
+      const refreshed = {
+        ...current,
+        accessToken: payload.session.accessToken,
+        refreshToken: payload.session.refreshToken || current.refreshToken,
+        expiresAt: payload.session.expiresAt || null,
+        userId: payload.user?.id ?? current.userId,
+        memberId: payload.user?.memberId ?? current.memberId,
+        email: payload.user?.email || current.email,
+        name: payload.user?.name || current.name,
+        role: normalizeAccessRole(payload.user?.role || current.role),
+        areaId: payload.user?.areaId ?? current.areaId,
+        chapterId: payload.user?.chapterId ?? current.chapterId,
+        mustChangePassword: payload.user?.mustChangePassword === true,
+        needsAreaSetup: payload.user?.role !== 'member' && !(payload.user?.areaId ?? current.areaId)
+      };
+
+      updateSession(refreshed);
+      return refreshed;
+    } catch {
+      return null;
+    }
+  })();
+
+  try {
+    return await authPageRefreshPromise;
+  } finally {
+    authPageRefreshPromise = null;
+  }
+}
+
 async function apiJson(path, options = {}) {
+  const { _retriedAfterRefresh = false, ...fetchOptions } = options;
   const response = await fetch(path, {
-    ...options,
+    ...fetchOptions,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
-      ...(options.headers || {})
+      ...(fetchOptions.headers || {})
     }
   });
 
@@ -183,6 +240,32 @@ async function apiJson(path, options = {}) {
   }
 
   if (!response.ok) {
+    const authHeader = String(fetchOptions.headers?.Authorization || fetchOptions.headers?.authorization || '');
+    const current = getSession();
+    const canRefresh =
+      response.status === 401 &&
+      !_retriedAfterRefresh &&
+      path !== '/api/auth/refresh' &&
+      authHeader.startsWith('Bearer ') &&
+      current?.backendAuth &&
+      !current?.demo &&
+      Boolean(current?.refreshToken) &&
+      ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(String(body?.code || ''));
+
+    if (canRefresh) {
+      const refreshed = await refreshStoredBackendSession();
+      if (refreshed?.accessToken) {
+        return apiJson(path, {
+          ...fetchOptions,
+          _retriedAfterRefresh: true,
+          headers: {
+            ...(fetchOptions.headers || {}),
+            Authorization: `Bearer ${refreshed.accessToken}`
+          }
+        });
+      }
+    }
+
     const error = new Error(body?.error || 'Request failed.');
     error.status = response.status;
     error.code = body?.code;
