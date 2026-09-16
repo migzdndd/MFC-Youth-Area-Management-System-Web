@@ -57,14 +57,31 @@ Production secrets belong in the Vercel project's Environment Variables, not in 
 
 ## Part 3 — browser cache isolation
 
-Authenticated cloud cache data is isolated by both Area and account instead of using one shared browser database key. The application uses a key derived from the authenticated Area ID and Supabase/user identity. Explicit logout and account deletion clear the current cloud cache before the session is removed. The original `mfc_web_database_v1` key is reserved for demo/browser fallback mode only.
+Authenticated cloud cache data is isolated by both Area and account instead of using one shared browser database key. The application uses a key derived from the authenticated Area ID and Supabase/user identity. Explicit logout and account deletion clear the current cloud cache before the session is removed. The original `mfc_web_database_v1` key is treated as a legacy prototype cache and is not trusted by cloud-authenticated sessions.
 
 This prevents cached Area A data from being rendered for Area B or another signed-in account on a shared browser while a cloud refresh is pending.
 
-## Production vs Demo Authentication
+## Production authentication
 
-The normal sign-in form is cloud-only and uses the backend/Supabase authentication path. The obsolete `mfc_demo_users` browser credential registry is not trusted and is removed by the updated frontend. Legacy browser-only sessions are rejected. Demo mode is entered explicitly through the Demo button and remains isolated from authenticated cloud APIs and scoped live Area data.
+The Web App uses cloud-only backend/Supabase authentication. The obsolete `mfc_demo_users` browser credential registry is removed and legacy browser-only/demo sessions are rejected. The public Demo Dashboard entry point has been removed.
 
 ## Account setup state
 
 Provisioned login accounts are not considered setup-complete until the password setup endpoint succeeds. `profiles.must_change_password` is the source of truth for **Setup Pending** vs **Active** in the Members UI. Re-running Members -> Access intentionally returns the login account to Setup Pending while a new secure setup link is outstanding.
+
+
+## Password-setup enforcement
+
+Accounts with `profiles.must_change_password = true` are blocked from protected Area-data endpoints until password setup succeeds. Only `/api/auth/me` and `/api/auth/change-password` may operate while setup is pending.
+
+## Administrator registration throttling
+
+Run `Backend/supabase/006_admin_registration_rate_limit.sql`. Failed Administrator Registration Code attempts are rate-limited by HMAC-fingerprinted client/email scopes without storing raw IP addresses or email addresses in the limiter table.
+
+## Public diagnostics and CSP
+
+The public health endpoint exposes only service/database readiness state, not Supabase hostnames, configuration flags, or raw database errors. Vercel security headers now include a Content Security Policy while preserving the external Visby font stylesheet and jsPDF libraries used by Reports.
+
+## Mutation consistency
+
+Member/profile/Auth updates use compensation rollback when a multi-step mutation fails. Member deletion removes the database-owned Member/profile state before final Auth cleanup; if Auth cleanup fails after retries, the remaining Auth identity has no application profile and cannot access protected routes.

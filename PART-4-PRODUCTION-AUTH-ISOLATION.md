@@ -12,8 +12,8 @@ Separate the production Supabase authentication path from the old browser-only p
 - Legacy browser-only sessions are rejected and redirected to the sign-in page.
 - Password changes require either a valid cloud-authenticated session or a valid secure setup/recovery link.
 - Member Portal access requires a cloud-authenticated Member session. Browser-created Member accounts are no longer accepted.
-- Demo mode remains available only through the explicit **Open Demo Dashboard** button.
-- Demo mode is marked with `demo: true`, `backendAuth: false`, and `authMode: 'demo'` and continues to use only isolated local presentation data.
+- Historical Part 4 behavior kept Demo access separate from production; the later complete-functioning fix removes the Demo Dashboard entry point entirely.
+- Legacy demo sessions are now rejected by the production application.
 - Real cloud sessions are marked with `backendAuth: true`, `demo: false`, and `authMode: 'cloud'`.
 - Demo/local Member editing no longer creates browser login accounts; account provisioning remains a backend/Supabase operation.
 
@@ -28,3 +28,6 @@ Editing `localStorage.mfc_demo_users` can no longer create a production login. A
 - Part 2 session refresh remains in place.
 - Part 3 Area/account-scoped cloud cache remains in place.
 - OTP authentication remains removed.
+
+
+> Superseded behavior: the later complete-functioning fix removes the Demo Dashboard entry point entirely. Production sign-in is now cloud-only.

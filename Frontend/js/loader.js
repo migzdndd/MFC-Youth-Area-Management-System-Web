@@ -329,6 +329,16 @@
 
   document.addEventListener('click', event => {
     try {
+      const navButton = event.target.closest?.('[data-nav]');
+      if (navButton) {
+        const target = navButton.getAttribute('data-nav');
+        if (target) {
+          event.preventDefault();
+          navigate(target);
+          return;
+        }
+      }
+
       const anchor = event.target.closest?.('a[href]');
       if (!shouldHandleLink(anchor, event)) return;
       event.preventDefault();

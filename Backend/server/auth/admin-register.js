@@ -2,6 +2,12 @@ import { timingSafeEqual } from 'node:crypto';
 import { createSupabaseAdmin, createSupabaseAuthClient } from '../_lib/supabase.js';
 import { assertAdminRegistrationConfigured } from '../_lib/env.js';
 import {
+  adminRegistrationRateKeys,
+  checkAdminRegistrationRateLimit,
+  recordAdminRegistrationFailure,
+  resetAdminRegistrationRateLimit
+} from '../_lib/admin-registration-rate-limit.js';
+import {
   sendJson,
   methodNotAllowed,
   normalizeEmail,
@@ -35,20 +41,16 @@ function registrationCodeMatches(input, expected) {
   return timingSafeEqual(supplied, target);
 }
 
-function validateRegistrationInput(body, adminRegistrationCode) {
+function validateRegistrationInput(body) {
   const email = normalizeEmail(body?.email);
   const password = String(body?.password || '');
   const confirmation = String(body?.confirmPassword || '');
-  const verificationCode = String(body?.verificationCode || '');
   const displayName = cleanText(body?.displayName, 160);
   const role = String(body?.role || '').trim().toLowerCase();
 
   if (!displayName) return { error: 'Enter your full name.' };
   if (!isValidEmail(email)) return { error: 'Enter a valid email address.' };
   if (!ADMIN_ROLES.has(role)) return { error: 'Select a valid Servant Leader access level.' };
-  if (!registrationCodeMatches(verificationCode, adminRegistrationCode)) {
-    return { status: 403, error: 'Administrator registration verification failed.' };
-  }
 
   const pError = passwordError(password);
   if (pError) return { error: pError };
@@ -67,12 +69,50 @@ export default async function handler(req, res) {
 
   try {
     const { adminRegistrationCode } = assertAdminRegistrationConfigured();
-    const input = validateRegistrationInput(req.body, adminRegistrationCode);
+    const admin = createSupabaseAdmin();
+    const email = normalizeEmail(req.body?.email);
+    const rateKeys = adminRegistrationRateKeys(req, email, adminRegistrationCode);
+    const currentLimit = await checkAdminRegistrationRateLimit(admin, rateKeys);
+
+    if (currentLimit.blocked) {
+      res.setHeader('Retry-After', String(currentLimit.retryAfterSeconds));
+      return sendJson(res, 429, {
+        ok: false,
+        code: 'ADMIN_REGISTRATION_RATE_LIMITED',
+        error: 'Too many failed Administrator Registration Code attempts. Try again later.',
+        retryAfterSeconds: currentLimit.retryAfterSeconds
+      });
+    }
+
+    const suppliedRegistrationCode = String(req.body?.verificationCode || '');
+    if (!registrationCodeMatches(suppliedRegistrationCode, adminRegistrationCode)) {
+      const failure = await recordAdminRegistrationFailure(admin, rateKeys);
+
+      if (failure.blocked) {
+        res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+        return sendJson(res, 429, {
+          ok: false,
+          code: 'ADMIN_REGISTRATION_RATE_LIMITED',
+          error: 'Too many failed Administrator Registration Code attempts. Try again later.',
+          retryAfterSeconds: failure.retryAfterSeconds
+        });
+      }
+
+      return sendJson(res, 403, {
+        ok: false,
+        code: 'INVALID_ADMIN_REGISTRATION_CODE',
+        error: 'Administrator registration verification failed.'
+      });
+    }
+
+    // A correct private registration code proves authorization for this rate-limit scope.
+    // Clear prior failures before continuing with normal form validation.
+    await resetAdminRegistrationRateLimit(admin, rateKeys);
+
+    const input = validateRegistrationInput(req.body);
     if (input.error) {
       return sendJson(res, input.status || 400, { ok: false, error: input.error });
     }
-
-    const admin = createSupabaseAdmin();
 
     const { data: existingMember, error: memberLookupError } = await admin
       .from('members')
@@ -88,10 +128,10 @@ export default async function handler(req, res) {
       });
     }
 
-    if (input.role === 'chapter_servant' && existingMember && !existingMember.chapter_id) {
+    if (input.role === 'chapter_servant' && (!existingMember || !existingMember.chapter_id)) {
       return sendJson(res, 400, {
         ok: false,
-        error: 'A Chapter Servant must be assigned to a Chapter before account creation.'
+        error: 'Chapter Servant accounts must be created from an existing Member who is already assigned to a Chapter.'
       });
     }
 
@@ -120,6 +160,8 @@ export default async function handler(req, res) {
 
     const userId = authData.user.id;
     let profileCreated = false;
+    let memberAccessUpdated = false;
+    const previousMemberAccessLevel = existingMember?.access_level || 'member';
 
     try {
       const { error: profileError } = await admin
@@ -145,6 +187,7 @@ export default async function handler(req, res) {
           })
           .eq('id', existingMember.id);
         if (memberUpdateError) throw memberUpdateError;
+        memberAccessUpdated = true;
       }
 
       const authClient = createSupabaseAuthClient();
@@ -182,8 +225,30 @@ export default async function handler(req, res) {
           : 'Initial Servant Leader account created. Continue to Area setup.'
       });
     } catch (error) {
+      // Keep linked Member access consistent if account creation fails after
+      // temporarily elevating the Member record.
+      if (memberAccessUpdated && existingMember?.id) {
+        try {
+          await admin
+            .from('members')
+            .update({
+              access_level: previousMemberAccessLevel,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingMember.id);
+        } catch (rollbackError) {
+          console.error('Member access rollback after registration failure failed:', rollbackError);
+        }
+      }
+
+      // Deleting the Auth user also removes its linked profile through the
+      // database foreign-key/cascade relationship.
       if (profileCreated || userId) {
-        await admin.auth.admin.deleteUser(userId).catch(() => {});
+        try {
+          await admin.auth.admin.deleteUser(userId);
+        } catch (cleanupError) {
+          console.error('Auth cleanup after registration failure failed:', cleanupError);
+        }
       }
       throw error;
     }

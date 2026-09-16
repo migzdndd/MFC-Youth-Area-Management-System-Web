@@ -24,7 +24,7 @@ export function isChapterServantRole(role) {
  * bearer token. This is especially important when using Supabase's newer
  * publishable + secret API key format.
  */
-export async function requireAuthenticatedProfile(req) {
+export async function requireAuthenticatedProfile(req, options = {}) {
   const token = readBearerToken(req);
   if (!token) {
     const error = new Error('Authentication required.');
@@ -54,6 +54,13 @@ export async function requireAuthenticatedProfile(req) {
     const error = new Error('This account is not active.');
     error.statusCode = 403;
     error.code = 'ACCOUNT_INACTIVE';
+    throw error;
+  }
+
+  if (profile.must_change_password === true && options.allowPasswordSetupPending !== true) {
+    const error = new Error('Complete your account password setup before accessing protected Area data.');
+    error.statusCode = 403;
+    error.code = 'PASSWORD_SETUP_REQUIRED';
     throw error;
   }
 

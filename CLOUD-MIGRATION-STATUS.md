@@ -16,7 +16,7 @@ Authenticated production sessions now read/write these modules through the Verce
 - GIG Contributions
 - Dashboard analytics / summary hydration
 
-`localStorage` remains only as a fast UI cache and for the explicit demo/offline prototype path. Authenticated cloud mutations are sent to the Backend first and the cache is reconciled from Supabase afterward.
+`localStorage` remains only as an Area/account-scoped fast UI cache for authenticated cloud sessions. Authenticated cloud mutations are sent to the Backend first and the cache is reconciled from Supabase afterward.
 
 ## Required migration on an existing Supabase project
 
@@ -80,8 +80,13 @@ Authenticated Supabase sessions now store frontend cache data under an Area/acco
 
 ## Authentication Isolation Update
 
-Production authentication no longer falls back to browser-created prototype users. Cloud accounts authenticate through the backend/Supabase only; Demo mode remains a separate local presentation path.
+Production authentication no longer falls back to browser-created prototype users. Cloud accounts authenticate through the backend/Supabase only, and the Demo Dashboard entry point has been removed.
 
 ## Part 5 - Account setup state
 
 Admin-provisioned login accounts now have an explicit Setup Pending -> Active transition using the existing `profiles.must_change_password` field. No database schema migration is required for this phase.
+
+
+## Migration 006 - Administrator registration throttling
+
+After `005_cloud_modules.sql`, run `Backend/supabase/006_admin_registration_rate_limit.sql` to enable persistent Administrator Registration Code throttling.

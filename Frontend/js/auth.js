@@ -7,6 +7,18 @@
 const LEGACY_BROWSER_USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
 
+function safeParse(raw, fallback) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeEmail(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
 const ACCESS_ROLE_VALUES = new Set([
   'couple_coordinator',
   'area_servant',
@@ -23,30 +35,19 @@ function normalizeAccessRole(value) {
 
 function purgeLegacyBrowserAccounts() {
   // Browser-stored login accounts belonged to the old frontend prototype.
-  // Production authentication is Supabase-backed; demo mode uses only the
-  // built-in isolated demo session and never authenticates these records.
+  // Production authentication is Supabase-backed only.
   localStorage.removeItem(LEGACY_BROWSER_USER_KEY);
-}
-
-function isBuiltInDemoSession(session) {
-  return Boolean(
-    session?.demo === true &&
-    session?.backendAuth !== true &&
-    normalizeEmail(session?.email) === 'admin@mfcyouth.local' &&
-    normalizeAccessRole(session?.role) === 'area_servant'
-  );
 }
 
 function isCloudAuthenticatedSession(session) {
   return Boolean(
     session?.backendAuth === true &&
-    session?.demo !== true &&
     session?.accessToken
   );
 }
 
 function isTrustedAuthSession(session) {
-  return isCloudAuthenticatedSession(session) || isBuiltInDemoSession(session);
+  return isCloudAuthenticatedSession(session);
 }
 
 function getSession() {
@@ -73,18 +74,30 @@ function clearSession() {
 }
 
 function destinationFor(session) {
-  if (session?.role !== 'member' && session?.mustChangePassword) return '/change-password';
+  if (session?.mustChangePassword) return '/change-password';
   if (session?.needsAreaSetup) return '/dashboard';
   if (session?.role === 'member') return '/member';
   if (session?.role === 'chapter_servant') return '/chapters';
   return '/dashboard';
 }
 
+function sessionExpiresSoon(expiresAt, skewSeconds = 60) {
+  if (!expiresAt) return false;
+
+  const numeric = Number(expiresAt);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return (numeric * 1000) <= (Date.now() + (skewSeconds * 1000));
+  }
+
+  const parsed = Date.parse(String(expiresAt));
+  return Number.isFinite(parsed) && parsed <= (Date.now() + (skewSeconds * 1000));
+}
+
 let authPageRefreshPromise = null;
 
 async function refreshStoredBackendSession() {
   const current = getSession();
-  if (!current?.backendAuth || current?.demo || !current?.refreshToken) return null;
+  if (!current?.backendAuth || !current?.refreshToken) return null;
   if (authPageRefreshPromise) return authPageRefreshPromise;
 
   authPageRefreshPromise = (async () => {
@@ -162,7 +175,6 @@ async function apiJson(path, options = {}) {
       path !== '/api/auth/refresh' &&
       authHeader.startsWith('Bearer ') &&
       current?.backendAuth &&
-      !current?.demo &&
       Boolean(current?.refreshToken) &&
       ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(String(body?.code || ''));
 
@@ -207,7 +219,6 @@ function backendSessionFromResponse(payload, remember = false) {
     refreshToken: serverSession.refreshToken || '',
     expiresAt: serverSession.expiresAt || null,
     backendAuth: true,
-    demo: false,
     authMode: 'cloud'
   };
   saveSession(session, remember);
@@ -283,39 +294,25 @@ window.addEventListener('DOMContentLoaded', initializeRevealAnimations);
 purgeLegacyBrowserAccounts();
 
 // Signed-in users who revisit the sign-in page go to the correct portal.
-// Legacy browser-only sessions are no longer accepted as authenticated users.
+// Legacy browser-only and old demo sessions are rejected. An already-expired
+// access token is refreshed before redirecting away from the login page.
 const currentSession = getSession();
 if (currentSession && !isTrustedAuthSession(currentSession)) {
   clearSession();
 } else if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
-  navigateWithLoader(destinationFor(currentSession), true);
+  if (sessionExpiresSoon(currentSession.expiresAt, 0) && currentSession.refreshToken) {
+    refreshStoredBackendSession()
+      .then(refreshed => {
+        if (refreshed) navigateWithLoader(destinationFor(refreshed), true);
+        else clearSession();
+      })
+      .catch(() => clearSession());
+  } else {
+    navigateWithLoader(destinationFor(currentSession), true);
+  }
 }
 
 // ---------------- LOGIN ----------------
-function startDemoLogin(remember = false) {
-  const session = {
-    email: 'admin@mfcyouth.local',
-    name: 'Area Servant (Demo)',
-    role: 'area_servant',
-    loginAt: new Date().toISOString(),
-    mustChangePassword: false,
-    backendAuth: false,
-    demo: true,
-    authMode: 'demo'
-  };
-
-  saveSession(session, remember);
-  navigateWithLoader('/dashboard');
-}
-
-const demoLoginButton = document.getElementById('demoLoginButton');
-if (demoLoginButton) {
-  demoLoginButton.addEventListener('click', () => {
-    setButtonBusy(demoLoginButton, true, 'Opening Demo…');
-    startDemoLogin(false);
-  });
-}
-
 const loginForm = document.getElementById('loginForm');
 if (loginForm) {
   loginForm.addEventListener('submit', async event => {
@@ -341,8 +338,7 @@ if (loginForm) {
 
     setButtonBusy(submit, true, 'Signing In…');
 
-    // The standard sign-in form is cloud-only. Demo mode can only be
-    // entered through the explicit Open Demo Dashboard button below.
+    // The standard sign-in form is cloud-only.
 
     try {
       const payload = await apiJson('/api/auth/login', {
@@ -355,8 +351,7 @@ if (loginForm) {
       return;
     } catch (backendError) {
       // Production sign-in is cloud-only. Never fall back to browser-created
-      // accounts when Supabase authentication fails. Demo access is explicit
-      // through the isolated Demo button / built-in demo credentials above.
+      // accounts when Supabase authentication fails.
       setButtonBusy(submit, false);
       showMessage(
         'loginMessage',
@@ -453,11 +448,13 @@ function passwordLinkSession() {
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
   const existingSession = getSession();
-  if (existingSession?.role === 'member') backToLoginButton.textContent = 'Back to Member Portal';
+  if (existingSession?.role === 'member' && !existingSession?.mustChangePassword) {
+    backToLoginButton.textContent = 'Back to Member Portal';
+  }
   backToLoginButton.addEventListener('click', () => {
     const current = getSession();
     history.replaceState(null, '', window.location.pathname);
-    if (current?.role === 'member') {
+    if (current?.role === 'member' && !current?.mustChangePassword) {
       navigateWithLoader('/member');
       return;
     }
@@ -479,9 +476,6 @@ if (forcePasswordForm) {
 
   if (!session && !linkSession) {
     navigateWithLoader('/', true);
-  } else if (session?.demo && !linkSession) {
-    showMessage('passwordMessage', 'The built-in demo administrator password cannot be changed from this prototype.', 'error');
-    forcePasswordForm.querySelectorAll('input, button[type="submit"]').forEach(el => { el.disabled = true; });
   } else {
     if (linkSession) {
       if (pageTitle) pageTitle.textContent = linkSession.type === 'recovery' ? 'Create a New Password' : 'Set Up Your Password';
@@ -500,16 +494,25 @@ if (forcePasswordForm) {
       });
     } else {
       if (accountEmail) accountEmail.textContent = session.email;
-      if (session.role === 'member') {
-        if (pageTitle) pageTitle.textContent = 'Member Portal Password';
-        if (pageIntro) pageIntro.textContent = 'Member records do not require a login account. If Portal access is enabled, you can change the password for that optional account here.';
-        if (submit) submit.textContent = 'Update Portal Password';
-      } else if (session.mustChangePassword) {
-        if (pageTitle) pageTitle.textContent = 'Create Your Servant Leader Password';
-        if (pageIntro) pageIntro.textContent = 'Create the password you want to use for future Servant Leader sign-ins.';
+
+      if (session.mustChangePassword) {
+        if (pageTitle) {
+          pageTitle.textContent = session.role === 'member'
+            ? 'Set Up Your Member Portal Password'
+            : 'Create Your Servant Leader Password';
+        }
+        if (pageIntro) {
+          pageIntro.textContent = session.role === 'member'
+            ? 'Complete your optional Member Portal account setup by choosing the password you want to use for future sign-ins.'
+            : 'Create the password you want to use for future Servant Leader sign-ins.';
+        }
         if (currentPasswordGroup) currentPasswordGroup.hidden = true;
         if (currentPassword) currentPassword.required = false;
         if (submit) submit.textContent = 'Create Account Password';
+      } else if (session.role === 'member') {
+        if (pageTitle) pageTitle.textContent = 'Member Portal Password';
+        if (pageIntro) pageIntro.textContent = 'Member records do not require a login account. If Portal access is enabled, you can change the password for that optional account here.';
+        if (submit) submit.textContent = 'Update Portal Password';
       }
     }
 
@@ -588,7 +591,7 @@ if (forcePasswordForm) {
         }
 
         // Browser-only accounts are no longer an authentication source.
-        // A non-demo password change must always use a valid cloud session.
+        // A password change must always use a valid cloud session.
         clearSession();
         throw new Error('This account session is no longer supported. Sign in again with your cloud account.');
       } catch (error) {

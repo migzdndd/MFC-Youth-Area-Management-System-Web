@@ -133,9 +133,10 @@ Backend/supabase/002_seed_reference_data.sql
 Backend/supabase/003_security_hardening.sql
 Backend/supabase/004_servant_leader_password_policy.sql
 Backend/supabase/005_cloud_modules.sql
+Backend/supabase/006_admin_registration_rate_limit.sql
 ```
 
-For an existing project already through migration `004`, run only `005` if it has not yet been applied.
+For an existing project already through migration `004`, run `005` if needed and then run `006_admin_registration_rate_limit.sql` to enable persistent Administrator Registration Code throttling.
 
 ## Environment variables
 
@@ -184,6 +185,8 @@ If a matching account already exists, the profile is linked/updated rather than 
 - Cloud module operations require an authenticated Backend session.
 - User access tokens are validated through the normal Supabase Auth client; the privileged Backend client is reserved for profile/data operations.
 - Expired access tokens can be renewed through `POST /api/auth/refresh` using the stored refresh token, and authenticated frontend requests retry once after a successful refresh.
+- Accounts marked `must_change_password = true` are blocked from protected Area-data routes until password setup succeeds.
+- Administrator Registration Code failures are persistently rate-limited after migration 006.
 - Queries are scoped server-side by Area and role.
 - RLS remains enabled.
 - Raw user input is not concatenated into SQL.
@@ -196,10 +199,12 @@ If a matching account already exists, the profile is linked/updated rather than 
 After deploying:
 
 1. Visit `/api/health`.
-2. Confirm the response reports the Backend as configured and the database connected.
+2. Confirm the response reports `ok: true`, `databaseConnected: true`, and `schemaReady: true`.
 3. Sign in with an existing management account.
 4. Add a normal Member and confirm no login account/password is required.
 5. Promote a test Member to a leadership role and confirm a password setup email is sent.
 6. Use **Members → Access** to resend/refresh account setup.
 7. Confirm the user can choose a password and sign in.
 8. Verify Area/Chapter restrictions still apply.
+9. Verify an expired access token refreshes automatically in both the management dashboard and Member Portal.
+10. Verify a setup-pending Member/Servant Leader is redirected to password setup before protected data is shown.

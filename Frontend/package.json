@@ -1,9 +1,9 @@
 {
   "name": "mfc-youth-area-management-system-frontend",
-  "version": "0.8.4-account-setup-state",
+  "version": "0.9.1-complete-functioning-fixes",
   "private": true,
   "type": "module",
-  "description": "Frontend for the MFC Youth Area Management System with cloud-only production authentication, isolated demo mode, accurate account setup status, admin-managed provisioning, and scoped browser caching.",
+  "description": "Frontend for the MFC Youth Area Management System with cloud-only authentication, Member Portal session refresh, enforced account setup, Area/account-scoped caching, and production-only login.",
   "engines": {
     "node": "24.x"
   }

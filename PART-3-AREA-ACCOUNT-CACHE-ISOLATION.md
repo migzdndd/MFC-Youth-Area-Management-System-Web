@@ -27,7 +27,7 @@ Explicit logout, account deletion, and self-member deletion now remove the curre
 - A newly authenticated cloud account starts from its own scoped cache and then synchronizes from Supabase.
 - Old global browser data is never auto-migrated into a cloud scope because its original owner/Area cannot be safely proven.
 - Supabase remains the source of truth for authenticated cloud mode.
-- Demo mode continues to use the original global prototype database key.
+- Legacy prototype cache data remains separate from authenticated cloud cache scopes. The later complete-functioning fix removes the Demo Dashboard entry point.
 
 ## Files changed
 

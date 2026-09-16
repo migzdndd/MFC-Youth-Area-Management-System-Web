@@ -1,9 +1,9 @@
 {
   "name": "mfc-youth-area-management-system-backend",
-  "version": "0.9.2-account-setup-state",
+  "version": "0.10.1-complete-functioning-fixes",
   "private": true,
   "type": "module",
-  "description": "Backend API for the MFC Youth Area Management System with admin-provisioned accounts, explicit setup-pending state, Supabase Auth, Area-scoped cloud CRUD, and analytics sync.",
+  "description": "Backend API for the MFC Youth Area Management System with cloud-only Supabase authentication, session refresh, admin registration throttling, rollback-safe account/member mutations, Area-scoped access, and admin-managed provisioning.",
   "engines": {
     "node": "24.x"
   },

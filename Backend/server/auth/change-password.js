@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const validationError = passwordError(newPassword);
     if (validationError) return sendJson(res, 400, { ok: false, error: validationError });
 
-    const { user, supabase } = await requireAuthenticatedProfile(req);
+    const { user, supabase } = await requireAuthenticatedProfile(req, { allowPasswordSetupPending: true });
 
     const { error: passwordUpdateError } = await supabase.auth.admin.updateUserById(
       user.id,
