@@ -1,28 +1,50 @@
 # Account Onboarding Policy
 
-This document supersedes the earlier temporary-password onboarding design.
+This document defines the current Admin-managed account flow.
+
+## Core rule
+
+A **Member record** and a **login account** are separate concepts.
+
+- A regular Member can exist in the database with no login account and no password.
+- Login access is created only when an authorized Admin intentionally enables it.
+- Existing dashboard structure and Member form inputs remain unchanged.
+- Account creation uses the email already stored on the Member record.
+- No temporary password is generated.
 
 ## Regular Members
 
-- Admin/Servant Leader supplies the Member's `@gmail.com` address.
-- The backend provisions the Auth identity without a password.
-- Supabase sends a Gmail OTP.
-- The Member enters the OTP to access the Member Portal.
-- Password remains optional.
+1. An authorized Servant Leader/Admin creates the Member record.
+2. No login account is required.
+3. If Member Portal access is wanted, a Super Admin opens **Members → Access**.
+4. The backend creates/links the Supabase Auth account for that Member.
+5. A secure password setup link is sent to the Member email.
+6. The Member chooses their own password and can then sign in to the Member Portal.
 
-## Admin-provisioned Servant Leaders
+Member Portal access is optional; being a Member in the database never requires a password.
 
-- Admin supplies the Servant Leader's `@gmail.com` address and access level.
-- The account is provisioned without a password.
-- Supabase sends a Gmail OTP.
-- OTP verification is required before first-time password creation.
-- The verified Servant Leader creates their permanent password.
+## Servant Leaders / Admins
 
-## Self-registered Servant Leaders/Admins
+Leadership accounts should normally be created from an existing Member record:
 
-- Registration requires a valid Gmail address and the private Administrator Registration Code.
-- Supabase sends a Gmail OTP before the application profile is finalized.
-- The profile is created only after successful OTP verification.
-- No temporary password is generated.
+1. The Admin opens **Members**.
+2. The Member's **System Access Level** is set to the approved leadership role.
+3. The backend creates or links the Supabase Auth account using the Member email.
+4. A secure password setup link is sent to the Member email.
+5. The leader chooses their own password.
+6. Their Area/Chapter scope comes from the linked Member/profile data.
 
-See `ALL-REGISTRATION-GMAIL-OTP.md` for deployment and SMTP configuration.
+The **Members → Access** action can also create or refresh the account setup link.
+
+## Initial/bootstrap administrator
+
+The existing **Register an Admin Account** form remains available as a controlled bootstrap path using:
+
+- Full Name
+- Email Address
+- System Access Level
+- Administrator Registration Code
+- Account Password
+- Confirm Account Password
+
+This path does not generate a temporary password. If the email already matches a Member record, the new leadership account is linked to that Member.

@@ -174,6 +174,9 @@ function cloudMemberToLocal(member, previous = {}) {
     updatedAt: member.updated_at || previous.updatedAt || null,
     services: Array.isArray(previous.services) ? previous.services : [],
     chapterName: previous.chapterName || '',
+    accountProvisioned: member.account_provisioned === true,
+    accountActive: member.account_active === true,
+    accountSetupRequired: member.account_setup_required === true,
     cloudBacked: true
   };
 }
@@ -371,9 +374,10 @@ function canManageOwnChapterMember(data, member) {
 
 // =========================================================
 // FRONTEND ACCOUNT PROVISIONING
-// Member records are the source of truth. Production Member accounts are
-// provisioned by the backend using the Member email. Regular Members sign in
-// with a one-time email code; a password is optional. The local browser path only mirrors account state.
+// Member records are the source of truth. A regular Member record does not
+// require a login account. Authorized Admins can optionally provision Member
+// Portal access or Servant Leader access using the email already stored on the
+// Member record. Login access is password-based when an account is provisioned.
 // =========================================================
 
 function getAuthUsers() {
@@ -524,14 +528,23 @@ function removeMemberAccount(memberId) {
 }
 
 function memberAccountState(member) {
-  const account = findMemberAccount(member);
-  if (!account && member?.cloudBacked) {
-    return String(member.status || 'Active') === 'Inactive'
-      ? { label: 'Disabled', className: 'inactive' }
-      : { label: 'Active', className: 'active' };
+  if (member?.cloudBacked) {
+    if (!member.accountProvisioned) {
+      return { label: 'Not Provisioned', className: 'inactive' };
+    }
+    if (String(member.status || 'Active') === 'Inactive' || member.accountActive === false) {
+      return { label: 'Disabled', className: 'inactive' };
+    }
+    if (member.accountSetupRequired) {
+      return { label: 'Setup Pending', className: 'inactive' };
+    }
+    return { label: 'Active', className: 'active' };
   }
+
+  const account = findMemberAccount(member);
   if (!account) return { label: 'Not Provisioned', className: 'inactive' };
   if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
+  if (!account.password) return { label: 'Setup Pending', className: 'inactive' };
   return { label: 'Active', className: 'active' };
 }
 
@@ -913,10 +926,6 @@ function validEmail(value) {
   );
 }
 
-function validGmailEmail(value) {
-  const email = String(value || '').trim().toLowerCase();
-  return Boolean(email) && validEmail(email) && email.endsWith('@gmail.com');
-}
 
 // =========================================================
 // TOAST NOTIFICATIONS
@@ -1070,23 +1079,23 @@ function showMemberSetupNotice(member, message = '') {
   const role = normalizeAccessRole(member.accessLevel || 'member');
   const regularMember = role === 'member';
   const defaultMessage = regularMember
-    ? 'A Gmail verification/sign-in code has been sent. No password is required.'
-    : 'A Gmail verification code has been sent. After verification, this Servant Leader will be prompted to create their account password.';
+    ? 'Optional Member Portal account access has been prepared.'
+    : 'Servant Leader account access has been prepared.';
   const guidance = regularMember
-    ? 'Open the email from MFC Youth/Supabase and enter the one-time code when prompted. A password is optional and may be added later.'
-    : 'Open the email from MFC Youth/Supabase, enter the one-time code when prompted, then create the Servant Leader account password. OTP verification is required before leadership access is activated.';
+    ? 'A regular Member record does not require a password. If Portal access is wanted, the Member can use the secure setup email to choose a password.'
+    : 'Use the secure setup email to choose the Servant Leader account password. No temporary password is used.';
 
   openModal(
-    'Account Verification',
+    'Account Access',
     `
       <div class="credential-panel">
         <div class="credential-notice">
-          <strong>${esc(fullName(member))} must verify their Gmail account.</strong>
+          <strong>${esc(fullName(member))}</strong>
           <p>${esc(message || defaultMessage)}</p>
         </div>
 
         <div class="credential-row">
-          <span>Gmail</span>
+          <span>Email</span>
           <code>${esc(member.email)}</code>
         </div>
 
@@ -1108,41 +1117,43 @@ window.manageMemberLogin = async id => {
   const member = data.members.find(item => String(item.id) === String(id));
   if (!member) return;
 
-  if (!member.email || !validGmailEmail(member.email)) {
-    toast('Add a valid Gmail address ending in @gmail.com before configuring account access.', 'error');
+  if (!member.email || !validEmail(member.email)) {
+    toast('Add a valid email address before configuring account access.', 'error');
     return;
   }
 
   if (member.cloudBacked && session?.backendAuth && !session?.demo) {
-    if (!confirm(`Send a new Gmail verification/access code to ${fullName(member)} at ${member.email}?`)) return;
+    const role = normalizeAccessRole(member.accessLevel || 'member');
+    const actionLabel = role === 'member'
+      ? 'enable or refresh optional Member Portal access'
+      : 'create or refresh Servant Leader account access';
+
+    if (!confirm(`Use ${member.email} to ${actionLabel} for ${fullName(member)}?`)) return;
 
     try {
       const payload = await backendApi('/api/members/login', {
         method: 'POST',
         body: JSON.stringify({ memberId: member.id })
       });
-      toast(payload?.message || 'Gmail verification code sent.');
-      showMemberSetupNotice(member, payload?.message);
+
+      await refreshAllCloudData({ render: false }).catch(() => false);
+      renderMembers();
+
+      const refreshedMember = db().members.find(item => String(item.id) === String(id)) || member;
+      toast(payload?.message || 'Account access updated.');
+      showMemberSetupNotice(refreshedMember, payload?.message);
     } catch (error) {
-      toast(error?.message || 'Unable to send the Gmail verification code.', 'error');
+      toast(error?.message || 'Unable to configure account access.', 'error');
     }
     return;
   }
 
-  const conflict = accountEmailConflict(member.email, member.id);
-  if (conflict) {
-    toast(conflict, 'error');
-    return;
-  }
-
-  provisionMemberAccount(member);
-  renderMembers();
-  toast('Member account is ready for email-code access.');
   showMemberSetupNotice(
     member,
-    'Email-code access requires the cloud backend. No password is required for regular Members.'
+    'Cloud account setup requires the backend. No temporary password is generated in Demo/Local mode.'
   );
 };
+
 function field(
   label,
   id,
@@ -2652,11 +2663,11 @@ function memberModal(id = null) {
   )}
 
       ${field(
-    'Gmail Address',
+    'Email Address',
     'mEmail',
     'email',
     member.email || '',
-    'required autocomplete="email" placeholder="name@gmail.com"'
+    'required autocomplete="email" placeholder="name@example.com"'
   )}
 
       ${selectField(
@@ -2863,10 +2874,10 @@ function memberModal(id = null) {
       }
 
       if (
-        !validGmailEmail(email)
+        !validEmail(email)
       ) {
         toast(
-          'Enter a valid Gmail address ending in @gmail.com.',
+          'Enter a valid email address.',
           'error'
         );
 
@@ -3023,6 +3034,12 @@ function memberModal(id = null) {
           savedRecord = cloudMemberToLocal(payload.member, record);
           provisionResult = payload.account || null;
 
+          if (provisionResult?.provisioned) {
+            savedRecord.accountProvisioned = true;
+            savedRecord.accountActive = savedRecord.status !== 'Inactive';
+            savedRecord.accountSetupRequired = provisionResult.mustChangePassword === true;
+          }
+
           const existingIndex = data.members.findIndex(item =>
             String(item.id) === String(savedRecord.id) ||
             (savedRecord.email && String(item.email || '').trim().toLowerCase() === savedRecord.email)
@@ -3054,12 +3071,14 @@ function memberModal(id = null) {
 
         if (findMemberAccount(record)) {
           syncMemberAccount(record);
-        } else {
+        } else if (record.accessLevel !== 'member') {
           provisionResult = provisionMemberAccount(record);
         }
       } else {
         data.members.push(record);
-        provisionResult = provisionMemberAccount(record);
+        if (record.accessLevel !== 'member') {
+          provisionResult = provisionMemberAccount(record);
+        }
       }
 
       save(data);
@@ -3068,22 +3087,22 @@ function memberModal(id = null) {
 
       toast(
         id
-          ? 'Member updated.'
-          : (provisionResult?.codeSent
-            ? (record.accessLevel === 'member'
-              ? 'Member added. Gmail verification/sign-in code sent.'
-              : 'Servant Leader added. Gmail verification code sent for first-time account activation.')
-            : (record.accessLevel === 'member'
-              ? 'Member added. The Member can request a Gmail sign-in code at any time.'
-              : 'Servant Leader added. Gmail account verification is still required.'))
+          ? (provisionResult?.setupEmailSent
+            ? 'Member updated. Account setup email sent.'
+            : 'Member updated.')
+          : (record.accessLevel === 'member'
+            ? 'Member added. No login account or password is required.'
+            : (provisionResult?.setupEmailSent
+              ? 'Member added. Servant Leader account setup email sent.'
+              : 'Member added. Servant Leader access can be managed from Access.'))
       );
 
       renderMembers();
 
-      if (!id && provisionResult?.codeSent) {
+      if (provisionResult?.setupEmailSent) {
         showMemberSetupNotice(savedRecord, provisionResult?.role === 'member'
-          ? 'A Gmail verification/sign-in code was sent. No password is required.'
-          : 'A Gmail verification code was sent. After verification, the Servant Leader will create their password.');
+          ? 'Optional Member Portal password setup link sent.'
+          : 'Servant Leader password setup link sent.');
       }
     }
   );

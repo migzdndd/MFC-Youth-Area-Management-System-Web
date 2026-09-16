@@ -1,16 +1,13 @@
--- =========================================================
--- Account password / OTP onboarding policy
--- =========================================================
--- Self-registered Servant Leaders choose their own account password, but the
--- profile is created only after their Gmail address is verified by email OTP.
--- Their final profile uses must_change_password = false.
+-- MFC Youth Area Management System
+-- Account password / admin-provisioned onboarding policy
 --
--- Admin-provisioned Servant Leaders are created without a password, receive a
--- Gmail OTP, and use must_change_password = true until OTP verification lets
--- them create their permanent password.
+-- Regular Member records do not require a login account or password.
+-- When Member Portal access is intentionally enabled, an Admin provisions the
+-- linked Supabase Auth account and sends a secure password setup link.
 --
--- Admin-provisioned regular Members are passwordless by default. Members use
--- one-time Gmail codes and may optionally add a password later.
+-- Servant Leader/Admin accounts are created from Member records where possible.
+-- Newly provisioned leadership accounts use must_change_password = true until
+-- the user chooses a password through the secure setup flow.
 
 alter table public.profiles
   alter column must_change_password set default false;

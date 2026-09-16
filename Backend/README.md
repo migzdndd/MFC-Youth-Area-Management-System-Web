@@ -1,6 +1,8 @@
-# Backend Phase 6.7 — Gmail OTP Registration + Supabase Cloud Data Modules
+# Backend — Admin-Provisioned Accounts + Supabase Cloud Data
 
-The backend is now the production source of truth for Auth, Areas, Members, Chapters, Services, Events, Event Participants, Activity Reports and GIG. The browser keeps only a fast UI cache/demo fallback.
+The Backend is the production source of truth for authentication, Area scoping, Members, Chapters, Services, Events, Event Participants, Activity Reports, GIG, and dashboard synchronization.
+
+The current account policy intentionally separates a **Member record** from a **login account**.
 
 ## Architecture
 
@@ -8,150 +10,193 @@ The backend is now the production source of truth for Auth, Areas, Members, Chap
 Web Frontend (Vercel)
         |
         v
-Frontend /api/* direct Vercel rewrite
+Frontend /api/* rewrite
         |
         v
 Backend/api/router.js
         |
         v
-Backend/server/* route handlers
+Backend/server/* handlers
         |
         +--> Supabase Auth
         |
         +--> PostgreSQL (Supabase)
 ```
 
-The future WinForms desktop app should use the same API instead of talking directly to the cloud database. That keeps RBAC and Area/Chapter authorization in one place.
+The future WinForms client should use the same Backend API so authentication, role permissions, Area isolation, and synchronization rules stay centralized.
 
-
-## Project layout
-
-The backend and frontend are now separated as sibling projects in the repository:
+## Current API routes
 
 ```text
-Web-Source/
-├── Backend/
-│   ├── api/          # Real server-side implementation
-│   ├── supabase/     # PostgreSQL schema and seed SQL
-│   ├── .env.example
-│   └── README.md
-└── Frontend/
-    ├── api/          # Lightweight proxy routes only
-    ├── css/
-    ├── js/
-    └── *.html
+GET    /api/health
+
+POST   /api/auth/login
+POST   /api/auth/admin-register
+GET    /api/auth/me
+POST   /api/auth/change-password
+DELETE /api/auth/account
+
+GET    /api/areas
+POST   /api/areas
+POST   /api/areas/select
+
+GET    /api/members
+POST   /api/members
+PATCH  /api/members
+DELETE /api/members
+POST   /api/members/login
+
+GET/POST/PATCH/DELETE /api/chapters
+POST                  /api/chapters/assign-members
+GET/PATCH             /api/services
+GET/POST/PATCH/DELETE /api/events
+GET/POST/PATCH/DELETE /api/participants
+GET/POST/PATCH/DELETE /api/reports
+GET/POST/DELETE       /api/gig
+
+GET /api/sync
 ```
 
-The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). `Frontend/vercel.json` rewrites `/api/*` directly to the separately deployed Backend. `Backend/api/router.js` is the single Vercel Function and dispatches requests to `Backend/server/*` handlers.
+`POST /api/members/login` is retained as the existing account-management endpoint name. It now creates/links account access for the selected Member and sends a secure password setup/reset email.
 
-## What is included
+## Account policy
 
-- Supabase/PostgreSQL schema for Areas, Chapters, Members, Profiles, Services, Events, Participants, Activity Reports and GIG.
-- Server-only Supabase service-role client.
-- `GET /api/health`
-- `POST /api/auth/login`
-- `POST /api/auth/member-otp/request`
-- `POST /api/auth/member-otp/verify`
-- `POST /api/auth/admin-register`
-- `GET /api/areas`
-- `POST /api/areas`
-- `POST /api/areas/select`
-- `GET /api/auth/me`
-- `POST /api/auth/change-password`
-- `GET/POST/PATCH/DELETE /api/members`
-- `GET/POST/PATCH/DELETE /api/chapters`
-- `POST /api/chapters/assign-members`
-- `GET/PATCH /api/services`
-- `GET/POST/PATCH/DELETE /api/events`
-- `GET/POST/PATCH/DELETE /api/participants`
-- `GET/POST/PATCH/DELETE /api/reports`
-- `GET/POST/DELETE /api/gig`
-- `GET /api/sync` for one-request Area data + dashboard analytics hydration
-- New live account registration/onboarding is Gmail-verified. Regular Members are passwordless by default and use a one-time code sent to their registered `@gmail.com` address; an optional password can be added later.
-- Admin-created Servant Leaders receive a Gmail OTP before first-time password creation.
-- Self-registered Servant Leaders/Admins must verify a Gmail OTP before their `profiles` row is created.
-- Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
-- Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
-- RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
+### Regular Member
 
-## Setup
+A regular Member record:
 
-1. Create a Supabase project.
-2. Open Supabase SQL Editor and run `Backend/supabase/001_initial_schema.sql`.
-3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the Area seed values.
-4. Run `Backend/supabase/003_security_hardening.sql`, `004_servant_leader_password_policy.sql`, and `005_cloud_modules.sql` in order on an existing project.
-5. In Vercel Project Settings -> Environment Variables, add:
-   - `SUPABASE_URL`
-   - `SUPABASE_PUBLISHABLE_KEY`
-   - `SUPABASE_SECRET_KEY`
-   - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration authorization code)
-   - `FRONTEND_URL` (public Frontend origin used for Servant Leader invite/recovery links where applicable)
-6. In Supabase Auth Email Templates, configure passwordless email sign-in to display `{{ .Token }}` so registration/sign-in emails contain a code instead of only a magic link.
-7. Configure **Custom SMTP** in Supabase Auth before real external-user testing. The default Supabase sender is development-only and is not suitable for production Gmail delivery. See `ALL-REGISTRATION-GMAIL-OTP.md`.
-8. If password recovery links are used, allow `${FRONTEND_URL}/change-password` in Supabase Auth Redirect URLs.
-9. Redeploy.
-10. Visit `/api/health`. It should report `configured: true`.
+- requires an email in the current Member form,
+- does **not** automatically require a Supabase Auth login,
+- does **not** require a password simply to exist in the database.
 
-## First management / Servant Leader account
+If Portal access is wanted, an authorized Super Admin uses **Members → Access**. The Backend creates or links the Supabase Auth user and sends a secure password setup email to the Member's stored email address.
 
-Use the **First-Time Access** page in the Frontend and the **Register an Admin Account** card. The backend first validates `ADMIN_REGISTRATION_CODE`, then sends a Gmail OTP. The Servant Leader `profiles` row is created only after Supabase successfully verifies that OTP. The verified user is then signed in and required to select/create an Area before normal management access.
+### Servant Leader / Admin
 
-If the user's Area already exists, choose it. If not, **Create Area-Based Account** creates a row in `public.areas`, seeds the standard Services for that Area, and links the new profile to it.
+Leadership account creation is Admin-controlled.
 
-The registration code must remain only in `Backend/.env.local` and Vercel Backend Environment Variables. Never hardcode it in Frontend files.
+Preferred flow:
 
-## Migration strategy
+1. Create or open the Member record.
+2. Set the Member's **System Access Level** to the approved leadership role.
+3. The Backend creates/links the account using that Member email.
+4. The system sends a secure password setup link.
+5. The Servant Leader chooses their own password.
 
-Do not switch every page at once. Recommended order:
+The same setup/reset email can be resent through **Members → Access**.
 
-1. Backend foundation (this phase).
-2. Real login/session + first admin bootstrap.
-3. Members / Chapters / Services.
-4. Events / Event Participants.
-5. Activity Reports / GIG.
-6. Dashboard / Analytics queries.
-7. One-time localStorage data importer.
-8. Remove production localStorage writes.
-9. Add desktop sync endpoints.
+No temporary password is exposed to the administrator.
 
-## Security rule
+### Initial/bootstrap management account
 
-Never put `SUPABASE_SECRET_KEY` in HTML or browser JavaScript. It belongs only in Vercel Environment Variables and server-side functions in `Backend/api`.
+The existing **Register an Admin Account** form remains as a controlled bootstrap path so a new deployment is not locked out before the first management account exists.
 
+It uses:
 
-## Registration diagnostics
+- Full Name
+- Email Address
+- System Access Level
+- Administrator Registration Code
+- Account Password
+- Confirm Account Password
 
-`GET /api/health` now performs a real Supabase database request instead of only checking whether environment variables are non-empty.
+If the submitted email already matches a Member record, the new profile is linked to that Member and inherits its Area/Chapter relationship where applicable.
 
-A healthy response must include:
+## Roles
 
-- `"ok": true`
-- `"databaseConnected": true`
+```text
+couple_coordinator
+area_servant
+lit_servant
+chapter_servant
+member
+```
 
-Admin registration errors also return a safe `code` and `stage` when a backend step fails, without exposing secret keys.
+Super Admin roles:
 
-## Environment-file safety
+```text
+couple_coordinator
+area_servant
+lit_servant
+```
 
-- `Backend/.env.local` is local-only and must never be committed, uploaded in source ZIPs, or shared.
-- Copy the Supabase Project URL directly from the Supabase **Connect** dialog into `SUPABASE_URL`.
-- Environment values are trimmed by the backend so accidental leading/trailing spaces do not cause misleading connection errors.
-- `/api/health` reports only the sanitized Supabase host, never API keys or secrets.
+Chapter Servants remain restricted to their assigned Chapter where applicable.
 
-## Leadership account ↔ member linking
+## Supabase migrations
 
-Servant Leader self-registration creates/uses a pending Supabase Auth identity to deliver the OTP, but the `public.profiles` row is created only after Gmail OTP verification succeeds. Because `public.members.area_id` is required, the corresponding `public.members` row is then created (or an existing same-email member is linked) when the verified leader selects or creates their Area. `GET /api/auth/me` also repairs older leadership profiles that already have
-an Area but still have `member_id = NULL`.
+For a new project, run:
 
+```text
+Backend/supabase/001_initial_schema.sql
+Backend/supabase/002_seed_reference_data.sql
+Backend/supabase/003_security_hardening.sql
+Backend/supabase/004_servant_leader_password_policy.sql
+Backend/supabase/005_cloud_modules.sql
+```
 
-## Authentication policy
+For an existing project already through migration `004`, run only `005` if it has not yet been applied.
 
-- New registration/onboarding requires a valid `@gmail.com` address. The backend enforces the Gmail-only rule.
-- Self-registered Servant Leaders choose their permanent password, but the account profile is finalized only after a real Supabase email OTP is verified. Their final profile uses `must_change_password = false`.
-- Admin-added regular Members are provisioned with Gmail only and do **not** require a password. They sign in with a one-time Gmail code generated by Supabase Auth.
-- Members may add an optional password later while keeping email-code sign-in available.
-- Admin-added Servant Leaders are initially provisioned without a password and with `must_change_password = true`. They verify a Gmail OTP first, then create their permanent password.
-- `POST /api/auth/member-otp/request` uses `signInWithOtp(..., shouldCreateUser: false)` for already-provisioned accounts. It supports regular Members and first-time Servant Leaders awaiting password setup.
-- `POST /api/auth/member-otp/verify` verifies the code and issues the appropriate session.
-- `POST /api/auth/admin-register` uses two stages: `request_otp` and `verify_otp`.
-- The Servant Leader `ADMIN_REGISTRATION_CODE` authorizes registration only; Gmail OTP separately proves email ownership.
-- Real external email delivery requires Supabase Custom SMTP and an email template containing `{{ .Token }}`.
+## Environment variables
+
+Configure in the Backend Vercel project:
+
+```text
+SUPABASE_URL
+SUPABASE_PUBLISHABLE_KEY
+SUPABASE_SECRET_KEY
+ADMIN_REGISTRATION_CODE
+FRONTEND_URL
+```
+
+`FRONTEND_URL` is used for secure password setup/reset links and should point to the deployed Frontend origin.
+
+Never expose `SUPABASE_SECRET_KEY`, SMTP credentials, Google App Passwords, or `ADMIN_REGISTRATION_CODE` in browser JavaScript.
+
+## Supabase Auth configuration
+
+Allow the password setup destination in **Authentication → URL Configuration → Redirect URLs**:
+
+```text
+${FRONTEND_URL}/change-password
+```
+
+Password setup/reset emails use Supabase Auth's recovery flow.
+
+Custom SMTP may still be used for reliable production delivery of password setup/reset emails.
+
+## Existing Member promotion
+
+Editing a Member's **System Access Level** to a leadership role can provision the leadership account without changing the Member form structure.
+
+If a matching account already exists, the profile is linked/updated rather than creating a duplicate account.
+
+## Area and Member linking
+
+- `profiles.member_id` links login identity to the corresponding Member record.
+- `profiles.area_id` and `profiles.chapter_id` drive authorization.
+- `members.access_level` mirrors the approved application role.
+- `GET /api/auth/me` continues to repair older leadership accounts that have an Area but do not yet have a linked Member record.
+
+## Security
+
+- The browser never receives the Supabase secret key.
+- Cloud module operations require an authenticated Backend session.
+- Queries are scoped server-side by Area and role.
+- RLS remains enabled.
+- Raw user input is not concatenated into SQL.
+- Regular Member records are not automatically turned into login accounts.
+- Only authorized Admin roles can manage account access from the Members dashboard.
+- Real environment files must not be included in source ZIPs.
+
+## Deployment check
+
+After deploying:
+
+1. Visit `/api/health`.
+2. Confirm the response reports the Backend as configured and the database connected.
+3. Sign in with an existing management account.
+4. Add a normal Member and confirm no login account/password is required.
+5. Promote a test Member to a leadership role and confirm a password setup email is sent.
+6. Use **Members → Access** to resend/refresh account setup.
+7. Confirm the user can choose a password and sign in.
+8. Verify Area/Chapter restrictions still apply.

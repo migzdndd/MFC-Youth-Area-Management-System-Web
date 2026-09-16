@@ -1,9 +1,9 @@
 {
   "name": "mfc-youth-area-management-system-frontend",
-  "version": "0.7.0-all-registration-gmail-otp",
+  "version": "0.8.0-admin-provisioned-accounts",
   "private": true,
   "type": "module",
-  "description": "Frontend for the MFC Youth Area Management System with Gmail OTP verification for all registration/onboarding flows and direct Vercel API rewrites.",
+  "description": "Frontend for the MFC Youth Area Management System with admin-managed account provisioning and direct Vercel API rewrites.",
   "engines": {
     "node": "24.x"
   }

@@ -62,12 +62,14 @@ Dashboard counts and quick analytics are hydrated from `/api/sync` and therefore
 
 To remain compatible with Vercel Hobby limits, the Backend exposes one serverless router function and keeps route implementations under `Backend/server/`. The Frontend uses an external rewrite for `/api/:path*` instead of generating proxy functions. Public API paths remain unchanged.
 
-## Gmail OTP account verification
+## Account provisioning
 
-New live registration/onboarding now requires Gmail OTP verification across account types:
+Member records and login accounts are now intentionally separate:
 
-- Self-registered Servant Leader/Admin: Gmail OTP is verified before the profile is finalized.
-- Admin-provisioned regular Member: Gmail OTP is the default passwordless sign-in method.
-- Admin-provisioned Servant Leader: Gmail OTP is required before first-time password creation.
+- Regular Members can exist without a Supabase Auth account or password.
+- Super Admins can enable optional Member Portal access from **Members → Access**.
+- Leadership accounts are created from Member records by assigning the approved System Access Level, or by using **Members → Access**.
+- Newly provisioned accounts use a secure password setup/reset link sent to the Member email.
+- The controlled bootstrap Admin registration form remains available for first management-account setup.
 
-Production delivery requires Supabase Custom SMTP and an Auth email template containing `{{ .Token }}`. See `ALL-REGISTRATION-GMAIL-OTP.md`.
+The main dashboard, Member inputs, role model, Area scoping, and cloud data modules remain unchanged.

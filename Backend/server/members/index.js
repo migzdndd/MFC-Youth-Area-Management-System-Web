@@ -8,10 +8,9 @@ import {
   methodNotAllowed,
   normalizeEmail,
   isValidEmail,
-  isGmailEmail,
   apiError
 } from '../_lib/http.js';
-import { createSupabaseAuthClient } from '../_lib/supabase.js';
+import { ensureMemberAuthAccount, sendPasswordSetupEmail } from '../_lib/account-provision.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -75,7 +74,34 @@ async function listMembers(req, res) {
   const { data, error } = await query;
   if (error) throw error;
 
-  return sendJson(res, 200, { ok: true, members: data || [] });
+  const members = data || [];
+  const memberIds = members.map(member => member.id).filter(Boolean);
+  const accountByMemberId = new Map();
+
+  if (memberIds.length) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('member_id, role, is_active, must_change_password')
+      .in('member_id', memberIds);
+    if (profilesError) throw profilesError;
+
+    (profiles || []).forEach(account => {
+      if (account.member_id) accountByMemberId.set(String(account.member_id), account);
+    });
+  }
+
+  const hydratedMembers = members.map(member => {
+    const account = accountByMemberId.get(String(member.id)) || null;
+    return {
+      ...member,
+      account_provisioned: Boolean(account),
+      account_active: account ? account.is_active !== false : false,
+      account_role: account?.role || null,
+      account_setup_required: account?.must_change_password === true
+    };
+  });
+
+  return sendJson(res, 200, { ok: true, members: hydratedMembers });
 }
 
 async function createMember(req, res) {
@@ -98,8 +124,8 @@ async function createMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email) || !isGmailEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid Gmail address ending in @gmail.com is required for account verification.' });
+  if (!isValidEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid email address is required.' });
   }
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
@@ -127,7 +153,7 @@ async function createMember(req, res) {
   const { data: existingMember, error: existingError } = await supabase
     .from('members')
     .select('id')
-    .ilike('email', email)
+    .eq('email', email)
     .maybeSingle();
   if (existingError) throw existingError;
   if (existingMember) {
@@ -157,54 +183,45 @@ async function createMember(req, res) {
       })
       .select('*')
       .single();
+
     if (memberError) throw memberError;
     createdMember = member;
 
-    const onboardingMethod = 'email_otp';
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      user_metadata: {
-        display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
-        registration_type: accessLevel === 'member'
-          ? 'admin_provisioned_member'
-          : 'admin_provisioned_leader',
-        onboarding_method: 'email_otp',
-        requested_role: accessLevel
-      }
-    });
-
-    if (authError || !authData?.user) throw authError || new Error('Unable to provision the account.');
-    createdAuthUserId = authData.user.id;
-
-    const leaderNeedsPasswordSetup = accessLevel !== 'member';
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: createdAuthUserId,
-        member_id: createdMember.id,
-        role: accessLevel,
-        area_id: areaId,
-        chapter_id: chapterId,
-        must_change_password: leaderNeedsPasswordSetup,
-        is_active: status !== 'Inactive'
+    // A normal Member record does not require a login account or password.
+    // Leadership access is provisioned only when an elevated access level is
+    // intentionally assigned by an authorized administrator.
+    if (accessLevel === 'member') {
+      return sendJson(res, 201, {
+        ok: true,
+        member: createdMember,
+        account: {
+          provisioned: false,
+          email,
+          role: 'member',
+          passwordRequired: false,
+          setupEmailSent: false,
+          onboardingMethod: 'none'
+        },
+        message: 'Member added. No login account or password is required.'
       });
-    if (profileError) throw profileError;
+    }
 
-    let codeSent = false;
+    const provisioned = await ensureMemberAuthAccount({
+      supabase,
+      member: createdMember,
+      role: accessLevel,
+      requirePasswordSetup: true
+    });
+    createdAuthUserId = provisioned.authUserId;
+
+    let setupEmailSent = false;
     let onboardingWarning = '';
     if (status !== 'Inactive') {
-      const authClient = createSupabaseAuthClient();
-      const { error: otpError } = await authClient.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false }
-      });
-      if (otpError) {
-        onboardingWarning = accessLevel === 'member'
-          ? 'Member account created, but the initial Gmail verification code could not be sent. Use Access to resend a code.'
-          : 'Servant Leader account created, but the initial Gmail verification code could not be sent. Use Access to resend the verification code.';
-      } else {
-        codeSent = true;
+      try {
+        await sendPasswordSetupEmail(req, email);
+        setupEmailSent = true;
+      } catch {
+        onboardingWarning = 'Servant Leader account created, but the password setup email could not be sent. Use Members → Access to resend it.';
       }
     }
 
@@ -212,24 +229,21 @@ async function createMember(req, res) {
       ok: true,
       member: createdMember,
       account: {
+        provisioned: true,
         email,
-        codeSent,
-        setupEmailSent: false,
-        emailVerificationRequired: status !== 'Inactive',
-        mustChangePassword: accessLevel !== 'member',
-        passwordRequired: accessLevel !== 'member',
+        setupEmailSent,
+        mustChangePassword: true,
+        passwordRequired: true,
         role: accessLevel,
-        onboardingMethod
+        onboardingMethod: 'admin_password_setup'
       },
-      message: accessLevel === 'member'
-        ? (codeSent
-          ? 'Member added. A Gmail verification/sign-in code was sent. No password is required.'
-          : onboardingWarning)
-        : (codeSent
-          ? 'Servant Leader added. A Gmail verification code was sent. After verification, they will set their account password.'
-          : onboardingWarning)
+      message: setupEmailSent
+        ? 'Member added and Servant Leader account created. A secure password setup link was sent to the Member email.'
+        : (onboardingWarning || 'Member added and Servant Leader account created.')
     });
   } catch (error) {
+    // If leadership account provisioning failed after creating the Member,
+    // remove both parts so the UI does not report a partially-created account.
     if (createdAuthUserId) {
       await supabase.auth.admin.deleteUser(createdAuthUserId).catch(() => {});
     }
@@ -239,6 +253,7 @@ async function createMember(req, res) {
     throw error;
   }
 }
+
 async function updateMember(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isSuperAdminRole(profile.role)) {
@@ -268,8 +283,8 @@ async function updateMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email) || !isGmailEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid Gmail address ending in @gmail.com is required.' });
+  if (!isValidEmail(email)) {
+    return sendJson(res, 400, { ok: false, error: 'A valid email address is required.' });
   }
   if (accessLevel === 'chapter_servant' && !chapterId) {
     return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });
@@ -280,7 +295,7 @@ async function updateMember(req, res) {
   const { data: duplicate, error: duplicateError } = await supabase
     .from('members')
     .select('id')
-    .ilike('email', email)
+    .eq('email', email)
     .neq('id', memberId)
     .maybeSingle();
   if (duplicateError) throw duplicateError;
@@ -309,10 +324,12 @@ async function updateMember(req, res) {
 
   const { data: linkedProfile, error: linkedProfileError } = await supabase
     .from('profiles')
-    .select('id')
+    .select('*')
     .eq('member_id', memberId)
     .maybeSingle();
   if (linkedProfileError) throw linkedProfileError;
+
+  let account = null;
 
   if (linkedProfile?.id) {
     const { error: profileUpdateError } = await supabase
@@ -320,23 +337,79 @@ async function updateMember(req, res) {
       .update({
         role: accessLevel,
         chapter_id: chapterId,
-        is_active: status !== 'Inactive'
+        is_active: status !== 'Inactive',
+        updated_at: new Date().toISOString()
       })
       .eq('id', linkedProfile.id);
     if (profileUpdateError) throw profileUpdateError;
 
-    const authChanges = {
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, {
       email,
+      email_confirm: true,
       user_metadata: {
-        display_name: [firstName, middleName, lastName].filter(Boolean).join(' ')
+        display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
+        requested_role: accessLevel
       }
-    };
-    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, authChanges);
+    });
     if (authUpdateError) throw authUpdateError;
+
+    account = {
+      provisioned: true,
+      email,
+      role: accessLevel,
+      existingAccount: true,
+      setupEmailSent: false,
+      passwordRequired: accessLevel !== 'member'
+    };
+  } else if (accessLevel !== 'member') {
+    const provisioned = await ensureMemberAuthAccount({
+      supabase,
+      member: updated,
+      role: accessLevel,
+      requirePasswordSetup: true
+    });
+
+    let setupEmailSent = false;
+    try {
+      if (status !== 'Inactive') {
+        await sendPasswordSetupEmail(req, email);
+        setupEmailSent = true;
+      }
+    } catch {
+      // The account itself remains valid; Members → Access can resend the link.
+    }
+
+    account = {
+      provisioned: true,
+      email,
+      role: accessLevel,
+      existingAccount: !provisioned.createdAccount,
+      setupEmailSent,
+      mustChangePassword: true,
+      passwordRequired: true,
+      onboardingMethod: 'admin_password_setup'
+    };
+  } else {
+    account = {
+      provisioned: false,
+      email,
+      role: 'member',
+      setupEmailSent: false,
+      passwordRequired: false,
+      onboardingMethod: 'none'
+    };
   }
 
-  return sendJson(res, 200, { ok: true, member: updated });
+  return sendJson(res, 200, {
+    ok: true,
+    member: updated,
+    account,
+    message: account?.setupEmailSent
+      ? 'Member updated and Servant Leader account setup email sent.'
+      : 'Member updated.'
+  });
 }
+
 
 async function deleteMember(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);

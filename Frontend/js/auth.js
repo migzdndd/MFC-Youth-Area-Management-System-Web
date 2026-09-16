@@ -1,8 +1,7 @@
 // =========================================================
-// MFC Youth Area Management System - Frontend Auth Prototype
-// Accounts are provisioned by administrators from the Members database.
-// Browser-only prototype: replace plaintext/localStorage auth with server-side
-// authentication + password hashing before production.
+// MFC Youth Area Management System - Authentication
+// Member records remain the source of truth. Admins can provision login access
+// from the Members dashboard. login access is managed through provisioned accounts and passwords.
 // =========================================================
 
 const USER_KEY = 'mfc_demo_users';
@@ -233,10 +232,6 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function isGmailEmail(value) {
-  const email = normalizeEmail(value);
-  return isValidEmail(email) && email.endsWith('@gmail.com');
-}
 
 function passwordError(password) {
   if (password.length < 8) return 'Password must be at least 8 characters long.';
@@ -315,63 +310,11 @@ if (demoLoginButton) {
   });
 }
 
-const MEMBER_OTP_EMAIL_KEY = 'mfc_pending_member_otp_email';
-
-function memberOtpElements() {
-  return {
-    panel: document.getElementById('memberOtpPanel'),
-    help: document.getElementById('memberOtpHelp'),
-    code: document.getElementById('loginOtpCode'),
-    verify: document.getElementById('verifyMemberOtpButton'),
-    resend: document.getElementById('resendMemberOtpButton')
-  };
-}
-
-function showMemberOtpPanel(email, message = '') {
-  const { panel, help, code } = memberOtpElements();
-  if (!panel) return;
-  panel.hidden = false;
-  if (help) help.textContent = message || `Enter the one-time verification code sent to ${email}.`;
-  sessionStorage.setItem(MEMBER_OTP_EMAIL_KEY, email);
-  if (code) {
-    code.value = '';
-    setTimeout(() => code.focus(), 0);
-  }
-}
-
-async function requestMemberOtp(email, button = null) {
-  if (!isGmailEmail(email)) {
-    showMessage('loginMessage', 'Email-code access requires the registered @gmail.com address.');
-    return false;
-  }
-  setButtonBusy(button, true, 'Sending Code…');
-  try {
-    const payload = await apiJson('/api/auth/member-otp/request', {
-      method: 'POST',
-      body: JSON.stringify({ email })
-    });
-    showMemberOtpPanel(email, payload?.message || `A one-time verification code was sent to ${email}.`);
-    showMessage('loginMessage', payload?.message || 'Check your Gmail account for the verification code.', 'success');
-    return true;
-  } catch (error) {
-    showMessage('loginMessage', error?.message || 'Unable to send the Gmail verification code.');
-    return false;
-  } finally {
-    setButtonBusy(button, false);
-  }
-}
-
 const loginForm = document.getElementById('loginForm');
 if (loginForm) {
-  const pendingOtpEmail = sessionStorage.getItem(MEMBER_OTP_EMAIL_KEY) || '';
-  if (pendingOtpEmail && isGmailEmail(pendingOtpEmail)) {
-    const emailInput = document.getElementById('loginEmail');
-    if (emailInput && !emailInput.value) emailInput.value = pendingOtpEmail;
-    showMemberOtpPanel(pendingOtpEmail, `Enter the one-time verification code sent to ${pendingOtpEmail}.`);
-  }
-
   loginForm.addEventListener('submit', async event => {
     event.preventDefault();
+
     const submit = loginForm.querySelector('[type="submit"]');
     const email = normalizeEmail(document.getElementById('loginEmail').value);
     const password = document.getElementById('loginPassword').value;
@@ -382,10 +325,11 @@ if (loginForm) {
       return;
     }
 
-    // Members do not require a password. If the password is blank, request a
-    // one-time email code. Newly provisioned Servant Leaders can also use OTP for first-time verification before creating their password.
     if (!password) {
-      await requestMemberOtp(email, submit);
+      showMessage(
+        'loginMessage',
+        'Enter your account password. Regular Member records do not require a login account; an Admin can enable optional Member Portal access from Members → Access.'
+      );
       return;
     }
 
@@ -399,36 +343,35 @@ if (loginForm) {
       return;
     }
 
-    // Password authentication remains available for Servant Leaders/Admins
-    // and for Members who voluntarily add an optional password later.
     try {
       const payload = await apiJson('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+
       const session = backendSessionFromResponse(payload, remember);
-      sessionStorage.removeItem(MEMBER_OTP_EMAIL_KEY);
       navigateWithLoader(destinationFor(session));
       return;
     } catch (backendError) {
+      // Local demo/prototype fallback remains for offline presentation data.
       const users = getUsers();
       const user = users.find(item => item.email === email && item.password === password);
 
       if (!user) {
         setButtonBusy(submit, false);
-        showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect. Members can leave Password blank to use an email code.');
+        showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect.');
         return;
       }
 
       if (user.role === 'legacy') {
         setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
+        showMessage('loginMessage', 'This older account is not linked to a Member record. Ask an Admin to link or recreate access from the Members page.');
         return;
       }
 
       if (user.isActive === false) {
         setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
+        showMessage('loginMessage', 'This account is currently inactive. Contact your Admin.');
         return;
       }
 
@@ -449,50 +392,12 @@ if (loginForm) {
       navigateWithLoader(destinationFor(session));
     }
   });
-
-  document.getElementById('verifyMemberOtpButton')?.addEventListener('click', async () => {
-    const email = normalizeEmail(document.getElementById('loginEmail')?.value || sessionStorage.getItem(MEMBER_OTP_EMAIL_KEY));
-    const code = String(document.getElementById('loginOtpCode')?.value || '').replace(/\s+/g, '');
-    const remember = document.getElementById('rememberMe')?.checked === true;
-    const button = document.getElementById('verifyMemberOtpButton');
-
-    if (!isValidEmail(email)) {
-      showMessage('loginMessage', 'Enter your registered Gmail address.');
-      return;
-    }
-    if (!/^\d{6,10}$/.test(code)) {
-      showMessage('loginMessage', 'Enter the verification code sent to your Gmail account.');
-      return;
-    }
-
-    setButtonBusy(button, true, 'Verifying…');
-    try {
-      const payload = await apiJson('/api/auth/member-otp/verify', {
-        method: 'POST',
-        body: JSON.stringify({ email, code })
-      });
-      const session = backendSessionFromResponse(payload, remember);
-      sessionStorage.removeItem(MEMBER_OTP_EMAIL_KEY);
-      navigateWithLoader(destinationFor(session));
-    } catch (error) {
-      setButtonBusy(button, false);
-      showMessage('loginMessage', error?.message || 'The Gmail verification code is invalid or expired.');
-    }
-  });
-
-  document.getElementById('resendMemberOtpButton')?.addEventListener('click', async () => {
-    const email = normalizeEmail(document.getElementById('loginEmail')?.value || sessionStorage.getItem(MEMBER_OTP_EMAIL_KEY));
-    if (!isValidEmail(email)) {
-      showMessage('loginMessage', 'Enter your registered Gmail address.');
-      return;
-    }
-    await requestMemberOtp(email, document.getElementById('resendMemberOtpButton'));
-  });
 }
 
 // ---------------- SERVANT LEADER REGISTRATION ----------------
-const ADMIN_REG_OTP_EMAIL_KEY = 'mfc_pending_admin_registration_otp_email';
-
+// This remains as a controlled bootstrap/registration-code path. Day-to-day
+// leadership accounts should normally be created from an existing Member
+// record through the Members dashboard.
 function adminRegistrationValues() {
   return {
     displayName: String(document.getElementById('adminDisplayName')?.value || '').trim(),
@@ -506,7 +411,7 @@ function adminRegistrationValues() {
 
 function validateAdminRegistration(values) {
   if (!values.displayName) return 'Enter your full name.';
-  if (!isGmailEmail(values.email)) return 'Use a valid Gmail address ending in @gmail.com.';
+  if (!isValidEmail(values.email)) return 'Enter a valid email address.';
   if (!['couple_coordinator', 'area_servant', 'lit_servant', 'chapter_servant'].includes(values.role)) {
     return 'Select your System Access Level.';
   }
@@ -517,129 +422,47 @@ function validateAdminRegistration(values) {
   return '';
 }
 
-function showAdminOtpPanel(email, message = '') {
-  const panel = document.getElementById('adminOtpPanel');
-  const help = document.getElementById('adminOtpHelp');
-  const code = document.getElementById('adminOtpCode');
-  const submit = document.getElementById('adminRegisterButton');
-  const emailInput = document.getElementById('adminEmail');
-  if (!panel) return;
-
-  panel.hidden = false;
-  if (help) help.textContent = message || `Enter the verification code sent to ${email}.`;
-  if (submit) submit.textContent = 'Verify Code & Create Account';
-  if (emailInput) emailInput.readOnly = true;
-  sessionStorage.setItem(ADMIN_REG_OTP_EMAIL_KEY, email);
-  if (code) {
-    code.value = '';
-    setTimeout(() => code.focus(), 0);
-  }
-}
-
-async function requestAdminRegistrationOtp(button = null) {
-  const values = adminRegistrationValues();
-  const validationError = validateAdminRegistration(values);
-  if (validationError) {
-    showMessage('adminRegistrationMessage', validationError);
-    return false;
-  }
-
-  setButtonBusy(button, true, 'Sending Code…');
-  try {
-    const payload = await apiJson('/api/auth/admin-register', {
-      method: 'POST',
-      body: JSON.stringify({ ...values, stage: 'request_otp' })
-    });
-    showAdminOtpPanel(values.email, payload?.message);
-    showMessage('adminRegistrationMessage', payload?.message || 'Check your Gmail account for the verification code.', 'success');
-    return true;
-  } catch (error) {
-    showMessage('adminRegistrationMessage', error?.message || 'Unable to send the Gmail verification code.');
-    return false;
-  } finally {
-    setButtonBusy(button, false);
-    const submit = document.getElementById('adminRegisterButton');
-    if (!document.getElementById('adminOtpPanel')?.hidden && submit) {
-      submit.textContent = 'Verify Code & Create Account';
-    }
-  }
-}
-
 const adminRegistrationForm = document.getElementById('adminRegistrationForm');
 if (adminRegistrationForm) {
-  const pendingEmail = sessionStorage.getItem(ADMIN_REG_OTP_EMAIL_KEY) || '';
-  if (pendingEmail && isGmailEmail(pendingEmail)) {
-    const emailInput = document.getElementById('adminEmail');
-    if (emailInput && !emailInput.value) emailInput.value = pendingEmail;
-    showAdminOtpPanel(pendingEmail, `Enter the verification code sent to ${pendingEmail}.`);
-  }
-
   adminRegistrationForm.addEventListener('submit', async event => {
     event.preventDefault();
 
     const submit = document.getElementById('adminRegisterButton') || adminRegistrationForm.querySelector('[type="submit"]');
     const values = adminRegistrationValues();
     const validationError = validateAdminRegistration(values);
+
     if (validationError) {
       showMessage('adminRegistrationMessage', validationError);
       return;
     }
 
-    const pendingOtpEmail = sessionStorage.getItem(ADMIN_REG_OTP_EMAIL_KEY) || '';
-    const otpPanelVisible = document.getElementById('adminOtpPanel')?.hidden === false;
+    setButtonBusy(submit, true, 'Creating Account…');
 
-    if (!otpPanelVisible || pendingOtpEmail !== values.email) {
-      await requestAdminRegistrationOtp(submit);
-      return;
-    }
-
-    const otpCode = String(document.getElementById('adminOtpCode')?.value || '').replace(/\s+/g, '');
-    if (!/^\d{6,10}$/.test(otpCode)) {
-      showMessage('adminRegistrationMessage', 'Enter the verification code sent to your Gmail account.');
-      return;
-    }
-
-    setButtonBusy(submit, true, 'Verifying…');
     try {
       const payload = await apiJson('/api/auth/admin-register', {
         method: 'POST',
-        body: JSON.stringify({
-          ...values,
-          stage: 'verify_otp',
-          otpCode
-        })
+        body: JSON.stringify(values)
       });
 
       const session = backendSessionFromResponse(payload, true);
-      session.needsAreaSetup = true;
+      session.needsAreaSetup = payload?.requiresAreaSelection === true;
       updateSession(session);
-      sessionStorage.removeItem(ADMIN_REG_OTP_EMAIL_KEY);
-      showMessage('adminRegistrationMessage', 'Gmail verified and account created. Redirecting to Area setup…', 'success');
-      setTimeout(() => { navigateWithLoader('/dashboard'); }, 550);
+
+      showMessage(
+        'adminRegistrationMessage',
+        payload?.linkedMember
+          ? 'Account created and linked to the matching Member record. Redirecting…'
+          : 'Account created. Redirecting to Area setup…',
+        'success'
+      );
+
+      setTimeout(() => {
+        navigateWithLoader(destinationFor(session));
+      }, 450);
     } catch (error) {
       setButtonBusy(submit, false);
-      showMessage('adminRegistrationMessage', error?.message || 'Unable to verify the code or create the account.');
+      showMessage('adminRegistrationMessage', error?.message || 'Unable to create the Servant Leader account.');
     }
-  });
-
-  document.getElementById('adminResendOtpButton')?.addEventListener('click', async () => {
-    await requestAdminRegistrationOtp(document.getElementById('adminResendOtpButton'));
-  });
-
-  document.getElementById('adminChangeEmailButton')?.addEventListener('click', () => {
-    sessionStorage.removeItem(ADMIN_REG_OTP_EMAIL_KEY);
-    const panel = document.getElementById('adminOtpPanel');
-    const emailInput = document.getElementById('adminEmail');
-    const code = document.getElementById('adminOtpCode');
-    const submit = document.getElementById('adminRegisterButton');
-    if (panel) panel.hidden = true;
-    if (emailInput) {
-      emailInput.readOnly = false;
-      emailInput.focus();
-    }
-    if (code) code.value = '';
-    if (submit) submit.textContent = 'Send Gmail Verification Code';
-    showMessage('adminRegistrationMessage', 'Enter the Gmail address you want to verify.', 'success');
   });
 }
 
@@ -706,14 +529,12 @@ if (forcePasswordForm) {
     } else {
       if (accountEmail) accountEmail.textContent = session.email;
       if (session.role === 'member') {
-        if (pageTitle) pageTitle.textContent = 'Optional Member Password';
-        if (pageIntro) pageIntro.textContent = 'Members can always sign in with an email code. Add or change a password only if you also want password sign-in.';
-        if (currentPasswordGroup) currentPasswordGroup.hidden = true;
-        if (currentPassword) currentPassword.required = false;
-        if (submit) submit.textContent = 'Save Optional Password';
+        if (pageTitle) pageTitle.textContent = 'Member Portal Password';
+        if (pageIntro) pageIntro.textContent = 'Member records do not require a login account. If Portal access is enabled, you can change the password for that optional account here.';
+        if (submit) submit.textContent = 'Update Portal Password';
       } else if (session.mustChangePassword) {
         if (pageTitle) pageTitle.textContent = 'Create Your Servant Leader Password';
-        if (pageIntro) pageIntro.textContent = 'Your Gmail address has been verified. Create the password you want to use for future Servant Leader sign-ins.';
+        if (pageIntro) pageIntro.textContent = 'Create the password you want to use for future Servant Leader sign-ins.';
         if (currentPasswordGroup) currentPasswordGroup.hidden = true;
         if (currentPassword) currentPassword.required = false;
         if (submit) submit.textContent = 'Create Account Password';
@@ -727,7 +548,7 @@ if (forcePasswordForm) {
       const confirmation = document.getElementById('newPasswordConfirm').value;
       const pError = passwordError(password);
 
-      if (!linkSession && session?.role !== 'member' && !session?.mustChangePassword && !current) {
+      if (!linkSession && !session?.mustChangePassword && !current) {
         showMessage('passwordMessage', 'Enter your current password.');
         return;
       }
@@ -739,7 +560,7 @@ if (forcePasswordForm) {
         showMessage('passwordMessage', 'New passwords do not match.');
         return;
       }
-      if (!linkSession && session?.role !== 'member' && !session?.mustChangePassword && password === current) {
+      if (!linkSession && !session?.mustChangePassword && password === current) {
         showMessage('passwordMessage', 'Choose a new password that is different from your current password.');
         return;
       }
@@ -764,9 +585,9 @@ if (forcePasswordForm) {
         if (session?.backendAuth) {
           let accessToken = session.accessToken;
 
-          // Members are already securely authenticated by email OTP, so a current
-          // password is not required to add/change their optional password.
-          if (session.role !== 'member' && !session.mustChangePassword) {
+          // Existing signed-in accounts verify the current password before a
+          // password change. First-time setup links do not require an old password.
+          if (!session.mustChangePassword) {
             const verification = await apiJson('/api/auth/login', {
               method: 'POST',
               body: JSON.stringify({ email: session.email, password: current })
@@ -782,8 +603,9 @@ if (forcePasswordForm) {
           });
 
           if (session.role === 'member') {
-            showMessage('passwordMessage', 'Optional password saved. You can continue using email codes or use this password on future sign-ins.', 'success');
-            setButtonBusy(submit, false);
+            clearSession();
+            showMessage('passwordMessage', 'Member Portal password updated successfully. Sign in again with your new password.', 'success');
+            setTimeout(() => { navigateWithLoader('/'); }, 800);
             return;
           }
 
@@ -797,7 +619,7 @@ if (forcePasswordForm) {
         const users = getUsers();
         const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
         if (!user) throw new Error('Account not found.');
-        if (session.role !== 'member' && user.password !== current) {
+        if (!session.mustChangePassword && user.password !== current) {
           throw new Error('Your current password is incorrect.');
         }
 

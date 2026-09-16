@@ -20,10 +20,10 @@ Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scri
 - Regular Members receive only their own member-linked service/GIG/participant data while Area events remain visible to the Member Portal.
 - Run `Backend/supabase/005_cloud_modules.sql` after migrations 001-004 on an existing project.
 
-## Gmail OTP registration verification
-- New live account registration/onboarding is restricted to `@gmail.com` addresses and is validated again on the Backend.
-- Self-registered Servant Leader/Admin profiles are created only after Supabase verifies the Gmail OTP.
-- Admin-provisioned Members are passwordless by default and use Gmail OTP.
-- Admin-provisioned Servant Leaders receive Gmail OTP before their first password is created.
-- The private `ADMIN_REGISTRATION_CODE` authorizes leadership registration but is not treated as proof of email ownership.
-- Supabase Custom SMTP must be configured for production email delivery. Never store SMTP passwords or Google App Passwords in the repository.
+## Account provisioning security
+- Regular Member records do not automatically receive login accounts.
+- Only authorized Super Admin roles can manage account access from the Members dashboard.
+- Leadership account scope is derived from the linked Member/Profile role, Area, and Chapter.
+- Account setup/reset emails are sent through Supabase Auth; no temporary passwords are generated or exposed to administrators.
+- The private `ADMIN_REGISTRATION_CODE` remains only for the controlled bootstrap registration path and must stay server-side.
+- SMTP credentials, Google App Passwords, Supabase secret keys, and registration codes must never be committed to the repository or distributed in source archives.

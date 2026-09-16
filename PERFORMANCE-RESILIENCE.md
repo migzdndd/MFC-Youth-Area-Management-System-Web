@@ -19,7 +19,8 @@ Real `.env.local` files are intentionally excluded from distribution. Configure 
 
 ## Authentication policy
 
-- Self-registered Servant Leaders use the password they choose during registration.
-- Admin-added regular Members use passwordless email-code (OTP) access. No Member password is required or generated.
-- Members may optionally add a password later without losing email-code access.
-- The Servant Leader registration code authorizes registration only; it is never used as the user account password.
+- Member records do not require login accounts or passwords.
+- Account access is provisioned deliberately by authorized Admins using the email already stored on the Member record.
+- Optional Member Portal access uses a secure password setup link.
+- Servant Leader/Admin access uses password authentication after Admin-controlled provisioning.
+- The private Servant Leader registration code is never used as the user's account password.

@@ -6,7 +6,6 @@ import {
   methodNotAllowed,
   normalizeEmail,
   isValidEmail,
-  isGmailEmail,
   apiError
 } from '../_lib/http.js';
 
@@ -36,13 +35,6 @@ function registrationCodeMatches(input, expected) {
   return timingSafeEqual(supplied, target);
 }
 
-function stageError(error, stage, code) {
-  const wrapped = error instanceof Error ? error : new Error(String(error || 'Unknown backend error.'));
-  wrapped.stage = stage;
-  wrapped.code = wrapped.code || code;
-  return wrapped;
-}
-
 function validateRegistrationInput(body, adminRegistrationCode) {
   const email = normalizeEmail(body?.email);
   const password = String(body?.password || '');
@@ -52,12 +44,8 @@ function validateRegistrationInput(body, adminRegistrationCode) {
   const role = String(body?.role || '').trim().toLowerCase();
 
   if (!displayName) return { error: 'Enter your full name.' };
-  if (!isValidEmail(email) || !isGmailEmail(email)) {
-    return { error: 'Use a valid Gmail address ending in @gmail.com.' };
-  }
-  if (!ADMIN_ROLES.has(role)) {
-    return { error: 'Select a valid Servant Leader access level.' };
-  }
+  if (!isValidEmail(email)) return { error: 'Enter a valid email address.' };
+  if (!ADMIN_ROLES.has(role)) return { error: 'Select a valid Servant Leader access level.' };
   if (!registrationCodeMatches(verificationCode, adminRegistrationCode)) {
     return { status: 403, error: 'Administrator registration verification failed.' };
   }
@@ -70,135 +58,8 @@ function validateRegistrationInput(body, adminRegistrationCode) {
     email,
     password,
     displayName,
-    role,
-    verificationCode
+    role
   };
-}
-
-async function requestOtp(req, res, input) {
-  const authClient = createSupabaseAuthClient();
-  const { error } = await authClient.auth.signInWithOtp({
-    email: input.email,
-    options: {
-      shouldCreateUser: true,
-      data: {
-        display_name: input.displayName,
-        registration_type: 'servant_leader_pending_otp',
-        onboarding_method: 'registration_email_otp',
-        requested_role: input.role
-      }
-    }
-  });
-
-  if (error) {
-    const message = String(error.message || '').toLowerCase();
-    if (message.includes('rate') || message.includes('seconds')) {
-      return sendJson(res, 429, {
-        ok: false,
-        error: 'A verification code was requested recently. Wait a moment before requesting another code.'
-      });
-    }
-    throw stageError(error, 'registration_otp_request', 'REGISTRATION_OTP_REQUEST_FAILED');
-  }
-
-  return sendJson(res, 202, {
-    ok: true,
-    verificationRequired: true,
-    email: input.email,
-    message: `A verification code was sent to ${input.email}. Enter it to finish creating the Servant Leader account.`
-  });
-}
-
-async function verifyOtpAndRegister(req, res, input) {
-  const token = String(req.body?.otpCode || req.body?.code || '').replace(/\s+/g, '');
-  if (!/^\d{6,10}$/.test(token)) {
-    return sendJson(res, 400, { ok: false, error: 'Enter the verification code sent to your Gmail account.' });
-  }
-
-  const authClient = createSupabaseAuthClient();
-  const { data: otpData, error: otpError } = await authClient.auth.verifyOtp({
-    email: input.email,
-    token,
-    type: 'email'
-  });
-
-  if (otpError || !otpData?.session || !otpData?.user) {
-    return sendJson(res, 401, {
-      ok: false,
-      error: 'The verification code is invalid or expired. Request a new code and try again.'
-    });
-  }
-
-  if (normalizeEmail(otpData.user.email) !== input.email) {
-    return sendJson(res, 403, { ok: false, error: 'The verification code does not match this registration email.' });
-  }
-
-  const admin = createSupabaseAdmin();
-  const { data: existingProfile, error: existingProfileError } = await admin
-    .from('profiles')
-    .select('id, role, is_active')
-    .eq('id', otpData.user.id)
-    .maybeSingle();
-  if (existingProfileError) throw existingProfileError;
-  if (existingProfile) {
-    return sendJson(res, 409, {
-      ok: false,
-      error: 'This Gmail address is already linked to an MFC Youth account. Sign in instead of registering again.'
-    });
-  }
-
-  const { error: authUpdateError } = await admin.auth.admin.updateUserById(otpData.user.id, {
-    password: input.password,
-    user_metadata: {
-      ...(otpData.user.user_metadata || {}),
-      display_name: input.displayName,
-      registration_type: 'servant_leader',
-      onboarding_method: 'registration_email_otp_verified',
-      requested_role: input.role
-    }
-  });
-  if (authUpdateError) {
-    throw stageError(authUpdateError, 'auth_user_finalization', 'AUTH_USER_FINALIZATION_FAILED');
-  }
-
-  const { error: profileError } = await admin
-    .from('profiles')
-    .insert({
-      id: otpData.user.id,
-      member_id: null,
-      role: input.role,
-      area_id: null,
-      chapter_id: null,
-      must_change_password: false,
-      is_active: true
-    });
-  if (profileError) {
-    throw stageError(profileError, 'profile_creation', 'PROFILE_CREATION_FAILED');
-  }
-
-  return sendJson(res, 201, {
-    ok: true,
-    requiresAreaSelection: true,
-    emailVerified: true,
-    session: {
-      accessToken: otpData.session.access_token,
-      refreshToken: otpData.session.refresh_token,
-      expiresAt: otpData.session.expires_at
-    },
-    user: {
-      id: otpData.user.id,
-      email: input.email,
-      name: input.displayName,
-      memberId: null,
-      role: input.role,
-      areaId: null,
-      chapterId: null,
-      mustChangePassword: false,
-      passwordMode: 'self_chosen',
-      emailVerification: 'otp'
-    },
-    message: 'Gmail verification completed. Your Servant Leader account has been created.'
-  });
 }
 
 export default async function handler(req, res) {
@@ -211,11 +72,121 @@ export default async function handler(req, res) {
       return sendJson(res, input.status || 400, { ok: false, error: input.error });
     }
 
-    const stage = String(req.body?.stage || 'request_otp').trim().toLowerCase();
-    if (stage === 'request_otp') return await requestOtp(req, res, input);
-    if (stage === 'verify_otp') return await verifyOtpAndRegister(req, res, input);
+    const admin = createSupabaseAdmin();
 
-    return sendJson(res, 400, { ok: false, error: 'Invalid registration stage.' });
+    const { data: existingMember, error: memberLookupError } = await admin
+      .from('members')
+      .select('id, area_id, chapter_id, status, access_level')
+      .eq('email', input.email)
+      .maybeSingle();
+    if (memberLookupError) throw memberLookupError;
+
+    if (existingMember?.status === 'Inactive') {
+      return sendJson(res, 409, {
+        ok: false,
+        error: 'The Member record linked to this email is inactive. Activate the Member before creating account access.'
+      });
+    }
+
+    if (input.role === 'chapter_servant' && existingMember && !existingMember.chapter_id) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'A Chapter Servant must be assigned to a Chapter before account creation.'
+      });
+    }
+
+    const { data: authData, error: authCreateError } = await admin.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: {
+        display_name: input.displayName,
+        registration_type: existingMember ? 'member_linked_servant_leader' : 'servant_leader_bootstrap',
+        onboarding_method: 'password',
+        requested_role: input.role
+      }
+    });
+
+    if (authCreateError || !authData?.user) {
+      const message = String(authCreateError?.message || '').toLowerCase();
+      if (message.includes('already') || message.includes('registered')) {
+        return sendJson(res, 409, {
+          ok: false,
+          error: 'This email address already has an MFC Youth login account. Sign in or manage it from Members → Access.'
+        });
+      }
+      throw authCreateError || new Error('Unable to create the Servant Leader account.');
+    }
+
+    const userId = authData.user.id;
+    let profileCreated = false;
+
+    try {
+      const { error: profileError } = await admin
+        .from('profiles')
+        .insert({
+          id: userId,
+          member_id: existingMember?.id || null,
+          role: input.role,
+          area_id: existingMember?.area_id || null,
+          chapter_id: existingMember?.chapter_id || null,
+          must_change_password: false,
+          is_active: true
+        });
+      if (profileError) throw profileError;
+      profileCreated = true;
+
+      if (existingMember) {
+        const { error: memberUpdateError } = await admin
+          .from('members')
+          .update({
+            access_level: input.role,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingMember.id);
+        if (memberUpdateError) throw memberUpdateError;
+      }
+
+      const authClient = createSupabaseAuthClient();
+      const { data: loginData, error: loginError } = await authClient.auth.signInWithPassword({
+        email: input.email,
+        password: input.password
+      });
+
+      if (loginError || !loginData?.session || !loginData?.user) {
+        throw loginError || new Error('Account created, but automatic sign-in failed.');
+      }
+
+      return sendJson(res, 201, {
+        ok: true,
+        requiresAreaSelection: !existingMember?.area_id,
+        linkedMember: Boolean(existingMember),
+        session: {
+          accessToken: loginData.session.access_token,
+          refreshToken: loginData.session.refresh_token,
+          expiresAt: loginData.session.expires_at
+        },
+        user: {
+          id: loginData.user.id,
+          email: input.email,
+          name: input.displayName,
+          memberId: existingMember?.id || null,
+          role: input.role,
+          areaId: existingMember?.area_id || null,
+          chapterId: existingMember?.chapter_id || null,
+          mustChangePassword: false,
+          passwordMode: 'self_chosen'
+        },
+        message: existingMember
+          ? 'Servant Leader account created and linked to the existing Member record.'
+          : 'Initial Servant Leader account created. Continue to Area setup.'
+      });
+    } catch (error) {
+      if (profileCreated || userId) {
+        await admin.auth.admin.deleteUser(userId).catch(() => {});
+      }
+      throw error;
+    }
   } catch (error) {
     return apiError(res, error);
   }

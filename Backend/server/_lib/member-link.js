@@ -149,7 +149,7 @@ export async function ensureLeadershipMemberRecord({
   const { data: existingMember, error: existingMemberError } = await supabase
     .from('members')
     .select('*')
-    .ilike('email', email)
+    .eq('email', email)
     .maybeSingle();
   if (existingMemberError) throw existingMemberError;
 

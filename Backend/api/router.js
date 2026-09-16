@@ -5,8 +5,6 @@ import authAccount from '../server/auth/account.js';
 import authAdminRegister from '../server/auth/admin-register.js';
 import authChangePassword from '../server/auth/change-password.js';
 import authLogin from '../server/auth/login.js';
-import authMemberOtpRequest from '../server/auth/member-otp-request.js';
-import authMemberOtpVerify from '../server/auth/member-otp-verify.js';
 import authMe from '../server/auth/me.js';
 import chapters from '../server/chapters/index.js';
 import chapterAssignMembers from '../server/chapters/assign-members.js';
@@ -27,8 +25,6 @@ const ROUTES = new Map([
   ['auth/admin-register', authAdminRegister],
   ['auth/change-password', authChangePassword],
   ['auth/login', authLogin],
-  ['auth/member-otp/request', authMemberOtpRequest],
-  ['auth/member-otp/verify', authMemberOtpVerify],
   ['auth/me', authMe],
   ['chapters', chapters],
   ['chapters/assign-members', chapterAssignMembers],

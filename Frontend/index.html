@@ -67,7 +67,7 @@
         <div class="login-header login-header-modern">
           <span class="login-eyebrow">WELCOME BACK</span>
           <h1 id="loginTitle">Sign in to your Area</h1>
-          <p>Use your registered MFC Youth account to continue. Members use Gmail verification codes by default; first-time Servant Leader access also verifies Gmail before password setup.</p>
+          <p>Use your registered MFC Youth account to continue. Login accounts are created and managed by authorized Admins from the Members database.</p>
         </div>
 
         <form class="login-form login-form-modern" id="loginForm" novalidate>
@@ -82,30 +82,15 @@
             <input class="login-input" id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email" required>
           </label>
 
-          <label class="auth-control-label" for="loginPassword">Password <span class="field-optional">(optional for Members / first-time access)</span></label>
+          <label class="auth-control-label" for="loginPassword">Password</label>
           <div class="login-field">
             <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
             </svg>
-            <input class="login-input" id="loginPassword" type="password" placeholder="Servant Leader password or leave blank for email-code access" autocomplete="current-password" aria-label="Password">
+            <input class="login-input" id="loginPassword" type="password" placeholder="Account Password" autocomplete="current-password" aria-label="Password" required>
             <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button>
           </div>
-          <p class="field-help auth-field-help">Members may leave Password blank at any time. Newly provisioned Servant Leaders may also leave it blank during first-time access to receive their Gmail verification code.</p>
-
-          <div id="memberOtpPanel" class="credential-panel" hidden>
-            <div class="credential-notice">
-              <strong>Check your email</strong>
-              <p id="memberOtpHelp">Enter the one-time verification code sent to your Gmail account.</p>
-            </div>
-            <label class="auth-control-label" for="loginOtpCode">Gmail Verification Code</label>
-            <label class="login-field" for="loginOtpCode">
-              <input class="login-input" id="loginOtpCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" placeholder="Enter code" autocomplete="one-time-code">
-            </label>
-            <div class="login-buttons">
-              <button class="btn-auth auth-slide-button auth-slide-primary" id="verifyMemberOtpButton" type="button">Verify Code</button>
-              <button class="btn-auth auth-slide-button auth-slide-secondary" id="resendMemberOtpButton" type="button">Resend Code</button>
-            </div>
-          </div>
+          <p class="field-help auth-field-help">Regular Member records do not require a login account. If Member Portal access is needed, an Admin can enable it from Members → Access and the Member can choose a password securely.</p>
 
           <div class="form-options">
             <label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember me</span></label>

@@ -26,10 +26,6 @@ export function isValidEmail(value = '') {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 }
 
-export function isGmailEmail(value = '') {
-  const email = normalizeEmail(value);
-  return isValidEmail(email) && email.endsWith('@gmail.com');
-}
 
 function safeBackendMessage(error) {
   const message = String(error?.message || '').trim();
