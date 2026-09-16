@@ -1,6 +1,6 @@
 {
   "name": "mfc-youth-area-management-system-frontend",
-  "version": "0.8.1-admin-session-fix",
+  "version": "0.8.2-area-cache-isolation",
   "private": true,
   "type": "module",
   "description": "Frontend for the MFC Youth Area Management System with admin-managed account provisioning and direct Vercel API rewrites.",

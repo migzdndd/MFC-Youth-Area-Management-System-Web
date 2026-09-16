@@ -7,6 +7,7 @@ const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
 const USER_KEY = 'mfc_demo_users';
 const DB_VERSION = 7;
+const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 let activeModalCleanup = null;
 
 function initializeMotionEffects() {
@@ -96,6 +97,29 @@ function getSession() {
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
   );
+}
+
+function cacheIdentityPart(value, fallback) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  return encodeURIComponent(normalized);
+}
+
+function databaseStorageKey(currentSession = getSession()) {
+  if (!currentSession?.backendAuth || currentSession?.demo) return DB_KEY;
+
+  const areaPart = cacheIdentityPart(currentSession.areaId, 'unassigned-area');
+  const accountPart = cacheIdentityPart(
+    currentSession.userId || currentSession.memberId || currentSession.email,
+    'unknown-account'
+  );
+
+  return `${CLOUD_CACHE_PREFIX}::${areaPart}::${accountPart}`;
+}
+
+function clearScopedDatabaseCache(currentSession = getSession()) {
+  const key = databaseStorageKey(currentSession);
+  if (key !== DB_KEY) localStorage.removeItem(key);
 }
 
 function updateStoredSession(nextSession) {
@@ -847,26 +871,27 @@ function normalizeDatabase(input) {
 }
 
 function seedDB() {
+  const storageKey = databaseStorageKey();
   const existing = safeParse(
-    localStorage.getItem(DB_KEY),
+    localStorage.getItem(storageKey),
     null
   );
 
   localStorage.setItem(
-    DB_KEY,
+    storageKey,
     JSON.stringify(normalizeDatabase(existing))
   );
 }
 
 function db() {
   return normalizeDatabase(
-    safeParse(localStorage.getItem(DB_KEY), null)
+    safeParse(localStorage.getItem(databaseStorageKey()), null)
   );
 }
 
 function save(data) {
   localStorage.setItem(
-    DB_KEY,
+    databaseStorageKey(),
     JSON.stringify(normalizeDatabase(data))
   );
 }
@@ -1465,6 +1490,7 @@ if (logoutBtn) {
           );
           save(data);
 
+          clearScopedDatabaseCache(session);
           localStorage.removeItem(SESSION_KEY);
           sessionStorage.removeItem(SESSION_KEY);
           navigateWithLoader('/', true);
@@ -1479,6 +1505,7 @@ if (logoutBtn) {
   }
 
   logoutBtn.onclick = () => {
+    clearScopedDatabaseCache(session);
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
 
@@ -3252,6 +3279,7 @@ window.deleteMember = async id => {
   }
 
   if (String(session?.memberId || '') === String(id)) {
+    clearScopedDatabaseCache(session);
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     navigateWithLoader('/', true);

@@ -73,3 +73,7 @@ Member records and login accounts are now intentionally separate:
 - The controlled bootstrap Admin registration form remains available for first management-account setup.
 
 The main dashboard, Member inputs, role model, Area scoping, and cloud data modules remain unchanged.
+
+## Part 3 update — browser cache isolation
+
+Authenticated Supabase sessions now store frontend cache data under an Area/account-scoped localStorage key. The old global browser database is no longer consumed by cloud-authenticated management or Member Portal sessions. This closes the transient cross-account/Area cache exposure that could occur before a background cloud refresh completed.

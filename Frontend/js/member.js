@@ -2,6 +2,7 @@
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
 const USER_KEY = 'mfc_demo_users';
+const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
@@ -12,6 +13,29 @@ function getSession() {
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
   );
+}
+
+function cacheIdentityPart(value, fallback) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  return encodeURIComponent(normalized);
+}
+
+function databaseStorageKey(currentSession = getSession()) {
+  if (!currentSession?.backendAuth || currentSession?.demo) return DB_KEY;
+
+  const areaPart = cacheIdentityPart(currentSession.areaId, 'unassigned-area');
+  const accountPart = cacheIdentityPart(
+    currentSession.userId || currentSession.memberId || currentSession.email,
+    'unknown-account'
+  );
+
+  return `${CLOUD_CACHE_PREFIX}::${areaPart}::${accountPart}`;
+}
+
+function clearScopedDatabaseCache(currentSession = getSession()) {
+  const key = databaseStorageKey(currentSession);
+  if (key !== DB_KEY) localStorage.removeItem(key);
 }
 
 function esc(value = '') {
@@ -180,7 +204,7 @@ async function syncMemberPortalCloudCache() {
     portalBackendApi('/api/sync')
   ]);
 
-  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
   const previousMembers = Array.isArray(data.members) ? data.members : [];
   const cloudMembers = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
   const chapters = Array.isArray(syncPayload?.chapters) ? syncPayload.chapters : [];
@@ -237,7 +261,7 @@ async function syncMemberPortalCloudCache() {
     cloudBacked: true
   }));
 
-  localStorage.setItem(DB_KEY, JSON.stringify(data));
+  localStorage.setItem(databaseStorageKey(session), JSON.stringify(data));
 }
 
 function previewMemberFromSession(currentSession) {
@@ -275,7 +299,7 @@ if (!session) {
     true
   );
 } else {
-  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
   const members = Array.isArray(data.members) ? data.members : [];
   const linkedMember = members.find(
     item => String(item.id) === String(session.memberId)
@@ -430,6 +454,7 @@ if (!session) {
 
 if (!previewMode) {
   document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
+    clearScopedDatabaseCache(session);
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     navigateWithLoader('/');

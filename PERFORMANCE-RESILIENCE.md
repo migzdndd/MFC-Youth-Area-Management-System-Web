@@ -31,3 +31,9 @@ Real `.env.local` files are intentionally excluded from distribution. Configure 
 - Concurrent requests share the same in-flight refresh operation so the browser does not send multiple refresh requests at once.
 - The authentication/change-password pages can also refresh a stored backend session when an authenticated request expires.
 - If the refresh token itself is no longer valid, the request fails normally and the user must sign in again.
+
+## Part 3 — scoped fast cache
+
+Immediate cached rendering is preserved, but authenticated cloud sessions now render only from an Area/account-scoped cache. Network synchronization still runs in the background, so this keeps the fast page-switching behavior without showing another account's previous cache.
+
+A cloud cache is cleared on explicit logout/account removal. The legacy global cache remains available only to demo mode.

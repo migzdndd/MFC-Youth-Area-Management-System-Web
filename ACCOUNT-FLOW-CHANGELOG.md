@@ -56,3 +56,10 @@ If the registration email matches an existing Member record, the account is link
 - Password setup/reset links are handled through Supabase Auth.
 - Backend role, Area, and Chapter authorization remain enforced.
 - Real environment files remain excluded from distributable source packages.
+
+## Part 3 — Area/account cache isolation
+
+- Authenticated cloud cache keys are now scoped by Area and account identity.
+- The management dashboard and Member Portal use the same scoped-cache rule.
+- Explicit logout and account deletion clear the current cloud cache.
+- Legacy `mfc_web_database_v1` data remains demo-only and is not migrated into authenticated cloud scopes.
