@@ -615,6 +615,48 @@ function memberAccountState(member) {
   return { label: 'Not Provisioned', className: 'inactive' };
 }
 
+function memberLoginAction(member) {
+  const state = memberAccountState(member).label;
+
+  if (state === 'Setup Pending') {
+    return {
+      buttonLabel: 'Resend Setup',
+      modalTitle: 'Resend Account Setup',
+      confirmLabel: 'Yes, Resend Setup',
+      tooltip: 'Send another secure password setup link for this account.',
+      summary: 'Resends the secure password setup link. The account remains Setup Pending until the user finishes setup.'
+    };
+  }
+
+  if (state === 'Active') {
+    return {
+      buttonLabel: 'Reset Login',
+      modalTitle: 'Reset Account Login',
+      confirmLabel: 'Yes, Reset Login',
+      tooltip: 'Send a new password setup link and return this account to Setup Pending.',
+      summary: 'Starts a new login setup. The account returns to Setup Pending until the user creates the new password.'
+    };
+  }
+
+  if (state === 'Disabled') {
+    return {
+      buttonLabel: 'Manage Login',
+      modalTitle: 'Manage Login Access',
+      confirmLabel: 'Yes, Manage Login',
+      tooltip: 'Refresh login setup for this disabled account.',
+      summary: 'Refreshes the secure setup link for this disabled account. Reactivation may still be required before sign-in is allowed.'
+    };
+  }
+
+  return {
+    buttonLabel: 'Enable Login',
+    modalTitle: 'Enable Login Access',
+    confirmLabel: 'Yes, Enable Login',
+    tooltip: 'Create login access and send a secure password setup link.',
+    summary: 'Creates login access using the registered email and sends a secure password setup link.'
+  };
+}
+
 function normalizeDatabase(input) {
   const data = input && typeof input === 'object' ? input : {};
 
@@ -1154,7 +1196,7 @@ function showMemberSetupNotice(member, message = '') {
     : 'Use the secure setup email to create the Servant Leader account password. The account becomes Active only after setup succeeds. No temporary password is used.';
 
   openModal(
-    'Account Access',
+    'Login Setup',
     `
       <div class="credential-panel">
         <div class="credential-notice">
@@ -1192,27 +1234,100 @@ window.manageMemberLogin = async id => {
 
   if (member.cloudBacked && session?.backendAuth) {
     const role = normalizeAccessRole(member.accessLevel || 'member');
-    const actionLabel = role === 'member'
-      ? 'enable or refresh optional Member Portal access'
-      : 'create or refresh Servant Leader account access';
+    const regularMember = role === 'member';
+    const accountState = memberAccountState(member);
+    const alreadyProvisioned = member.accountProvisioned === true;
+    const loginAction = memberLoginAction(member);
 
-    if (!confirm(`Use ${member.email} to ${actionLabel} for ${fullName(member)}?`)) return;
+    let warningText = regularMember
+      ? 'This will enable optional Member Portal login access and send a secure password setup link to the Member email.'
+      : 'This will create or refresh Servant Leader login access and send a secure password setup link to the Member email.';
 
-    try {
-      const payload = await backendApi('/api/members/login', {
-        method: 'POST',
-        body: JSON.stringify({ memberId: member.id })
-      });
-
-      await refreshAllCloudData({ render: false }).catch(() => false);
-      renderMembers();
-
-      const refreshedMember = db().members.find(item => String(item.id) === String(id)) || member;
-      toast(payload?.message || 'Account access updated.');
-      showMemberSetupNotice(refreshedMember, payload?.message);
-    } catch (error) {
-      toast(error?.message || 'Unable to configure account access.', 'error');
+    if (accountState.label === 'Active') {
+      warningText = 'This account is currently Active. Continuing will send a new secure password setup link and move the account back to Setup Pending until the user completes password setup again.';
+    } else if (accountState.label === 'Setup Pending') {
+      warningText = 'Account setup is already pending. Continuing will send/refresh the secure password setup email. The account will remain Setup Pending until setup is completed.';
+    } else if (accountState.label === 'Disabled') {
+      warningText = 'This login account is currently Disabled. Continuing will refresh account setup, but the account may still require reactivation before the user can sign in.';
     }
+
+    openModal(
+      loginAction.modalTitle,
+      `
+        <div class="access-confirmation-panel">
+          <div class="access-confirmation-warning" role="alert">
+            <span class="access-confirmation-icon" aria-hidden="true">!</span>
+            <div>
+              <strong>Are you sure?</strong>
+              <p>${esc(warningText)}</p>
+            </div>
+          </div>
+
+          <div class="credential-row">
+            <span>Member</span>
+            <code>${esc(fullName(member))}</code>
+          </div>
+
+          <div class="credential-row">
+            <span>Email</span>
+            <code>${esc(member.email)}</code>
+          </div>
+
+          <div class="credential-row">
+            <span>Access Level</span>
+            <code>${esc(accessRoleLabel(member.accessLevel))}</code>
+          </div>
+
+          <div class="credential-row">
+            <span>Current Account Status</span>
+            <code>${esc(accountState.label)}</code>
+          </div>
+
+          <div class="access-confirmation-note">
+            <strong>What this does</strong>
+            <ul>
+              <li>${esc(loginAction.summary)}</li>
+              <li>Sends a secure password setup link. No OTP or temporary password is used.</li>
+              <li>The Member record and its existing profile information are not deleted.</li>
+            </ul>
+          </div>
+        </div>
+      `,
+      async close => {
+        const confirmButton = document.getElementById('saveModal');
+        const cancelButton = document.getElementById('cancelModal');
+        const originalText = confirmButton?.textContent || '';
+
+        if (confirmButton) {
+          confirmButton.disabled = true;
+          confirmButton.textContent = 'Processing...';
+        }
+        if (cancelButton) cancelButton.disabled = true;
+
+        try {
+          const payload = await backendApi('/api/members/login', {
+            method: 'POST',
+            body: JSON.stringify({ memberId: member.id })
+          });
+
+          close();
+          await refreshAllCloudData({ render: false }).catch(() => false);
+          renderMembers();
+
+          const refreshedMember = db().members.find(item => String(item.id) === String(id)) || member;
+          toast(payload?.message || 'Account access updated.');
+          showMemberSetupNotice(refreshedMember, payload?.message);
+        } catch (error) {
+          if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.textContent = originalText;
+          }
+          if (cancelButton) cancelButton.disabled = false;
+          toast(error?.message || 'Unable to configure account access.', 'error');
+        }
+      },
+      loginAction.confirmLabel
+    );
     return;
   }
 
@@ -2405,10 +2520,12 @@ function renderMembers() {
                           </button>
 
                           <button
-                            class="btn"
+                            class="btn member-login-action"
+                            title="${esc(memberLoginAction(member).tooltip)}"
+                            aria-label="${esc(memberLoginAction(member).buttonLabel)} for ${esc(fullName(member))}"
                             onclick='manageMemberLogin(${inlineJsArg(member.id)})'
                           >
-                            Access
+                            ${esc(memberLoginAction(member).buttonLabel)}
                           </button>
 
                           ${isOwnMemberRecord(member)
@@ -3163,7 +3280,7 @@ function memberModal(id = null) {
             ? 'Member added. No login account or password is required.'
             : (provisionResult?.setupEmailSent
               ? 'Member added. Servant Leader account setup email sent.'
-              : 'Member added. Servant Leader access can be managed from Access.'))
+              : 'Member added. Servant Leader login can be managed from the login-action button.'))
       );
 
       renderMembers();

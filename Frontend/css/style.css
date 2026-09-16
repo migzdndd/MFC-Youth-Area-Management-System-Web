@@ -1685,6 +1685,10 @@ button:disabled {
   white-space: nowrap;
 }
 
+.actions-cell .member-login-action {
+  min-width: 118px;
+}
+
 .modal-section {
   margin-top: 18px;
   padding-top: 16px;
@@ -4645,4 +4649,76 @@ button:disabled::before,
   .member-portal-nav a:hover {
     box-shadow: 0 8px 18px rgba(0, 119, 255, .22) !important;
   }
+}
+
+/* =========================================================
+   ACCOUNT ACCESS CONFIRMATION
+   Prevent accidental account provisioning / setup resets.
+   ========================================================= */
+.access-confirmation-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.access-confirmation-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #f0d59c;
+  border-radius: 12px;
+  background: #fff8e8;
+}
+
+.access-confirmation-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: #fff;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.access-confirmation-warning strong,
+.access-confirmation-note strong {
+  display: block;
+  color: var(--navy);
+  margin-bottom: 5px;
+}
+
+.access-confirmation-warning p {
+  margin: 0;
+  color: #6f5a2d;
+  font-size: .84rem;
+  line-height: 1.55;
+}
+
+.access-confirmation-note {
+  padding: 14px;
+  border: 1px solid #d7e6f3;
+  border-radius: 12px;
+  background: #f4f9fd;
+}
+
+.access-confirmation-note ul {
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.access-confirmation-note li + li {
+  margin-top: 5px;
+}
+
+.modal-footer .btn:disabled {
+  cursor: wait;
+  opacity: .62;
+  transform: none;
+  box-shadow: none;
 }

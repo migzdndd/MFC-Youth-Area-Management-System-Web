@@ -331,7 +331,7 @@ if (loginForm) {
     if (!password) {
       showMessage(
         'loginMessage',
-        'Enter your account password. Regular Member records do not require a login account; an Admin can enable optional Member Portal access from Members → Access.'
+        'Enter your account password. Regular Member records do not require a login account; an Admin can enable optional Member Portal access from Members using the Enable Login button.'
       );
       return;
     }
