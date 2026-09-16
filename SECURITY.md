@@ -27,3 +27,23 @@ Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scri
 - Account setup/reset emails are sent through Supabase Auth; no temporary passwords are generated or exposed to administrators.
 - The private `ADMIN_REGISTRATION_CODE` remains only for the controlled bootstrap registration path and must stay server-side.
 - SMTP credentials, Google App Passwords, Supabase secret keys, and registration codes must never be committed to the repository or distributed in source archives.
+
+## Safe source packaging
+
+Real local environment files are required for local development, but they must never be committed or included in shared source archives.
+
+Keep the real local backend configuration at:
+
+```text
+Backend/.env.local
+```
+
+Git already ignores it. When creating a ZIP for sharing, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-source.ps1
+```
+
+The packaging script keeps `.env.example` files but excludes `.env`, `.env.*` (including `.env.local`), `.git`, `node_modules`, `.vercel`, build output, logs, and existing ZIP archives.
+
+Production secrets belong in the Vercel project's Environment Variables, not in the repository or distributable source ZIP.
