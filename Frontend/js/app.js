@@ -1,11 +1,11 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Application
-// Supabase-backed application. localStorage is used only as a fast UI cache/fallback for authenticated cloud data and demo mode.
+// Supabase-backed application. Production authentication is cloud-only; localStorage is used only for scoped UI cache and isolated demo data.
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const USER_KEY = 'mfc_demo_users';
+const LEGACY_BROWSER_USER_KEY = 'mfc_demo_users';
 const DB_VERSION = 7;
 const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 let activeModalCleanup = null;
@@ -97,6 +97,27 @@ function getSession() {
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
   );
+}
+
+function isBuiltInDemoSession(currentSession) {
+  return Boolean(
+    currentSession?.demo === true &&
+    currentSession?.backendAuth !== true &&
+    String(currentSession?.email || '').trim().toLowerCase() === 'admin@mfcyouth.local' &&
+    normalizeAccessRole(currentSession?.role) === 'area_servant'
+  );
+}
+
+function isCloudAuthenticatedSession(currentSession) {
+  return Boolean(
+    currentSession?.backendAuth === true &&
+    currentSession?.demo !== true &&
+    currentSession?.accessToken
+  );
+}
+
+function isTrustedAppSession(currentSession) {
+  return isCloudAuthenticatedSession(currentSession) || isBuiltInDemoSession(currentSession);
 }
 
 function cacheIdentityPart(value, fallback) {
@@ -514,15 +535,6 @@ function canManageOwnChapterMember(data, member) {
 // Member record. Login access is password-based when an account is provisioned.
 // =========================================================
 
-function getAuthUsers() {
-  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
-  return Array.isArray(users) ? users : [];
-}
-
-function saveAuthUsers(users) {
-  localStorage.setItem(USER_KEY, JSON.stringify(users));
-}
-
 function authEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
@@ -536,129 +548,25 @@ function isOwnMemberRecord(member) {
     return true;
   }
 
-  // Email is a safe fallback for older/self-healed sessions where memberId
-  // has not been hydrated yet. Member emails are unique in the cloud schema.
+  // Email is a safe fallback for older/self-healed cloud sessions where
+  // memberId has not been hydrated yet. Member emails are unique in cloud.
   const currentEmail = authEmail(session?.email || '');
   const recordEmail = authEmail(member.email || '');
   return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
 }
 
-function findMemberAccount(member, users = getAuthUsers()) {
-  if (!member) return null;
-
-  const byMemberId = users.find(
-    user => user.memberId !== null && user.memberId !== undefined && String(user.memberId) === String(member.id)
-  );
-  if (byMemberId) return byMemberId;
-
-  const email = authEmail(member.email);
-  if (!email) return null;
-
-  return users.find(
-    user =>
-      authEmail(user.email) === email &&
-      (
-        ACCESS_ROLE_VALUES.has(String(user.role || '').trim().toLowerCase()) ||
-        String(user.role || '').trim().toLowerCase() === 'area_admin' ||
-        (user.role || 'legacy') === 'legacy'
-      )
-  ) || null;
-}
-
-function accountEmailConflict(email, memberId = null) {
+function accountEmailConflict(email) {
   const normalized = authEmail(email);
   if (!normalized) return null;
 
   if (normalized === 'admin@mfcyouth.local') {
-    return 'That email is reserved for the built-in administrator account.';
+    return 'That email is reserved for the built-in demo administrator.';
   }
 
-  const conflict = getAuthUsers().find(user => {
-    if (authEmail(user.email) !== normalized) return false;
-
-    // The account already linked to this member is allowed.
-    if (
-      memberId !== null &&
-      memberId !== undefined &&
-      user.memberId !== null &&
-      user.memberId !== undefined &&
-      String(user.memberId) === String(memberId)
-    ) {
-      return false;
-    }
-
-    // Old unlinked public-signup accounts can be claimed by an administrator
-    // when the matching member is added.
-    if ((user.role || 'legacy') === 'legacy' && (user.memberId === null || user.memberId === undefined)) {
-      return false;
-    }
-
-    return true;
-  });
-
-  return conflict ? 'That email address is already being used by another login account.' : null;
-}
-
-function provisionMemberAccount(member) {
-  if (!member?.email) {
-    throw new Error('A valid email address is required to create an account login.');
-  }
-
-  const users = getAuthUsers();
-  let account = findMemberAccount(member, users);
-  const wasUnlinked = !account || account.memberId === null || account.memberId === undefined || account.role === 'legacy';
-  const now = new Date().toISOString();
-
-  if (!account) {
-    account = {
-      id: uid(),
-      createdAt: now
-    };
-    users.push(account);
-  }
-
-  Object.assign(account, {
-    memberId: member.id,
-    firstName: member.firstName || '',
-    lastName: member.lastName || '',
-    name: fullName(member),
-    email: authEmail(member.email),
-    role: normalizeAccessRole(member.accessLevel),
-    chapterId: member.chapterId ?? null,
-    isActive: String(member.status || 'Active') !== 'Inactive',
-    mustChangePassword: false,
-    passwordSetupRequired: false,
-    updatedAt: now
-  });
-
-  saveAuthUsers(users);
-  return { account, setupRequired: false, created: wasUnlinked };
-}
-function syncMemberAccount(member) {
-  const users = getAuthUsers();
-  const account = findMemberAccount(member, users);
-  if (!account) return false;
-
-  Object.assign(account, {
-    memberId: member.id,
-    firstName: member.firstName || '',
-    lastName: member.lastName || '',
-    name: fullName(member),
-    email: authEmail(member.email),
-    role: normalizeAccessRole(member.accessLevel),
-    chapterId: member.chapterId ?? null,
-    isActive: String(member.status || 'Active') !== 'Inactive',
-    updatedAt: new Date().toISOString()
-  });
-  saveAuthUsers(users);
-  return true;
-}
-
-function removeMemberAccount(memberId) {
-  const users = getAuthUsers().filter(
-    user => String(user.memberId) !== String(memberId)
-  );
-  saveAuthUsers(users);
+  // Production account uniqueness is enforced by the backend/Supabase.
+  // Demo/local mode does not create login accounts. Member-email duplicates
+  // are checked separately against the current member dataset.
+  return null;
 }
 
 function memberAccountState(member) {
@@ -675,11 +583,10 @@ function memberAccountState(member) {
     return { label: 'Active', className: 'active' };
   }
 
-  const account = findMemberAccount(member);
-  if (!account) return { label: 'Not Provisioned', className: 'inactive' };
-  if (account.isActive === false) return { label: 'Disabled', className: 'inactive' };
-  if (!account.password) return { label: 'Setup Pending', className: 'inactive' };
-  return { label: 'Active', className: 'active' };
+  // Demo/local data can be managed for presentation purposes, but it does not
+  // create browser-authenticated users. Cloud access must be provisioned by
+  // the backend from a real Member record.
+  return { label: 'Not Provisioned', className: 'inactive' };
 }
 
 function normalizeDatabase(input) {
@@ -1382,7 +1289,16 @@ seedDB();
 const page =
   document.body.dataset.page;
 
-const session = getSession();
+// Browser-created login accounts from the old prototype are obsolete.
+// Keep demo data, but remove the legacy credential registry itself.
+localStorage.removeItem(LEGACY_BROWSER_USER_KEY);
+
+let session = getSession();
+if (session && !isTrustedAppSession(session)) {
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  session = null;
+}
 
 if (!session) {
   navigateWithLoader('/', true);
@@ -3205,17 +3121,8 @@ function memberModal(id = null) {
           data.members.find(item => String(item.id) === String(id)),
           record
         );
-
-        if (findMemberAccount(record)) {
-          syncMemberAccount(record);
-        } else if (record.accessLevel !== 'member') {
-          provisionResult = provisionMemberAccount(record);
-        }
       } else {
         data.members.push(record);
-        if (record.accessLevel !== 'member') {
-          provisionResult = provisionMemberAccount(record);
-        }
       }
 
       save(data);
@@ -3274,7 +3181,6 @@ window.deleteMember = async id => {
     data.members = data.members.filter(item => String(item.id) !== String(id));
     data.gig = data.gig.filter(item => String(item.memberId) !== String(id));
     data.participants = data.participants.filter(item => String(item.memberId) !== String(id));
-    removeMemberAccount(id);
     save(data);
   }
 
@@ -4277,7 +4183,6 @@ window.addMembersToChapter = async id => {
             if (selectedIds.includes(String(member.id)) && isUnassignedMember(member)) {
               member.chapterId = chapter.id;
               member.chapterName = chapter.name;
-              syncMemberAccount(member);
               assignedCount += 1;
             }
           });

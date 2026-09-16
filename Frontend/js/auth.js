@@ -4,9 +4,8 @@
 // from the Members dashboard. login access is managed through provisioned accounts and passwords.
 // =========================================================
 
-const USER_KEY = 'mfc_demo_users';
+const LEGACY_BROWSER_USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
-const DB_KEY = 'mfc_web_database_v1';
 
 const ACCESS_ROLE_VALUES = new Set([
   'couple_coordinator',
@@ -22,117 +21,32 @@ function normalizeAccessRole(value) {
   return ACCESS_ROLE_VALUES.has(role) ? role : 'member';
 }
 
-function roleForMember(member) {
-  return normalizeAccessRole(member?.accessLevel || 'member');
+function purgeLegacyBrowserAccounts() {
+  // Browser-stored login accounts belonged to the old frontend prototype.
+  // Production authentication is Supabase-backed; demo mode uses only the
+  // built-in isolated demo session and never authenticates these records.
+  localStorage.removeItem(LEGACY_BROWSER_USER_KEY);
 }
 
-function safeParse(raw, fallback) {
-  try { return JSON.parse(raw); } catch { return fallback; }
+function isBuiltInDemoSession(session) {
+  return Boolean(
+    session?.demo === true &&
+    session?.backendAuth !== true &&
+    normalizeEmail(session?.email) === 'admin@mfcyouth.local' &&
+    normalizeAccessRole(session?.role) === 'area_servant'
+  );
 }
 
-function normalizeEmail(value = '') {
-  return String(value).trim().toLowerCase();
+function isCloudAuthenticatedSession(session) {
+  return Boolean(
+    session?.backendAuth === true &&
+    session?.demo !== true &&
+    session?.accessToken
+  );
 }
 
-function getMembers() {
-  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
-  return Array.isArray(data.members) ? data.members : [];
-}
-
-function getUsers() {
-  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
-  if (!Array.isArray(users)) return [];
-
-  const members = getMembers();
-  let changed = false;
-
-  const normalized = users.map(raw => {
-    const user = {
-      ...raw,
-      email: normalizeEmail(raw.email)
-    };
-
-    let linkedMember = null;
-
-    if (
-      user.memberId !== null &&
-      user.memberId !== undefined
-    ) {
-      linkedMember = members.find(
-        member => String(member.id) === String(user.memberId)
-      ) || null;
-    }
-
-    if (!linkedMember && user.email) {
-      const matches = members.filter(
-        member =>
-          normalizeEmail(member.email) &&
-          normalizeEmail(member.email) === user.email
-      );
-
-      if (matches.length === 1) {
-        linkedMember = matches[0];
-      }
-    }
-
-    if (!user.role) {
-      if (linkedMember) {
-        user.role = roleForMember(linkedMember);
-        user.memberId = linkedMember.id;
-        user.mustChangePassword = user.mustChangePassword !== false;
-      } else {
-        user.role = 'legacy';
-      }
-      changed = true;
-    }
-
-    if (linkedMember && user.role !== 'legacy') {
-      const desiredRole = roleForMember(linkedMember);
-      const desiredChapterId = linkedMember.chapterId ?? null;
-      const desiredActive = String(linkedMember.status || 'Active') !== 'Inactive';
-      const desiredName = [
-        linkedMember.firstName,
-        linkedMember.middleName,
-        linkedMember.lastName
-      ].filter(Boolean).join(' ');
-
-      if (user.role !== desiredRole) {
-        user.role = desiredRole;
-        changed = true;
-      }
-
-      if (String(user.memberId) !== String(linkedMember.id)) {
-        user.memberId = linkedMember.id;
-        changed = true;
-      }
-
-      if (String(user.chapterId ?? '') !== String(desiredChapterId ?? '')) {
-        user.chapterId = desiredChapterId;
-        changed = true;
-      }
-
-      if (user.isActive !== desiredActive) {
-        user.isActive = desiredActive;
-        changed = true;
-      }
-
-      if (desiredName && user.name !== desiredName) {
-        user.name = desiredName;
-        user.firstName = linkedMember.firstName || '';
-        user.lastName = linkedMember.lastName || '';
-        changed = true;
-      }
-    }
-
-    return user;
-  });
-
-  if (changed) saveUsers(normalized);
-  return normalized;
-}
-
-function saveUsers(users) {
-  localStorage.setItem(USER_KEY, JSON.stringify(users));
+function isTrustedAuthSession(session) {
+  return isCloudAuthenticatedSession(session) || isBuiltInDemoSession(session);
 }
 
 function getSession() {
@@ -293,7 +207,8 @@ function backendSessionFromResponse(payload, remember = false) {
     refreshToken: serverSession.refreshToken || '',
     expiresAt: serverSession.expiresAt || null,
     backendAuth: true,
-    demo: false
+    demo: false,
+    authMode: 'cloud'
   };
   saveSession(session, remember);
   return session;
@@ -364,9 +279,15 @@ function initializeRevealAnimations() {
 
 window.addEventListener('DOMContentLoaded', initializeRevealAnimations);
 
+// Remove obsolete browser-account credentials left by the old frontend prototype.
+purgeLegacyBrowserAccounts();
+
 // Signed-in users who revisit the sign-in page go to the correct portal.
+// Legacy browser-only sessions are no longer accepted as authenticated users.
 const currentSession = getSession();
-if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
+if (currentSession && !isTrustedAuthSession(currentSession)) {
+  clearSession();
+} else if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
   navigateWithLoader(destinationFor(currentSession), true);
 }
 
@@ -378,7 +299,9 @@ function startDemoLogin(remember = false) {
     role: 'area_servant',
     loginAt: new Date().toISOString(),
     mustChangePassword: false,
-    demo: true
+    backendAuth: false,
+    demo: true,
+    authMode: 'demo'
   };
 
   saveSession(session, remember);
@@ -418,13 +341,8 @@ if (loginForm) {
 
     setButtonBusy(submit, true, 'Signing In…');
 
-    // Built-in management demo credentials remain available in addition to
-    // the one-click Demo Login button on the sign-in page.
-    const demoOk = email === 'admin@mfcyouth.local' && password === 'admin123';
-    if (demoOk) {
-      startDemoLogin(remember);
-      return;
-    }
+    // The standard sign-in form is cloud-only. Demo mode can only be
+    // entered through the explicit Open Demo Dashboard button below.
 
     try {
       const payload = await apiJson('/api/auth/login', {
@@ -436,43 +354,14 @@ if (loginForm) {
       navigateWithLoader(destinationFor(session));
       return;
     } catch (backendError) {
-      // Local demo/prototype fallback remains for offline presentation data.
-      const users = getUsers();
-      const user = users.find(item => item.email === email && item.password === password);
-
-      if (!user) {
-        setButtonBusy(submit, false);
-        showMessage('loginMessage', backendError?.message || 'Account not found or password is incorrect.');
-        return;
-      }
-
-      if (user.role === 'legacy') {
-        setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This older account is not linked to a Member record. Ask an Admin to link or recreate access from the Members page.');
-        return;
-      }
-
-      if (user.isActive === false) {
-        setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This account is currently inactive. Contact your Admin.');
-        return;
-      }
-
-      const session = {
-        userId: user.id,
-        memberId: user.memberId ?? null,
-        email: user.email,
-        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
-        role: normalizeAccessRole(user.role || 'member'),
-        chapterId: user.chapterId ?? null,
-        loginAt: new Date().toISOString(),
-        mustChangePassword: user.role === 'member' ? false : user.mustChangePassword === true,
-        needsAreaSetup: false,
-        demo: false
-      };
-
-      saveSession(session, remember);
-      navigateWithLoader(destinationFor(session));
+      // Production sign-in is cloud-only. Never fall back to browser-created
+      // accounts when Supabase authentication fails. Demo access is explicit
+      // through the isolated Demo button / built-in demo credentials above.
+      setButtonBusy(submit, false);
+      showMessage(
+        'loginMessage',
+        backendError?.message || 'Account not found or password is incorrect.'
+      );
     }
   });
 }
@@ -698,24 +587,10 @@ if (forcePasswordForm) {
           return;
         }
 
-        // Browser-only demo/prototype account fallback.
-        const users = getUsers();
-        const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
-        if (!user) throw new Error('Account not found.');
-        if (!session.mustChangePassword && user.password !== current) {
-          throw new Error('Your current password is incorrect.');
-        }
-
-        user.password = password;
-        user.mustChangePassword = false;
-        user.passwordSetupRequired = false;
-        user.passwordUpdatedAt = new Date().toISOString();
-        saveUsers(users);
-
-        const updatedSession = { ...session, mustChangePassword: false };
-        updateSession(updatedSession);
-        showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
-        setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
+        // Browser-only accounts are no longer an authentication source.
+        // A non-demo password change must always use a valid cloud session.
+        clearSession();
+        throw new Error('This account session is no longer supported. Sign in again with your cloud account.');
       } catch (error) {
         setButtonBusy(submit, false);
         showMessage('passwordMessage', error?.message || 'Unable to update the password.');

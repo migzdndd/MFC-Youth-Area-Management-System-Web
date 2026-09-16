@@ -1,7 +1,6 @@
 // MFC Youth Member Portal - frontend prototype
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
-const USER_KEY = 'mfc_demo_users';
 const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 
 function safeParse(raw, fallback) {
@@ -12,6 +11,23 @@ function getSession() {
   return (
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
+  );
+}
+
+function isBuiltInDemoSession(currentSession) {
+  return Boolean(
+    currentSession?.demo === true &&
+    currentSession?.backendAuth !== true &&
+    String(currentSession?.email || '').trim().toLowerCase() === 'admin@mfcyouth.local' &&
+    String(currentSession?.role || '').trim().toLowerCase() === 'area_servant'
+  );
+}
+
+function isCloudAuthenticatedSession(currentSession) {
+  return Boolean(
+    currentSession?.backendAuth === true &&
+    currentSession?.demo !== true &&
+    currentSession?.accessToken
   );
 }
 
@@ -147,10 +163,25 @@ function eventCard(event, registration, timing) {
   `;
 }
 
-const session = getSession();
+let session = getSession();
+
+// Member Portal access is cloud-authenticated only. The built-in demo
+// administrator may still use explicit Member View Preview mode, but old
+// browser-created member accounts are never accepted as portal credentials.
+if (
+  session &&
+  !isCloudAuthenticatedSession(session) &&
+  !isBuiltInDemoSession(session)
+) {
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  session = null;
+}
+
 const previewMode = Boolean(
   session &&
   session.role !== 'member' &&
+  (isCloudAuthenticatedSession(session) || isBuiltInDemoSession(session)) &&
   new URLSearchParams(window.location.search).get('preview') === '1'
 );
 
@@ -308,17 +339,16 @@ if (!session) {
   );
   const member = linkedMember || (previewMode ? previewMemberFromSession(session) : null);
 
-  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
-  const account = Array.isArray(users)
-    ? users.find(item => String(item.id) === String(session.userId))
-    : null;
+  const validMemberCloudSession = Boolean(
+    session?.role === 'member' &&
+    isCloudAuthenticatedSession(session)
+  );
 
   if (
     !previewMode &&
     (
       !member ||
-      (!session.backendAuth && !account) ||
-      account?.isActive === false ||
+      !validMemberCloudSession ||
       String(member?.status || 'Active') === 'Inactive'
     )
   ) {

@@ -60,3 +60,8 @@ Production secrets belong in the Vercel project's Environment Variables, not in 
 Authenticated cloud cache data is isolated by both Area and account instead of using one shared browser database key. The application uses a key derived from the authenticated Area ID and Supabase/user identity. Explicit logout and account deletion clear the current cloud cache before the session is removed. The original `mfc_web_database_v1` key is reserved for demo/browser fallback mode only.
 
 This prevents cached Area A data from being rendered for Area B or another signed-in account on a shared browser while a cloud refresh is pending.
+
+## Production vs Demo Authentication
+
+The normal sign-in form is cloud-only and uses the backend/Supabase authentication path. The obsolete `mfc_demo_users` browser credential registry is not trusted and is removed by the updated frontend. Legacy browser-only sessions are rejected. Demo mode is entered explicitly through the Demo button and remains isolated from authenticated cloud APIs and scoped live Area data.
+

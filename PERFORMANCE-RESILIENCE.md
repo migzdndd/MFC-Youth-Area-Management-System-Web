@@ -37,3 +37,8 @@ Real `.env.local` files are intentionally excluded from distribution. Configure 
 Immediate cached rendering is preserved, but authenticated cloud sessions now render only from an Area/account-scoped cache. Network synchronization still runs in the background, so this keeps the fast page-switching behavior without showing another account's previous cache.
 
 A cloud cache is cleared on explicit logout/account removal. The legacy global cache remains available only to demo mode.
+
+## Authentication Failure Behavior
+
+A failed cloud sign-in now fails closed instead of falling back to browser-stored prototype credentials. Explicit Demo mode remains available independently and does not gain cloud privileges.
+

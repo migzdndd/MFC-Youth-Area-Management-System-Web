@@ -63,3 +63,12 @@ If the registration email matches an existing Member record, the account is link
 - The management dashboard and Member Portal use the same scoped-cache rule.
 - Explicit logout and account deletion clear the current cloud cache.
 - Legacy `mfc_web_database_v1` data remains demo-only and is not migrated into authenticated cloud scopes.
+
+## Part 4 — Production Auth Isolation
+
+- Production email/password login is now Supabase/backend-only.
+- Removed browser-account fallback after failed cloud login.
+- Legacy `mfc_demo_users` credentials are no longer accepted.
+- Demo access is explicit and isolated through the Demo button.
+- Member Portal requires a real cloud-authenticated Member session.
+
