@@ -1,33 +1,21 @@
 # Security Notes
 
-## Never commit or package secrets
+## Database transport
+- Production Supabase connections are accepted only over HTTPS.
+- Backend requests to Supabase use a 10-second timeout, no-store caching, and refuse redirects.
+- Vercel sends HSTS and related transport/security headers.
+- `SUPABASE_SECRET_KEY` must exist only in the Backend Vercel project. Never expose it to Frontend JavaScript.
 
-Use `Backend/.env.example` only as a template. Real values belong in local environment files and Vercel Environment Variables.
+## SQL injection protection
+The application does not construct raw SQL from request input. Backend CRUD uses `@supabase/supabase-js` / PostgREST query methods (`.eq`, `.insert`, `.update`, etc.), which transmit values as structured request parameters rather than interpolating them into SQL strings. Inputs are also normalized/validated before use.
 
-The repository `.gitignore` and `scripts/package-source.ps1` exclude `.env` and `.env.*` files (except `.env.example`). Always create distributable ZIPs with the safe packaging script.
+Do not add endpoints that concatenate user input into SQL or PostgREST filter expressions. If raw SQL is introduced later, it must use parameterized queries only.
 
-## Required production secrets
+## Database access
+Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scripts. It revokes direct table privileges from `anon` and `authenticated`, keeps RLS enforced, and grants server-side access to `service_role`.
 
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SECRET_KEY` (server only)
-- `ADMIN_REGISTRATION_CODE` (server only)
-
-Never expose `SUPABASE_SECRET_KEY` or `ADMIN_REGISTRATION_CODE` in frontend JavaScript, static HTML, logs, screenshots, support messages, or source archives.
-
-## Rotation procedure after accidental exposure
-
-1. Rotate/revoke the exposed Supabase secret/service credential in Supabase.
-2. Update the backend's Vercel Environment Variable.
-3. Generate a new administrator registration code and update `ADMIN_REGISTRATION_CODE` in Vercel.
-4. Redeploy the backend.
-5. Verify `/api/health` and sign-in with the new configuration.
-6. Invalidate old artifacts/ZIPs containing the previous values.
-
-## Database migrations
-
-Run migrations in numeric order. Migration `006_admin_registration_rate_limit.sql` is required for database-backed admin-registration and login-failure protection.
-
-## CSP-compatible UI actions
-
-The frontend intentionally keeps a strict JavaScript Content-Security-Policy without `script-src 'unsafe-inline'`. Dynamic controls must use external-script event listeners or the `data-app-action` delegation pattern in `Frontend/js/app.js`; do not reintroduce inline `onclick`, `onchange`, or similar executable attributes.
+## Area and role isolation
+- All cloud module endpoints authenticate the Supabase access token on the Backend.
+- Queries are scoped by `profiles.area_id`; Chapter Servants are additionally constrained to their assigned Chapter where applicable.
+- Regular Members receive only their own member-linked service/GIG/participant data while Area events remain visible to the Member Portal.
+- Run `Backend/supabase/005_cloud_modules.sql` after migrations 001-004 on an existing project.

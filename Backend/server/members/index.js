@@ -10,7 +10,6 @@ import {
   isValidEmail,
   apiError
 } from '../_lib/http.js';
-import { ensureMemberAuthAccount, sendPasswordSetupEmail } from '../_lib/account-provision.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -74,34 +73,7 @@ async function listMembers(req, res) {
   const { data, error } = await query;
   if (error) throw error;
 
-  const members = data || [];
-  const memberIds = members.map(member => member.id).filter(Boolean);
-  const accountByMemberId = new Map();
-
-  if (memberIds.length) {
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('member_id, role, is_active, must_change_password')
-      .in('member_id', memberIds);
-    if (profilesError) throw profilesError;
-
-    (profiles || []).forEach(account => {
-      if (account.member_id) accountByMemberId.set(String(account.member_id), account);
-    });
-  }
-
-  const hydratedMembers = members.map(member => {
-    const account = accountByMemberId.get(String(member.id)) || null;
-    return {
-      ...member,
-      account_provisioned: Boolean(account),
-      account_active: account ? account.is_active !== false : false,
-      account_role: account?.role || null,
-      account_setup_required: account?.must_change_password === true
-    };
-  });
-
-  return sendJson(res, 200, { ok: true, members: hydratedMembers });
+  return sendJson(res, 200, { ok: true, members: data || [] });
 }
 
 async function createMember(req, res) {
@@ -124,9 +96,7 @@ async function createMember(req, res) {
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
-  if (!isValidEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid email address is required.' });
-  }
+  if (!isValidEmail(email)) return sendJson(res, 400, { ok: false, error: 'A valid email is required.' });
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
   let accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
@@ -153,113 +123,35 @@ async function createMember(req, res) {
   const { data: existingMember, error: existingError } = await supabase
     .from('members')
     .select('id')
-    .eq('email', email)
+    .ilike('email', email)
     .maybeSingle();
   if (existingError) throw existingError;
   if (existingMember) {
     return sendJson(res, 409, { ok: false, error: 'A member with that email already exists.' });
   }
 
-  let createdMember = null;
-  let createdAuthUserId = null;
+  const { data: createdMember, error: memberError } = await supabase
+    .from('members')
+    .insert({
+      area_id: areaId,
+      chapter_id: chapterId,
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      birth_date: birthDate,
+      contact_number: contactNumber,
+      email,
+      address,
+      status,
+      first_attended_youth_camp: firstAttendedYouthCamp,
+      access_level: accessLevel,
+      created_by: user.id
+    })
+    .select('*')
+    .single();
+  if (memberError) throw memberError;
 
-  try {
-    const { data: member, error: memberError } = await supabase
-      .from('members')
-      .insert({
-        area_id: areaId,
-        chapter_id: chapterId,
-        first_name: firstName,
-        middle_name: middleName,
-        last_name: lastName,
-        birth_date: birthDate,
-        contact_number: contactNumber,
-        email,
-        address,
-        status,
-        first_attended_youth_camp: firstAttendedYouthCamp,
-        access_level: accessLevel,
-        created_by: user.id
-      })
-      .select('*')
-      .single();
-
-    if (memberError) throw memberError;
-    createdMember = member;
-
-    // A normal Member record does not require a login account or password.
-    // Leadership access is provisioned only when an elevated access level is
-    // intentionally assigned by an authorized administrator.
-    if (accessLevel === 'member') {
-      return sendJson(res, 201, {
-        ok: true,
-        member: createdMember,
-        account: {
-          provisioned: false,
-          email,
-          role: 'member',
-          passwordRequired: false,
-          setupEmailSent: false,
-          onboardingMethod: 'none'
-        },
-        message: 'Member added. No login account or password is required.'
-      });
-    }
-
-    const provisioned = await ensureMemberAuthAccount({
-      supabase,
-      member: createdMember,
-      role: accessLevel,
-      requirePasswordSetup: true
-    });
-    createdAuthUserId = provisioned.createdAccount ? provisioned.authUserId : null;
-
-    let setupEmailSent = false;
-    let onboardingWarning = '';
-    if (status !== 'Inactive') {
-      try {
-        await sendPasswordSetupEmail(req, email);
-        setupEmailSent = true;
-      } catch {
-        onboardingWarning = 'Servant Leader account created, but the password setup email could not be sent. Use Members → Access to resend it.';
-      }
-    }
-
-    return sendJson(res, 201, {
-      ok: true,
-      member: createdMember,
-      account: {
-        provisioned: true,
-        email,
-        setupEmailSent,
-        mustChangePassword: true,
-        passwordRequired: true,
-        role: accessLevel,
-        onboardingMethod: 'admin_password_setup'
-      },
-      message: setupEmailSent
-        ? 'Member added and Servant Leader account created. A secure password setup link was sent to the Member email.'
-        : (onboardingWarning || 'Member added and Servant Leader account created.')
-    });
-  } catch (error) {
-    // If leadership account provisioning failed after creating the Member,
-    // remove both parts so the UI does not report a partially-created account.
-    if (createdAuthUserId) {
-      try {
-        await supabase.auth.admin.deleteUser(createdAuthUserId);
-      } catch (cleanupError) {
-        console.error('Auth cleanup after Member creation failure failed:', cleanupError);
-      }
-    }
-    if (createdMember?.id) {
-      try {
-        await supabase.from('members').delete().eq('id', createdMember.id);
-      } catch (cleanupError) {
-        console.error('Member cleanup after creation failure failed:', cleanupError);
-      }
-    }
-    throw error;
-  }
+  return sendJson(res, 201, { ok: true, member: createdMember });
 }
 
 async function updateMember(req, res) {
@@ -292,7 +184,7 @@ async function updateMember(req, res) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
   }
   if (!isValidEmail(email)) {
-    return sendJson(res, 400, { ok: false, error: 'A valid email address is required.' });
+    return sendJson(res, 400, { ok: false, error: 'A valid email is required.' });
   }
   if (accessLevel === 'chapter_servant' && !chapterId) {
     return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });
@@ -303,252 +195,62 @@ async function updateMember(req, res) {
   const { data: duplicate, error: duplicateError } = await supabase
     .from('members')
     .select('id')
-    .eq('email', email)
+    .ilike('email', email)
     .neq('id', memberId)
     .maybeSingle();
   if (duplicateError) throw duplicateError;
   if (duplicate) return sendJson(res, 409, { ok: false, error: 'Another member already uses that email address.' });
 
+  const { data: updated, error: updateError } = await supabase
+    .from('members')
+    .update({
+      chapter_id: chapterId,
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      birth_date: birthDate,
+      contact_number: contactNumber,
+      email,
+      address,
+      status,
+      first_attended_youth_camp: firstAttendedYouthCamp,
+      access_level: accessLevel
+    })
+    .eq('id', memberId)
+    .eq('area_id', profile.area_id)
+    .select('*')
+    .single();
+  if (updateError) throw updateError;
+
   const { data: linkedProfile, error: linkedProfileError } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id')
     .eq('member_id', memberId)
     .maybeSingle();
   if (linkedProfileError) throw linkedProfileError;
 
-  if (
-    linkedProfile?.area_id &&
-    String(linkedProfile.area_id) !== String(profile.area_id)
-  ) {
-    return sendJson(res, 409, {
-      ok: false,
-      error: 'The linked login account belongs to another Area. No changes were made.'
-    });
-  }
-
-  const memberUpdate = {
-    chapter_id: chapterId,
-    first_name: firstName,
-    middle_name: middleName,
-    last_name: lastName,
-    birth_date: birthDate,
-    contact_number: contactNumber,
-    email,
-    address,
-    status,
-    first_attended_youth_camp: firstAttendedYouthCamp,
-    access_level: accessLevel
-  };
-
-  let updated = null;
-  let account = null;
-
   if (linkedProfile?.id) {
-    // Keep the Auth user, profile and Member row consistent. Auth is updated
-    // first so duplicate-email errors happen before any database mutation.
-    const { data: authSnapshotData, error: authSnapshotError } = await supabase.auth.admin.getUserById(linkedProfile.id);
-    if (authSnapshotError || !authSnapshotData?.user) {
-      throw authSnapshotError || new Error('Unable to load the linked login account before updating this Member.');
-    }
-
-    const authSnapshot = authSnapshotData.user;
-    let authUpdated = false;
-    let profileUpdated = false;
-    let memberUpdated = false;
-
-    try {
-      const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, {
-        email,
-        email_confirm: true,
-        user_metadata: {
-          ...(authSnapshot.user_metadata || {}),
-          display_name: [firstName, middleName, lastName].filter(Boolean).join(' '),
-          requested_role: accessLevel
-        }
-      });
-      if (authUpdateError) throw authUpdateError;
-      authUpdated = true;
-
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({
-          role: accessLevel,
-          area_id: profile.area_id,
-          chapter_id: chapterId,
-          is_active: status !== 'Inactive',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', linkedProfile.id);
-      if (profileUpdateError) throw profileUpdateError;
-      profileUpdated = true;
-
-      const { data: memberRow, error: updateError } = await supabase
-        .from('members')
-        .update(memberUpdate)
-        .eq('id', memberId)
-        .eq('area_id', profile.area_id)
-        .select('*')
-        .single();
-      if (updateError) throw updateError;
-      memberUpdated = true;
-      updated = memberRow;
-
-      account = {
-        provisioned: true,
-        email,
+    const { error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({
         role: accessLevel,
-        existingAccount: true,
-        setupEmailSent: false,
-        mustChangePassword: linkedProfile.must_change_password === true,
-        passwordRequired: true
-      };
-    } catch (error) {
-      // Best-effort compensation. Preserve the original failure while restoring
-      // any earlier mutation in reverse order.
-      if (memberUpdated) {
-        try {
-          await supabase
-            .from('members')
-            .update({
-              chapter_id: existing.chapter_id || null,
-              first_name: existing.first_name,
-              middle_name: existing.middle_name || null,
-              last_name: existing.last_name,
-              birth_date: existing.birth_date || null,
-              contact_number: existing.contact_number || null,
-              email: existing.email,
-              address: existing.address || null,
-              status: existing.status,
-              first_attended_youth_camp: existing.first_attended_youth_camp || null,
-              access_level: existing.access_level
-            })
-            .eq('id', memberId)
-            .eq('area_id', profile.area_id);
-        } catch (rollbackError) {
-          console.error('Member rollback failed:', rollbackError);
-        }
+        chapter_id: chapterId,
+        is_active: status !== 'Inactive'
+      })
+      .eq('id', linkedProfile.id);
+    if (profileUpdateError) throw profileUpdateError;
+
+    const authChanges = {
+      email,
+      user_metadata: {
+        display_name: [firstName, middleName, lastName].filter(Boolean).join(' ')
       }
-
-      if (profileUpdated) {
-        try {
-          await supabase
-            .from('profiles')
-            .update({
-              member_id: linkedProfile.member_id || null,
-              role: linkedProfile.role,
-              area_id: linkedProfile.area_id || null,
-              chapter_id: linkedProfile.chapter_id || null,
-              must_change_password: linkedProfile.must_change_password === true,
-              is_active: linkedProfile.is_active !== false,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', linkedProfile.id);
-        } catch (rollbackError) {
-          console.error('Profile rollback failed:', rollbackError);
-        }
-      }
-
-      if (authUpdated) {
-        try {
-          await supabase.auth.admin.updateUserById(linkedProfile.id, {
-            email: authSnapshot.email,
-            email_confirm: true,
-            user_metadata: authSnapshot.user_metadata || {}
-          });
-        } catch (rollbackError) {
-          console.error('Auth rollback failed:', rollbackError);
-        }
-      }
-
-      throw error;
-    }
-  } else {
-    // No login account exists yet. Update the Member first, then provision only
-    // if an elevated role was requested. If provisioning fails, restore the
-    // original Member row so role/account state does not diverge.
-    const { data: memberRow, error: updateError } = await supabase
-      .from('members')
-      .update(memberUpdate)
-      .eq('id', memberId)
-      .eq('area_id', profile.area_id)
-      .select('*')
-      .single();
-    if (updateError) throw updateError;
-    updated = memberRow;
-
-    if (accessLevel !== 'member') {
-      try {
-        const provisioned = await ensureMemberAuthAccount({
-          supabase,
-          member: updated,
-          role: accessLevel,
-          requirePasswordSetup: true
-        });
-
-        let setupEmailSent = false;
-        try {
-          if (status !== 'Inactive') {
-            await sendPasswordSetupEmail(req, email);
-            setupEmailSent = true;
-          }
-        } catch {
-          // The account itself remains valid; Members → Access can resend the link.
-        }
-
-        account = {
-          provisioned: true,
-          email,
-          role: accessLevel,
-          existingAccount: !provisioned.createdAccount,
-          setupEmailSent,
-          mustChangePassword: true,
-          passwordRequired: true,
-          onboardingMethod: 'admin_password_setup'
-        };
-      } catch (error) {
-        try {
-          await supabase
-            .from('members')
-            .update({
-              chapter_id: existing.chapter_id || null,
-              first_name: existing.first_name,
-              middle_name: existing.middle_name || null,
-              last_name: existing.last_name,
-              birth_date: existing.birth_date || null,
-              contact_number: existing.contact_number || null,
-              email: existing.email,
-              address: existing.address || null,
-              status: existing.status,
-              first_attended_youth_camp: existing.first_attended_youth_camp || null,
-              access_level: existing.access_level
-            })
-            .eq('id', memberId)
-            .eq('area_id', profile.area_id);
-        } catch (rollbackError) {
-          console.error('Member rollback after provisioning failure failed:', rollbackError);
-        }
-        throw error;
-      }
-    } else {
-      account = {
-        provisioned: false,
-        email,
-        role: 'member',
-        setupEmailSent: false,
-        passwordRequired: false,
-        onboardingMethod: 'none'
-      };
-    }
+    };
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, authChanges);
+    if (authUpdateError) throw authUpdateError;
   }
 
-  return sendJson(res, 200, {
-    ok: true,
-    member: updated,
-    account,
-    message: account?.setupEmailSent
-      ? 'Member updated and Servant Leader account setup email sent.'
-      : 'Member updated.'
-  });
+  return sendJson(res, 200, { ok: true, member: updated });
 }
 
 async function deleteMember(req, res) {
@@ -589,10 +291,13 @@ async function deleteMember(req, res) {
     });
   }
 
-  // Delete the Member first. This transactionally cascades profile/member
-  // dependent rows in Postgres. If the database delete fails, the login account
-  // remains untouched. The Auth user is removed only after the data delete has
-  // succeeded, avoiding an inaccessible orphaned Member record.
+  if (linkedProfile?.id) {
+    return sendJson(res, 409, {
+      ok: false,
+      error: 'This Member is linked to a portal account. Delete the account explicitly before deleting the Member record.'
+    });
+  }
+
   const { error: memberDeleteError } = await supabase
     .from('members')
     .delete()
@@ -600,38 +305,11 @@ async function deleteMember(req, res) {
     .eq('area_id', profile.area_id);
   if (memberDeleteError) throw memberDeleteError;
 
-  let deletedAuthUser = !linkedProfile?.id;
-  let authCleanupPending = false;
-
-  if (linkedProfile?.id) {
-    // Retry once for a transient Auth Admin failure. If both attempts fail, the
-    // remaining Auth user has no profile and therefore cannot enter the app;
-    // a later account provision with the same email can safely reclaim it.
-    let authDeleteError = null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const result = await supabase.auth.admin.deleteUser(linkedProfile.id);
-      authDeleteError = result?.error || null;
-      if (!authDeleteError) {
-        deletedAuthUser = true;
-        break;
-      }
-    }
-
-    if (!deletedAuthUser) {
-      authCleanupPending = true;
-      console.error('Member deleted but Auth user cleanup failed:', authDeleteError);
-    }
-  }
-
   return sendJson(res, 200, {
     ok: true,
     deleted: true,
-    deletedAuthUser,
-    authCleanupPending,
-    memberId,
-    ...(authCleanupPending
-      ? { warning: 'Member data was deleted, but final login-account cleanup is pending. The leftover Auth user cannot access protected app data because its profile was removed.' }
-      : {})
+    deletedAuthUser: false,
+    memberId
   });
 }
 

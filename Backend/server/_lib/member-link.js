@@ -105,8 +105,7 @@ export async function ensureLeadershipMemberRecord({
     };
   }
 
-  // If the profile is already linked, keep both the member row and profile
-  // synchronized. Roll the member back if the profile update unexpectedly fails.
+  // If the profile is already linked, keep the member row synchronized.
   if (profile?.member_id) {
     const { data: existingLinkedMember, error: linkedError } = await supabase
       .from('members')
@@ -118,10 +117,10 @@ export async function ensureLeadershipMemberRecord({
     if (existingLinkedMember) {
       const updates = {
         area_id: targetAreaId,
-        chapter_id: targetChapterId,
         access_level: role,
         status: profile.is_active === false ? 'Inactive' : 'Active'
       };
+      if (targetChapterId) updates.chapter_id = targetChapterId;
 
       const { data: updatedMember, error: memberUpdateError } = await supabase
         .from('members')
@@ -131,42 +130,12 @@ export async function ensureLeadershipMemberRecord({
         .single();
       if (memberUpdateError) throw memberUpdateError;
 
-      try {
-        const { data: updatedProfile, error: profileUpdateError } = await supabase
-          .from('profiles')
-          .update({
-            area_id: targetAreaId,
-            chapter_id: targetChapterId,
-            member_id: updatedMember.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', profile.id)
-          .select('*')
-          .single();
-        if (profileUpdateError) throw profileUpdateError;
-
-        return {
-          profile: updatedProfile,
-          member: updatedMember,
-          created: false,
-          linkedExisting: false
-        };
-      } catch (error) {
-        try {
-          await supabase
-            .from('members')
-            .update({
-              area_id: existingLinkedMember.area_id,
-              chapter_id: existingLinkedMember.chapter_id || null,
-              access_level: existingLinkedMember.access_level,
-              status: existingLinkedMember.status
-            })
-            .eq('id', existingLinkedMember.id);
-        } catch (rollbackError) {
-          console.error('Linked Member rollback failed:', rollbackError);
-        }
-        throw error;
-      }
+      return {
+        profile: { ...profile, area_id: targetAreaId, member_id: updatedMember.id },
+        member: updatedMember,
+        created: false,
+        linkedExisting: false
+      };
     }
   }
 
@@ -180,7 +149,7 @@ export async function ensureLeadershipMemberRecord({
   const { data: existingMember, error: existingMemberError } = await supabase
     .from('members')
     .select('*')
-    .eq('email', email)
+    .ilike('email', email)
     .maybeSingle();
   if (existingMemberError) throw existingMemberError;
 
@@ -209,10 +178,10 @@ export async function ensureLeadershipMemberRecord({
     }
 
     const memberUpdates = {
-      chapter_id: targetChapterId,
       access_level: role,
       status: profile.is_active === false ? 'Inactive' : 'Active'
     };
+    if (targetChapterId) memberUpdates.chapter_id = targetChapterId;
 
     const { data: updatedMember, error: memberUpdateError } = await supabase
       .from('members')
@@ -222,41 +191,26 @@ export async function ensureLeadershipMemberRecord({
       .single();
     if (memberUpdateError) throw memberUpdateError;
 
-    try {
-      const { data: updatedProfile, error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({
-          member_id: updatedMember.id,
-          area_id: targetAreaId,
-          chapter_id: targetChapterId,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', profile.id)
-        .select('*')
-        .single();
-      if (profileUpdateError) throw profileUpdateError;
+    const profileUpdates = {
+      member_id: updatedMember.id,
+      area_id: targetAreaId
+    };
+    if (targetChapterId) profileUpdates.chapter_id = targetChapterId;
 
-      return {
-        profile: updatedProfile,
-        member: updatedMember,
-        created: false,
-        linkedExisting: true
-      };
-    } catch (error) {
-      try {
-        await supabase
-          .from('members')
-          .update({
-            chapter_id: existingMember.chapter_id || null,
-            access_level: existingMember.access_level,
-            status: existingMember.status
-          })
-          .eq('id', existingMember.id);
-      } catch (rollbackError) {
-        console.error('Existing Member rollback failed:', rollbackError);
-      }
-      throw error;
-    }
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update(profileUpdates)
+      .eq('id', profile.id)
+      .select('*')
+      .single();
+    if (profileUpdateError) throw profileUpdateError;
+
+    return {
+      profile: updatedProfile,
+      member: updatedMember,
+      created: false,
+      linkedExisting: true
+    };
   }
 
   const displayName = user?.user_metadata?.display_name || user?.user_metadata?.full_name || '';

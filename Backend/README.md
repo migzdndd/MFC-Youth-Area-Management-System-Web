@@ -1,8 +1,6 @@
-# Backend — Admin-Provisioned Accounts + Supabase Cloud Data
+# Backend Phase 6.6 — Supabase Cloud Data Modules
 
-The Backend is the production source of truth for authentication, Area scoping, Members, Chapters, Services, Events, Event Participants, Activity Reports, GIG, and dashboard synchronization.
-
-The current account policy intentionally separates a **Member record** from a **login account**.
+The backend is now the production source of truth for Auth, Areas, Members, Chapters, Services, Events, Event Participants, Activity Reports and GIG. The browser keeps only a fast UI cache/demo fallback.
 
 ## Architecture
 
@@ -10,207 +8,140 @@ The current account policy intentionally separates a **Member record** from a **
 Web Frontend (Vercel)
         |
         v
-Frontend /api/* rewrite
+Frontend /api/* proxy routes
         |
         v
-Backend/api/router.js
-        |
-        v
-Backend/server/* handlers
+Backend/api/* backend implementation
         |
         +--> Supabase Auth
         |
         +--> PostgreSQL (Supabase)
 ```
 
-The future WinForms client should use the same Backend API so authentication, role permissions, Area isolation, and synchronization rules stay centralized.
+The future WinForms desktop app should use the same API instead of talking directly to the cloud database. That keeps RBAC and Area/Chapter authorization in one place.
 
-## Current API routes
 
-```text
-GET    /api/health
+## Project layout
 
-POST   /api/auth/login
-POST   /api/auth/refresh
-POST   /api/auth/admin-register
-GET    /api/auth/me
-POST   /api/auth/change-password
-DELETE /api/auth/account
-
-GET    /api/areas
-POST   /api/areas
-POST   /api/areas/select
-
-GET    /api/members
-POST   /api/members
-PATCH  /api/members
-DELETE /api/members
-POST   /api/members/login
-
-GET/POST/PATCH/DELETE /api/chapters
-POST                  /api/chapters/assign-members
-GET/PATCH             /api/services
-GET/POST/PATCH/DELETE /api/events
-GET/POST/PATCH/DELETE /api/participants
-GET/POST/PATCH/DELETE /api/reports
-GET/POST/DELETE       /api/gig
-
-GET /api/sync
-```
-
-`POST /api/members/login` is retained as the existing account-management endpoint name. It now creates/links account access for the selected Member and sends a secure password setup/reset email.
-
-`GET /api/sync` is the optimized protected-page bootstrap endpoint. It now returns authoritative profile scope, complete scoped Member records with account state, Chapters, Services/assignments, Events/Participants, Reports, GIG, and Dashboard totals in one response. This replaces the older startup sequence that separately called `/api/auth/me`, `/api/members`, and `/api/sync`.
-
-## Account policy
-
-### Regular Member
-
-A regular Member record:
-
-- requires an email in the current Member form,
-- does **not** automatically require a Supabase Auth login,
-- does **not** require a password simply to exist in the database.
-
-If Portal access is wanted, an authorized Super Admin uses the state-aware Member login action (**Enable Login / Resend Setup / Reset Login / Manage Login**). The Backend creates or links the Supabase Auth user and sends a secure password setup email to the Member's stored email address.
-
-### Servant Leader / Admin
-
-Leadership account creation is Admin-controlled.
-
-Preferred flow:
-
-1. Create or open the Member record.
-2. Set the Member's **System Access Level** to the approved leadership role.
-3. The Backend creates/links the account using that Member email.
-4. The system sends a secure password setup link.
-5. The Servant Leader chooses their own password.
-
-The same setup/reset email can be resent through **Members → Access**.
-
-No temporary password is exposed to the administrator.
-
-### Initial/bootstrap management account
-
-The existing **Register an Admin Account** form remains as a controlled bootstrap path so a new deployment is not locked out before the first management account exists.
-
-It uses:
-
-- Full Name
-- Email Address
-- System Access Level
-- Administrator Registration Code
-- Account Password
-- Confirm Account Password
-
-If the submitted email already matches a Member record, the new profile is linked to that Member and inherits its Area/Chapter relationship where applicable.
-
-## Roles
+The backend and frontend are now separated as sibling projects in the repository:
 
 ```text
-couple_coordinator
-area_servant
-lit_servant
-chapter_servant
-member
+Web-Source/
+├── Backend/
+│   ├── api/          # Real server-side implementation
+│   ├── supabase/     # PostgreSQL schema and seed SQL
+│   ├── .env.example
+│   └── README.md
+└── Frontend/
+    ├── api/          # Lightweight proxy routes only
+    ├── css/
+    ├── js/
+    └── *.html
 ```
 
-Super Admin roles:
+The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). Each Frontend `api/` route proxies to the separately deployed Backend through `BACKEND_URL`. Backend business logic remains only in `Backend/api/`.
 
-```text
-couple_coordinator
-area_servant
-lit_servant
-```
+## What is included
 
-Chapter Servants remain restricted to their assigned Chapter where applicable.
+- Supabase/PostgreSQL schema for Areas, Chapters, Members, Profiles, Services, Events, Participants, Activity Reports and GIG.
+- Server-only Supabase service-role client.
+- `GET /api/health`
+- `POST /api/auth/login`
+- `POST /api/auth/admin-register`
+- `GET /api/areas`
+- `POST /api/areas`
+- `POST /api/areas/select`
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
+- `GET/POST/PATCH/DELETE /api/members`
+- `GET/POST/PATCH/DELETE /api/chapters`
+- `POST /api/chapters/assign-members`
+- `GET/PATCH /api/services`
+- `GET/POST/PATCH/DELETE /api/events`
+- `GET/POST/PATCH/DELETE /api/participants`
+- `GET/POST/PATCH/DELETE /api/reports`
+- `GET/POST/DELETE /api/gig`
+- `GET /api/sync` for one-request Area data + dashboard analytics hydration
+- Member creation creates only the organizational Member record. Optional portal access is claimed separately by the Member.
+- `POST /api/auth/member-claim` creates a self-chosen portal account after matching the verified email to an existing Member record.
+- Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
+- Super Admin roles remain Couple Coordinator/s, Area Servant and LIT Servant.
+- RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
 
-## Supabase migrations
+## Setup
 
-For a new project, run:
+1. Create a Supabase project.
+2. Open Supabase SQL Editor and run `Backend/supabase/001_initial_schema.sql`.
+3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the Area seed values.
+4. Run `Backend/supabase/003_security_hardening.sql`, `004_servant_leader_password_policy.sql`, and `005_cloud_modules.sql` in order on an existing project.
+5. In Vercel Project Settings -> Environment Variables, add:
+   - `SUPABASE_URL`
+   - `SUPABASE_PUBLISHABLE_KEY`
+   - `SUPABASE_SECRET_KEY`
+   - `ADMIN_REGISTRATION_CODE` (set this privately to the approved Servant Leader registration password)
+6. Redeploy.
+7. Visit `/api/health`. It should report `configured: true`.
 
-```text
-Backend/supabase/001_initial_schema.sql
-Backend/supabase/002_seed_reference_data.sql
-Backend/supabase/003_security_hardening.sql
-Backend/supabase/004_servant_leader_password_policy.sql
-Backend/supabase/005_cloud_modules.sql
-Backend/supabase/006_admin_registration_rate_limit.sql
-```
+## First management / Servant Leader account
 
-For an existing project already through migration `004`, run `005` if needed and then run `006_admin_registration_rate_limit.sql` to enable persistent Administrator Registration Code throttling.
+Use the **First-Time Access** page in the Frontend and the **Register an Admin Account** card. The backend verifies `ADMIN_REGISTRATION_CODE`, creates a Supabase Auth user + `profiles` record, signs the new user in, and requires Area selection before normal management access.
 
-## Environment variables
+If the user's Area already exists, choose it. If not, **Create Area-Based Account** creates a row in `public.areas`, seeds the standard Services for that Area, and links the new profile to it.
 
-Configure in the Backend Vercel project:
+The registration code must remain only in `Backend/.env.local` and Vercel Backend Environment Variables. Never hardcode it in Frontend files.
 
-```text
-SUPABASE_URL
-SUPABASE_PUBLISHABLE_KEY
-SUPABASE_SECRET_KEY
-ADMIN_REGISTRATION_CODE
-FRONTEND_URL
-```
+## Migration strategy
 
-`FRONTEND_URL` is used for secure password setup/reset links and should point to the deployed Frontend origin.
+Do not switch every page at once. Recommended order:
 
-Never expose `SUPABASE_SECRET_KEY`, SMTP credentials, Google App Passwords, or `ADMIN_REGISTRATION_CODE` in browser JavaScript.
+1. Backend foundation (this phase).
+2. Real login/session + first admin bootstrap.
+3. Members / Chapters / Services.
+4. Events / Event Participants.
+5. Activity Reports / GIG.
+6. Dashboard / Analytics queries.
+7. One-time localStorage data importer.
+8. Remove production localStorage writes.
+9. Add desktop sync endpoints.
 
-## Supabase Auth configuration
+## Security rule
 
-Allow the password setup destination in **Authentication → URL Configuration → Redirect URLs**:
+Never put `SUPABASE_SECRET_KEY` in HTML or browser JavaScript. It belongs only in Vercel Environment Variables and server-side functions in `Backend/api`.
 
-```text
-${FRONTEND_URL}/change-password
-```
 
-Password setup/reset emails use Supabase Auth's recovery flow.
+## Registration diagnostics
 
-Custom SMTP may still be used for reliable production delivery of password setup/reset emails.
+`GET /api/health` now performs a real Supabase database request instead of only checking whether environment variables are non-empty.
 
-## Existing Member promotion
+A healthy response must include:
 
-Editing a Member's **System Access Level** to a leadership role can provision the leadership account without changing the Member form structure.
+- `"ok": true`
+- `"databaseConnected": true`
 
-If a matching account already exists, the profile is linked/updated rather than creating a duplicate account.
+Admin registration errors also return a safe `code` and `stage` when a backend step fails, without exposing secret keys.
 
-## Area and Member linking
+## Environment-file safety
 
-- `profiles.member_id` links login identity to the corresponding Member record.
-- `profiles.area_id` and `profiles.chapter_id` drive authorization.
-- `members.access_level` mirrors the approved application role.
-- `GET /api/auth/me` continues to repair older leadership accounts that have an Area but do not yet have a linked Member record.
+- `Backend/.env.local` is local-only and must never be committed, uploaded in source ZIPs, or shared.
+- Copy the Supabase Project URL directly from the Supabase **Connect** dialog into `SUPABASE_URL`.
+- Environment values are trimmed by the backend so accidental leading/trailing spaces do not cause misleading connection errors.
+- `/api/health` reports only the sanitized Supabase host, never API keys or secrets.
 
-## Security
+## Leadership account ↔ member linking
 
-- The browser never receives the Supabase secret key.
-- Cloud module operations require an authenticated Backend session.
-- User access tokens are validated through the normal Supabase Auth client; the privileged Backend client is reserved for profile/data operations.
-- Expired access tokens can be renewed through `POST /api/auth/refresh` using the stored refresh token, and authenticated frontend requests retry once after a successful refresh.
-- Accounts marked `must_change_password = true` are blocked from protected Area-data routes until password setup succeeds.
-- Administrator Registration Code failures are persistently rate-limited after migration 006.
-- Queries are scoped server-side by Area and role.
-- RLS remains enabled.
-- Raw user input is not concatenated into SQL.
-- Regular Member records are not automatically turned into login accounts.
-- Only authorized Admin roles can manage account access from the Members dashboard.
-- Real environment files must not be included in source ZIPs.
+Servant Leader registration creates the Supabase Auth user and `public.profiles` row first.
+Because `public.members.area_id` is required, the corresponding `public.members` row is
+created (or an existing same-email member is linked) when the leader selects or creates
+their Area. `GET /api/auth/me` also repairs older leadership profiles that already have
+an Area but still have `member_id = NULL`.
 
-## Deployment check
 
-After deploying:
+## Password provisioning policy
 
-1. Visit `/api/health`.
-2. Confirm the response reports `ok: true`, `databaseConnected: true`, and `schemaReady: true`.
-3. Sign in with an existing management account.
-4. Add a normal Member and confirm no login account/password is required.
-5. Promote a test Member to a leadership role and confirm a password setup email is sent.
-6. Use **Members → Access** to resend/refresh account setup.
-7. Confirm the user can choose a password and sign in.
-8. Verify Area/Chapter restrictions still apply.
-9. Verify an expired access token refreshes automatically in both the management dashboard and Member Portal.
-10. Verify a setup-pending Member/Servant Leader is redirected to password setup before protected data is shown.
+- Self-registered Servant Leaders use the password they choose during registration. Their profile uses `must_change_password = false`.
+- Admin-added Members receive only an organizational `public.members` record. Member Portal access is optional and is claimed by the Member with their verified email and self-chosen password.
+- The Servant Leader registration code authorizes registration only; it is never used as the user account password.
 
-## Security packaging requirement
-
-Do not distribute `Backend/.env.local` or any real environment file. Use `../scripts/package-source.ps1` to create source archives; it excludes `.env`/`.env.*` while retaining `.env.example`. See `../SECURITY.md` and `../AUDIT_REPORT_2026-09-17.md`.
+Member records and login accounts are separate. A Member Portal claim matches the verified
+Supabase Auth email to `lower(public.members.email)`, rejects missing or already-linked
+records, and creates the `profiles` link server-side without creating a duplicate member.
