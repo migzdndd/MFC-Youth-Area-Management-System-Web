@@ -5,9 +5,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#002847">
-  <title>Account Access Help - MFC Youth Area Management System</title>
-  <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/visby">
+  <title>Recover Account - MFC Youth Area Management System</title>
+  <style>
+    @import url('https://fonts.cdnfonts.com/css/visby');
+  </style>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
@@ -17,16 +18,16 @@
     <section class="login-card auth-card" aria-labelledby="recoverTitle">
       <div class="login-header">
         <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
-        <h1 id="recoverTitle">Account Access Help</h1>
-        <p>Regular Member records do not require login access. If you need Member Portal access or need to reset an existing account password, contact an authorized Admin.</p>
+        <h1 id="recoverTitle">Reset Your Member Login</h1>
+        <p>For this frontend prototype, password resets are issued by an Super Admin.</p>
       </div>
       <div class="login-form account-provision-info">
         <div class="verification-badge">
-          <span>Member access</span>
-          <strong>Ask an Admin to open your Member record and use the appropriate login button (Enable Login, Resend Setup, Reset Login, or Manage Login).</strong>
+          <span>Forgot your password?</span>
+          <strong>Ask your Super Admin to reset your account login.</strong>
         </div>
-        <p class="prototype-note">The Members page login controls can create or refresh account access using the email already stored on the Member record. The system sends a secure password setup/reset link. A Member record itself never requires a password.</p>
-        <div class="login-buttons"><button class="btn-auth btn-primary" type="button" data-nav="/">Back
+        <p class="prototype-note">Member Portal passwords are private. Use your configured Supabase recovery flow or contact an authorized administrator for account assistance.</p>
+        <div class="login-buttons"><button class="btn-auth btn-primary" type="button" onclick="navigateWithLoader('/')">Back
             to Sign In</button></div>
       </div>
     </section>

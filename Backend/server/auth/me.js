@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
 
   try {
-    const { user, profile: authenticatedProfile, supabase } = await requireAuthenticatedProfile(req, { allowPasswordSetupPending: true });
+    const { user, profile: authenticatedProfile, supabase } = await requireAuthenticatedProfile(req);
     let profile = authenticatedProfile;
     let member = null;
 

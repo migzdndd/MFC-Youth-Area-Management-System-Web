@@ -2,10 +2,11 @@ import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
 
-const AREA_SETUP_ROLES = new Set([
+const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
-  'lit_servant'
+  'lit_servant',
+  'chapter_servant'
 ]);
 
 export default async function handler(req, res) {
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const { supabase, profile, user } = await requireAuthenticatedProfile(req);
-    if (!AREA_SETUP_ROLES.has(String(profile.role || '').toLowerCase())) {
+    if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
       return sendJson(res, 403, { ok: false, error: 'You do not have permission to select an Area.' });
     }
     if (profile.area_id) {

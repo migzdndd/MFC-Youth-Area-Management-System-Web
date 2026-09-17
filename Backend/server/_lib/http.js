@@ -26,14 +26,10 @@ export function isValidEmail(value = '') {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 }
 
-
 function safeBackendMessage(error) {
   const message = String(error?.message || '').trim();
   const lower = message.toLowerCase();
 
-  if (error?.code === 'RATE_LIMIT_STORAGE_NOT_CONFIGURED') {
-    return 'Administrator registration protection is not initialized. Run migration 006 before using the registration form.';
-  }
   if (!message) return 'Backend request failed.';
   if (lower.includes('invalid api key') || lower.includes('api key')) {
     return 'Supabase API credentials are invalid. Check the Backend Vercel environment variables.';
@@ -67,6 +63,9 @@ export function apiError(res, error) {
   if (error?.code) body.code = error.code;
   if (error?.stage) body.stage = error.stage;
 
+  if (process.env.NODE_ENV !== 'production' && status >= 500) {
+    body.detail = error?.message || String(error);
+  }
 
   return sendJson(res, status, body);
 }

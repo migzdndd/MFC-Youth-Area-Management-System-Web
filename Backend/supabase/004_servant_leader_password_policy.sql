@@ -1,13 +1,11 @@
--- MFC Youth Area Management System
--- Account password / admin-provisioned onboarding policy
+-- =========================================================
+-- Servant Leader password policy
+-- =========================================================
+-- Self-registered Servant Leaders choose their own account password and
+-- must not be forced through the temporary-password flow.
 --
--- Regular Member records do not require a login account or password.
--- When Member Portal access is intentionally enabled, an Admin provisions the
--- linked Supabase Auth account and sends a secure password setup link.
---
--- Servant Leader/Admin accounts are created from Member records where possible.
--- Newly provisioned leadership accounts use must_change_password = true until
--- the user chooses a password through the secure setup flow.
+-- Newly created Member records do not create Auth accounts. Existing profiles
+-- keep their stored password-change state for compatibility.
 
 alter table public.profiles
   alter column must_change_password set default false;

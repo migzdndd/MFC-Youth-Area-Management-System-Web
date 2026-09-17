@@ -1,13 +1,12 @@
 // =========================================================
 // MFC Youth Area Management System - Frontend Application
-// Supabase-backed application. Production authentication is cloud-only; localStorage is used only for account/Area-scoped UI cache.
+// Supabase-backed application. localStorage is used only as a fast UI cache/fallback for authenticated cloud data and demo mode.
 // =========================================================
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
-const LEGACY_BROWSER_USER_KEY = 'mfc_demo_users';
+const USER_KEY = 'mfc_demo_users';
 const DB_VERSION = 7;
-const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 let activeModalCleanup = null;
 
 function initializeMotionEffects() {
@@ -20,7 +19,7 @@ function initializeMotionEffects() {
   }
 
   revealTargets.forEach((element, index) => {
-    element.style.animationDelay = `${Math.min(index * 35, 210)}ms`;
+    element.style.animationDelay = `${index * 80}ms`;
     requestAnimationFrame(() => element.classList.add('is-visible'));
   });
 }
@@ -99,40 +98,6 @@ function getSession() {
   );
 }
 
-function isCloudAuthenticatedSession(currentSession) {
-  return Boolean(
-    currentSession?.backendAuth === true &&
-    currentSession?.accessToken
-  );
-}
-
-function isTrustedAppSession(currentSession) {
-  return isCloudAuthenticatedSession(currentSession);
-}
-
-function cacheIdentityPart(value, fallback) {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  if (!normalized) return fallback;
-  return encodeURIComponent(normalized);
-}
-
-function databaseStorageKey(currentSession = getSession()) {
-  if (!currentSession?.backendAuth) return DB_KEY;
-
-  const areaPart = cacheIdentityPart(currentSession.areaId, 'unassigned-area');
-  const accountPart = cacheIdentityPart(
-    currentSession.userId || currentSession.memberId || currentSession.email,
-    'unknown-account'
-  );
-
-  return `${CLOUD_CACHE_PREFIX}::${areaPart}::${accountPart}`;
-}
-
-function clearScopedDatabaseCache(currentSession = getSession()) {
-  const key = databaseStorageKey(currentSession);
-  if (key !== DB_KEY) localStorage.removeItem(key);
-}
-
 function updateStoredSession(nextSession) {
   if (localStorage.getItem(SESSION_KEY)) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
@@ -141,133 +106,21 @@ function updateStoredSession(nextSession) {
   }
 }
 
-let backendSessionRefreshPromise = null;
-let backendRefreshDefinitiveFailure = false;
-
-function invalidateCloudSession({ redirect = true } = {}) {
-  const previous = session;
-  clearScopedDatabaseCache(previous);
-  localStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_KEY);
-  session = null;
-
-  if (redirect) {
-    navigateWithLoader('/', true);
-  }
-}
-
-function sessionExpiresSoon(expiresAt, skewSeconds = 60) {
-  if (!expiresAt) return false;
-
-  const numeric = Number(expiresAt);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return (numeric * 1000) <= (Date.now() + (skewSeconds * 1000));
-  }
-
-  const parsed = Date.parse(String(expiresAt));
-  return Number.isFinite(parsed) && parsed <= (Date.now() + (skewSeconds * 1000));
-}
-
-async function refreshBackendSession({ force = false } = {}) {
-  if (!session?.backendAuth || !session?.refreshToken) return false;
-  if (!force && !sessionExpiresSoon(session?.expiresAt)) return true;
-  if (backendSessionRefreshPromise) return backendSessionRefreshPromise;
-
-  backendSessionRefreshPromise = (async () => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 8000);
-    backendRefreshDefinitiveFailure = false;
-
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        signal: controller.signal,
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: session.refreshToken })
-      });
-
-      let payload = null;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-
-      if (!response.ok || !payload?.session?.accessToken) {
-        backendRefreshDefinitiveFailure =
-          response.status === 401 ||
-          response.status === 403 ||
-          ['SESSION_REFRESH_FAILED', 'ACCOUNT_INACTIVE'].includes(String(payload?.code || ''));
-        return false;
-      }
-
-      Object.assign(session, {
-        accessToken: payload.session.accessToken,
-        refreshToken: payload.session.refreshToken || session.refreshToken,
-        expiresAt: payload.session.expiresAt || null,
-        userId: payload.user?.id ?? session.userId,
-        memberId: payload.user?.memberId ?? session.memberId,
-        email: payload.user?.email || session.email,
-        name: payload.user?.name || session.name,
-        role: normalizeAccessRole(payload.user?.role || session.role),
-        areaId: payload.user?.areaId ?? session.areaId,
-        chapterId: payload.user?.chapterId ?? session.chapterId,
-        mustChangePassword: payload.user?.mustChangePassword === true,
-        needsAreaSetup: payload.user?.role !== 'member' && !(payload.user?.areaId ?? session.areaId)
-      });
-
-      updateStoredSession(session);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  })();
-
-  try {
-    return await backendSessionRefreshPromise;
-  } finally {
-    backendSessionRefreshPromise = null;
-  }
-}
-
 async function backendApi(path, options = {}) {
-  const {
-    timeoutMs: requestedTimeout,
-    _retriedAfterRefresh = false,
-    ...fetchOptions
-  } = options;
-
-  const isRefreshRequest = path === '/api/auth/refresh';
-  if (
-    !isRefreshRequest &&
-    !_retriedAfterRefresh &&
-    session?.backendAuth &&
-    session?.refreshToken &&
-    sessionExpiresSoon(session?.expiresAt)
-  ) {
-    // Best-effort refresh before the access token expires. If refreshing is
-    // temporarily unavailable, still try the current token and let the normal
-    // 401 retry path decide whether a refresh is actually required.
-    await refreshBackendSession({ force: true }).catch(() => false);
-  }
-
   const token = session?.accessToken || '';
-  const timeoutMs = Number(requestedTimeout || 8000);
+  const timeoutMs = Number(options.timeoutMs || 8000);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(path, {
-      ...fetchOptions,
+      ...options,
       signal: controller.signal,
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(fetchOptions.headers || {})
+        ...(options.headers || {})
       }
     });
 
@@ -279,47 +132,8 @@ async function backendApi(path, options = {}) {
     }
 
     if (!response.ok) {
-      const canRefresh =
-        response.status === 401 &&
-        !_retriedAfterRefresh &&
-        !isRefreshRequest &&
-        session?.backendAuth &&
-            Boolean(session?.refreshToken) &&
-        ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(String(body?.code || ''));
-
-      if (canRefresh) {
-        const refreshed = await refreshBackendSession({ force: true });
-        if (refreshed) {
-          return backendApi(path, {
-            ...fetchOptions,
-            timeoutMs,
-            _retriedAfterRefresh: true
-          });
-        }
-
-        // The backend has already rejected the access token. If refreshing is
-        // also rejected, the identity is no longer valid and protected cached
-        // Area data must not remain visible.
-        if (backendRefreshDefinitiveFailure || response.status === 401) {
-          invalidateCloudSession();
-        }
-      }
-
-      if (response.status === 403 && String(body?.code || '') === 'ACCOUNT_INACTIVE') {
-        invalidateCloudSession();
-      }
-
-      if (response.status === 403 && String(body?.code || '') === 'PASSWORD_SETUP_REQUIRED') {
-        if (session) {
-          session.mustChangePassword = true;
-          updateStoredSession(session);
-        }
-        navigateWithLoader('/change-password', true);
-      }
-
       const error = new Error(body?.error || 'Request failed.');
       error.status = response.status;
-      error.code = body?.code;
       error.body = body;
       throw error;
     }
@@ -360,11 +174,32 @@ function cloudMemberToLocal(member, previous = {}) {
     updatedAt: member.updated_at || previous.updatedAt || null,
     services: Array.isArray(previous.services) ? previous.services : [],
     chapterName: previous.chapterName || '',
-    accountProvisioned: member.account_provisioned === true,
-    accountActive: member.account_active === true,
-    accountSetupRequired: member.account_setup_required === true,
     cloudBacked: true
   };
+}
+
+async function syncBackendMembersIntoLocalDb() {
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+
+  const payload = await backendApi('/api/members');
+  const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
+  const data = db();
+  const previousMembers = Array.isArray(data.members) ? data.members : [];
+
+  // In authenticated cloud mode, Supabase is the source of truth. localStorage
+  // only keeps a fast render cache so deleted/stale prototype records cannot
+  // reappear after a refresh.
+  data.members = cloudMembers.map(cloudMember => {
+    const email = String(cloudMember.email || '').trim().toLowerCase();
+    const previous = previousMembers.find(localMember =>
+      String(localMember.id) === String(cloudMember.id) ||
+      (email && String(localMember.email || '').trim().toLowerCase() === email)
+    ) || {};
+    return cloudMemberToLocal(cloudMember, previous);
+  });
+
+  save(data);
+  return true;
 }
 
 function cloudEventToLocal(row) {
@@ -415,56 +250,11 @@ function cloudGigToLocal(row) {
 }
 
 async function syncCloudModulesIntoLocalDb() {
-  if (!session?.backendAuth || !session?.areaId) return false;
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
 
-  const previousSession = { ...session };
-  const previousStorageKey = databaseStorageKey(previousSession);
   const payload = await backendApi('/api/sync', { timeoutMs: 10000 });
-  if (!session) return false;
-
-  // /api/sync now doubles as the lightweight authoritative session/profile
-  // revalidation used during background refresh. This removes the old blocking
-  // /api/auth/me request from every protected page navigation.
-  if (payload?.user) {
-    Object.assign(session, {
-      userId: payload.user.id ?? session.userId,
-      memberId: payload.user.memberId ?? session.memberId,
-      email: payload.user.email || session.email,
-      name: payload.user.name || session.name,
-      role: normalizeAccessRole(payload.user.role || session.role),
-      areaId: payload.user.areaId ?? session.areaId,
-      chapterId: payload.user.chapterId ?? session.chapterId,
-      mustChangePassword: payload.user.mustChangePassword === true,
-      needsAreaSetup: payload.user.role !== 'member' && !(payload.user.areaId ?? session.areaId)
-    });
-    updateStoredSession(session);
-
-    const nextStorageKey = databaseStorageKey(session);
-    if (previousStorageKey !== nextStorageKey && previousStorageKey !== DB_KEY) {
-      localStorage.removeItem(previousStorageKey);
-    }
-
-    if (session.mustChangePassword) {
-      navigateWithLoader('/change-password', true);
-      return false;
-    }
-    if (session.role === 'member') {
-      navigateWithLoader('/member', true);
-      return false;
-    }
-    if (
-      isChapterServantSession() &&
-      !session.needsAreaSetup &&
-      !['members', 'chapters', 'reports', 'events'].includes(page)
-    ) {
-      navigateWithLoader('/chapters', true);
-      return false;
-    }
-  }
-
   const data = db();
-  const previousMembers = Array.isArray(data.members) ? data.members : [];
-  const cloudMembers = Array.isArray(payload?.members) ? payload.members : [];
+
   const chapters = Array.isArray(payload?.chapters) ? payload.chapters : [];
   const services = Array.isArray(payload?.services) ? payload.services : [];
   const memberServices = Array.isArray(payload?.memberServices) ? payload.memberServices : [];
@@ -492,17 +282,11 @@ async function syncCloudModulesIntoLocalDb() {
   });
 
   const chapterNameById = new Map(data.chapters.map(chapter => [String(chapter.id), chapter.name]));
-  data.members = cloudMembers.map(cloudMember => {
-    const email = String(cloudMember.email || '').trim().toLowerCase();
-    const previous = previousMembers.find(localMember =>
-      String(localMember.id) === String(cloudMember.id) ||
-      (email && String(localMember.email || '').trim().toLowerCase() === email)
-    ) || {};
-    const member = cloudMemberToLocal(cloudMember, previous);
-    member.chapterName = member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '';
-    member.services = serviceNamesByMember.get(String(member.id)) || [];
-    return member;
-  });
+  data.members = data.members.map(member => ({
+    ...member,
+    chapterName: member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '',
+    services: serviceNamesByMember.get(String(member.id)) || []
+  }));
 
   data.events = events.map(cloudEventToLocal);
   data.participants = participants.map(cloudParticipantToLocal);
@@ -524,28 +308,16 @@ async function syncCloudModulesIntoLocalDb() {
   }));
   data.gig = gig.map(cloudGigToLocal);
   data.cloudDashboard = payload?.dashboard || null;
-  data.cloudSyncedAt = Number(payload?.syncedAt || Date.now());
 
   save(data);
   return true;
 }
 
-function cloudCacheIsFresh(maxAgeMs = 30000) {
-  const syncedAt = Number(db().cloudSyncedAt || 0);
-  return syncedAt > 0 && (Date.now() - syncedAt) < maxAgeMs;
-}
-
-function hasUsableScopedCache() {
-  if (!session?.backendAuth || !session?.areaId) return false;
-  const raw = safeParse(localStorage.getItem(databaseStorageKey(session)), null);
-  if (!raw || typeof raw !== 'object') return false;
-  return ['members', 'chapters', 'events', 'reports', 'gig'].some(key => Array.isArray(raw[key]) && raw[key].length > 0) || Boolean(raw.cloudDashboard);
-}
-
 async function refreshAllCloudData({ render = true } = {}) {
-  if (!session?.backendAuth || !session?.areaId) return false;
+  if (!session?.backendAuth || session?.demo || !session?.areaId) return false;
+  await syncBackendMembersIntoLocalDb();
   await syncCloudModulesIntoLocalDb();
-  if (render && session) renderPageSafely();
+  if (render) renderPageSafely();
   return true;
 }
 
@@ -597,14 +369,6 @@ function canManageOwnChapterMember(data, member) {
 }
 
 
-// =========================================================
-// FRONTEND ACCOUNT PROVISIONING
-// Member records are the source of truth. A regular Member record does not
-// require a login account. Authorized Admins can optionally provision Member
-// Portal access or Servant Leader access using the email already stored on the
-// Member record. Login access is password-based when an account is provisioned.
-// =========================================================
-
 function authEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
@@ -618,82 +382,11 @@ function isOwnMemberRecord(member) {
     return true;
   }
 
-  // Email is a safe fallback for older/self-healed cloud sessions where
-  // memberId has not been hydrated yet. Member emails are unique in cloud.
+  // Email is a safe fallback for older/self-healed sessions where memberId
+  // has not been hydrated yet. Member emails are unique in the cloud schema.
   const currentEmail = authEmail(session?.email || '');
   const recordEmail = authEmail(member.email || '');
   return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
-}
-
-function accountEmailConflict(email) {
-  const normalized = authEmail(email);
-  if (!normalized) return null;
-
-  // Production account uniqueness is enforced by the backend/Supabase.
-  // Member-email duplicates are checked separately against the current
-  // member dataset.
-  return null;
-}
-
-function memberAccountState(member) {
-  if (member?.cloudBacked) {
-    if (!member.accountProvisioned) {
-      return { label: 'Not Provisioned', className: 'inactive' };
-    }
-    if (String(member.status || 'Active') === 'Inactive' || member.accountActive === false) {
-      return { label: 'Disabled', className: 'inactive' };
-    }
-    if (member.accountSetupRequired) {
-      return { label: 'Setup Pending', className: 'inactive' };
-    }
-    return { label: 'Active', className: 'active' };
-  }
-
-  // Non-cloud records are not login accounts. Cloud access must be
-  // provisioned by the backend from a real Member record.
-  return { label: 'Not Provisioned', className: 'inactive' };
-}
-
-function memberLoginAction(member) {
-  const state = memberAccountState(member).label;
-
-  if (state === 'Setup Pending') {
-    return {
-      buttonLabel: 'Resend Setup',
-      modalTitle: 'Resend Account Setup',
-      confirmLabel: 'Yes, Resend Setup',
-      tooltip: 'Send another secure password setup link for this account.',
-      summary: 'Resends the secure password setup link. The account remains Setup Pending until the user finishes setup.'
-    };
-  }
-
-  if (state === 'Active') {
-    return {
-      buttonLabel: 'Reset Login',
-      modalTitle: 'Reset Account Login',
-      confirmLabel: 'Yes, Reset Login',
-      tooltip: 'Send a new password setup link and return this account to Setup Pending.',
-      summary: 'Starts a new login setup. The account returns to Setup Pending until the user creates the new password.'
-    };
-  }
-
-  if (state === 'Disabled') {
-    return {
-      buttonLabel: 'Manage Login',
-      modalTitle: 'Manage Login Access',
-      confirmLabel: 'Yes, Manage Login',
-      tooltip: 'Refresh login setup for this disabled account.',
-      summary: 'Refreshes the secure setup link for this disabled account. Reactivation may still be required before sign-in is allowed.'
-    };
-  }
-
-  return {
-    buttonLabel: 'Enable Login',
-    modalTitle: 'Enable Login Access',
-    confirmLabel: 'Yes, Enable Login',
-    tooltip: 'Create login access and send a secure password setup link.',
-    summary: 'Creates login access using the registered email and sends a secure password setup link.'
-  };
 }
 
 function normalizeDatabase(input) {
@@ -880,33 +573,31 @@ function normalizeDatabase(input) {
       : [],
     cloudDashboard: data.cloudDashboard && typeof data.cloudDashboard === 'object'
       ? data.cloudDashboard
-      : null,
-    cloudSyncedAt: Number(data.cloudSyncedAt || 0) || 0
+      : null
   };
 }
 
 function seedDB() {
-  const storageKey = databaseStorageKey();
   const existing = safeParse(
-    localStorage.getItem(storageKey),
+    localStorage.getItem(DB_KEY),
     null
   );
 
   localStorage.setItem(
-    storageKey,
+    DB_KEY,
     JSON.stringify(normalizeDatabase(existing))
   );
 }
 
 function db() {
   return normalizeDatabase(
-    safeParse(localStorage.getItem(databaseStorageKey()), null)
+    safeParse(localStorage.getItem(DB_KEY), null)
   );
 }
 
 function save(data) {
   localStorage.setItem(
-    databaseStorageKey(),
+    DB_KEY,
     JSON.stringify(normalizeDatabase(data))
   );
 }
@@ -1076,7 +767,6 @@ function validEmail(value) {
   );
 }
 
-
 // =========================================================
 // TOAST NOTIFICATIONS
 // =========================================================
@@ -1223,160 +913,6 @@ function openModal(
   );
 }
 
-function showMemberSetupNotice(member, message = '') {
-  if (!member) return;
-
-  const role = normalizeAccessRole(member.accessLevel || 'member');
-  const regularMember = role === 'member';
-  const defaultMessage = regularMember
-    ? 'Optional Member Portal setup is pending until the Member creates a password.'
-    : 'Servant Leader account setup is pending until the password is created.';
-  const guidance = regularMember
-    ? 'A regular Member record still does not require a login or password. Only the optional provisioned Portal account stays Setup Pending until the secure setup link is completed.'
-    : 'Use the secure setup email to create the Servant Leader account password. The account becomes Active only after setup succeeds. No temporary password is used.';
-
-  openModal(
-    'Login Setup',
-    `
-      <div class="credential-panel">
-        <div class="credential-notice">
-          <strong>${esc(fullName(member))}</strong>
-          <p>${esc(message || defaultMessage)}</p>
-        </div>
-
-        <div class="credential-row">
-          <span>Email</span>
-          <code>${esc(member.email)}</code>
-        </div>
-
-        <div class="credential-row">
-          <span>Access Level</span>
-          <code>${esc(accessRoleLabel(member.accessLevel))}</code>
-        </div>
-
-        <p class="field-help">${esc(guidance)}</p>
-      </div>
-    `
-  );
-}
-
-window.manageMemberLogin = async id => {
-  if (denyUnlessSuperAdmin()) return;
-
-  const data = db();
-  const member = data.members.find(item => String(item.id) === String(id));
-  if (!member) return;
-
-  if (!member.email || !validEmail(member.email)) {
-    toast('Add a valid email address before configuring account access.', 'error');
-    return;
-  }
-
-  if (member.cloudBacked && session?.backendAuth) {
-    const role = normalizeAccessRole(member.accessLevel || 'member');
-    const regularMember = role === 'member';
-    const accountState = memberAccountState(member);
-    const alreadyProvisioned = member.accountProvisioned === true;
-    const loginAction = memberLoginAction(member);
-
-    let warningText = regularMember
-      ? 'This will enable optional Member Portal login access and send a secure password setup link to the Member email.'
-      : 'This will create or refresh Servant Leader login access and send a secure password setup link to the Member email.';
-
-    if (accountState.label === 'Active') {
-      warningText = 'This account is currently Active. Continuing will send a new secure password setup link and move the account back to Setup Pending until the user completes password setup again.';
-    } else if (accountState.label === 'Setup Pending') {
-      warningText = 'Account setup is already pending. Continuing will send/refresh the secure password setup email. The account will remain Setup Pending until setup is completed.';
-    } else if (accountState.label === 'Disabled') {
-      warningText = 'This login account is currently Disabled. Continuing will refresh account setup, but the account may still require reactivation before the user can sign in.';
-    }
-
-    openModal(
-      loginAction.modalTitle,
-      `
-        <div class="access-confirmation-panel">
-          <div class="access-confirmation-warning" role="alert">
-            <span class="access-confirmation-icon" aria-hidden="true">!</span>
-            <div>
-              <strong>Are you sure?</strong>
-              <p>${esc(warningText)}</p>
-            </div>
-          </div>
-
-          <div class="credential-row">
-            <span>Member</span>
-            <code>${esc(fullName(member))}</code>
-          </div>
-
-          <div class="credential-row">
-            <span>Email</span>
-            <code>${esc(member.email)}</code>
-          </div>
-
-          <div class="credential-row">
-            <span>Access Level</span>
-            <code>${esc(accessRoleLabel(member.accessLevel))}</code>
-          </div>
-
-          <div class="credential-row">
-            <span>Current Account Status</span>
-            <code>${esc(accountState.label)}</code>
-          </div>
-
-          <div class="access-confirmation-note">
-            <strong>What this does</strong>
-            <ul>
-              <li>${esc(loginAction.summary)}</li>
-              <li>Sends a secure password setup link. No OTP or temporary password is used.</li>
-              <li>The Member record and its existing profile information are not deleted.</li>
-            </ul>
-          </div>
-        </div>
-      `,
-      async close => {
-        const confirmButton = document.getElementById('saveModal');
-        const cancelButton = document.getElementById('cancelModal');
-        const originalText = confirmButton?.textContent || '';
-
-        if (confirmButton) {
-          confirmButton.disabled = true;
-          confirmButton.textContent = 'Processing...';
-        }
-        if (cancelButton) cancelButton.disabled = true;
-
-        try {
-          const payload = await backendApi('/api/members/login', {
-            method: 'POST',
-            body: JSON.stringify({ memberId: member.id })
-          });
-
-          close();
-          await refreshAllCloudData({ render: false }).catch(() => false);
-          renderMembers();
-
-          const refreshedMember = db().members.find(item => String(item.id) === String(id)) || member;
-          toast(payload?.message || 'Account access updated.');
-          showMemberSetupNotice(refreshedMember, payload?.message);
-        } catch (error) {
-          if (confirmButton) {
-            confirmButton.disabled = false;
-            confirmButton.textContent = originalText;
-          }
-          if (cancelButton) cancelButton.disabled = false;
-          toast(error?.message || 'Unable to configure account access.', 'error');
-        }
-      },
-      loginAction.confirmLabel
-    );
-    return;
-  }
-
-  showMemberSetupNotice(
-    member,
-    'Cloud account setup requires the backend. No temporary password is generated.'
-  );
-};
-
 function field(
   label,
   id,
@@ -1470,15 +1006,7 @@ seedDB();
 const page =
   document.body.dataset.page;
 
-// Browser-created login accounts from the old prototype are obsolete.
-localStorage.removeItem(LEGACY_BROWSER_USER_KEY);
-
-let session = getSession();
-if (session && !isTrustedAppSession(session)) {
-  localStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_KEY);
-  session = null;
-}
+const session = getSession();
 
 if (!session) {
   navigateWithLoader('/', true);
@@ -1557,7 +1085,7 @@ if (logoutBtn) {
     previewButton.onclick = () => navigateWithLoader('/member?preview=1');
     logoutBtn.parentElement?.insertBefore(previewButton, logoutBtn);
 
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
       deleteButton.className = 'sidebar-account-action delete-account-button';
@@ -1586,7 +1114,6 @@ if (logoutBtn) {
           );
           save(data);
 
-          clearScopedDatabaseCache(session);
           localStorage.removeItem(SESSION_KEY);
           sessionStorage.removeItem(SESSION_KEY);
           navigateWithLoader('/', true);
@@ -1601,7 +1128,6 @@ if (logoutBtn) {
   }
 
   logoutBtn.onclick = () => {
-    clearScopedDatabaseCache(session);
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
 
@@ -1710,7 +1236,7 @@ if (sidebar && menuBtn) {
 function renderDashboard() {
   const data = db();
 
-  const cloudSummary = session?.backendAuth
+  const cloudSummary = session?.backendAuth && !session?.demo
     ? data.cloudDashboard
     : null;
 
@@ -2445,7 +1971,6 @@ function renderMembers() {
                   <th>Chapter</th>
                   <th>Status</th>
                   <th>Services</th>
-                  <th>Account</th>
                   <th>Access</th>
                   <th>Contact Number</th>
                   <th>Actions</th>
@@ -2512,12 +2037,6 @@ function renderMembers() {
                         </td>
 
                         <td>
-                          <span class="badge ${memberAccountState(member).className}">
-                            ${esc(memberAccountState(member).label)}
-                          </span>
-                        </td>
-
-                        <td>
                           ${esc(accessRoleLabel(member.accessLevel))}
                         </td>
 
@@ -2557,15 +2076,6 @@ function renderMembers() {
                             onclick='gigMember(${inlineJsArg(member.id)})'
                           >
                             GIG
-                          </button>
-
-                          <button
-                            class="btn member-login-action"
-                            title="${esc(memberLoginAction(member).tooltip)}"
-                            aria-label="${esc(memberLoginAction(member).buttonLabel)} for ${esc(fullName(member))}"
-                            onclick='manageMemberLogin(${inlineJsArg(member.id)})'
-                          >
-                            ${esc(memberLoginAction(member).buttonLabel)}
                           </button>
 
                           ${isOwnMemberRecord(member)
@@ -2787,13 +2297,6 @@ window.viewMember = function(id) {
         </div>
 
         <div class="detail-item">
-          <span class="detail-label">Login Account</span>
-          <div class="detail-value">
-            <span class="badge ${memberAccountState(member).className}">${esc(memberAccountState(member).label)}</span>
-          </div>
-        </div>
-
-        <div class="detail-item">
           <span class="detail-label">Chapter</span>
           <div class="detail-value">${esc(chapterLabel)}</div>
         </div>
@@ -2902,7 +2405,7 @@ function memberModal(id = null) {
     'mEmail',
     'email',
     member.email || '',
-    'required autocomplete="email" placeholder="name@example.com"'
+    'required autocomplete="email"'
   )}
 
       ${selectField(
@@ -3119,13 +2622,6 @@ function memberModal(id = null) {
         return;
       }
 
-      const loginConflict = accountEmailConflict(email, id);
-
-      if (loginConflict) {
-        toast(loginConflict, 'error');
-        return;
-      }
-
       if (
         data.members.some(
           item =>
@@ -3243,10 +2739,9 @@ function memberModal(id = null) {
           member.services || []
       };
 
-      let provisionResult = null;
       let savedRecord = record;
 
-      if (session?.backendAuth) {
+      if (session?.backendAuth && !session?.demo) {
         try {
           const payload = await backendApi('/api/members', {
             method: id ? 'PATCH' : 'POST',
@@ -3267,13 +2762,6 @@ function memberModal(id = null) {
           });
 
           savedRecord = cloudMemberToLocal(payload.member, record);
-          provisionResult = payload.account || null;
-
-          if (provisionResult?.provisioned) {
-            savedRecord.accountProvisioned = true;
-            savedRecord.accountActive = savedRecord.status !== 'Inactive';
-            savedRecord.accountSetupRequired = provisionResult.mustChangePassword === true;
-          }
 
           const existingIndex = data.members.findIndex(item =>
             String(item.id) === String(savedRecord.id) ||
@@ -3303,6 +2791,7 @@ function memberModal(id = null) {
           data.members.find(item => String(item.id) === String(id)),
           record
         );
+
       } else {
         data.members.push(record);
       }
@@ -3313,23 +2802,11 @@ function memberModal(id = null) {
 
       toast(
         id
-          ? (provisionResult?.setupEmailSent
-            ? 'Member updated. Account setup email sent.'
-            : 'Member updated.')
-          : (record.accessLevel === 'member'
-            ? 'Member added. No login account or password is required.'
-            : (provisionResult?.setupEmailSent
-              ? 'Member added. Servant Leader account setup email sent.'
-              : 'Member added. Servant Leader login can be managed from the login-action button.'))
+          ? 'Member updated.'
+          : 'Member added.'
       );
 
       renderMembers();
-
-      if (provisionResult?.setupEmailSent) {
-        showMemberSetupNotice(savedRecord, provisionResult?.role === 'member'
-          ? 'Optional Member Portal password setup link sent.'
-          : 'Servant Leader password setup link sent.');
-      }
     }
   );
 }
@@ -3349,9 +2826,9 @@ window.deleteMember = async id => {
     return;
   }
 
-  if (!confirm('Delete this member, their linked login account, and their GIG contribution records? This cannot be undone.')) return;
+  if (!confirm('Delete this member and their GIG contribution records? This cannot be undone.')) return;
 
-  if (member.cloudBacked && session?.backendAuth) {
+  if (member.cloudBacked && session?.backendAuth && !session?.demo) {
     try {
       await backendApi(`/api/members?id=${encodeURIComponent(member.id)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
@@ -3367,7 +2844,6 @@ window.deleteMember = async id => {
   }
 
   if (String(session?.memberId || '') === String(id)) {
-    clearScopedDatabaseCache(session);
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     navigateWithLoader('/', true);
@@ -3439,7 +2915,7 @@ window.serviceMember = id => {
       ].map(input => input.value);
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/services', {
             method: 'PATCH',
             body: JSON.stringify({ memberId: member.id, serviceNames: selectedServices })
@@ -3612,7 +3088,7 @@ window.gigMember = id => {
       }
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/gig', {
             method: 'POST',
             body: JSON.stringify({ memberId: id, date, amount, note })
@@ -3646,7 +3122,7 @@ window.deleteGigContribution = async (memberId, contributionId) => {
   if (!confirm('Delete this GIG contribution?')) return;
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       await backendApi(`/api/gig?id=${encodeURIComponent(contributionId)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
     } else {
@@ -3710,7 +3186,7 @@ function renderChapterServantDashboard(data) {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const unassignedCount = data.members.filter(isUnassignedMember).length;
-  const unassignedLabel = session?.backendAuth
+  const unassignedLabel = session?.backendAuth && !session?.demo
     ? 'Unassigned members available on demand'
     : `${unassignedCount} unassigned member${unassignedCount === 1 ? '' : 's'} available`;
 
@@ -4088,7 +3564,7 @@ function chapterModal(id = null) {
       }
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/chapters', {
             method: id ? 'PATCH' : 'POST',
             body: JSON.stringify(id ? { id, name } : { name })
@@ -4129,7 +3605,7 @@ window.deleteChapter = async id => {
   if (!confirm('Delete this chapter?')) return;
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       await backendApi(`/api/chapters?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
     } else {
@@ -4238,7 +3714,7 @@ window.addMembersToChapter = async id => {
   let unassigned = [];
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       // Chapter Servants intentionally receive only their own chapter roster from
       // /api/members. Fetch the Area's unassigned-member pool only when this
       // assignment dialog is opened, through the scoped backend endpoint.
@@ -4353,7 +3829,7 @@ window.addMembersToChapter = async id => {
 
       try {
         let assignedCount = 0;
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           const result = await backendApi('/api/chapters/assign-members', {
             method: 'POST',
             body: JSON.stringify({ chapterId: chapter.id, memberIds: selectedIds })
@@ -5897,7 +5373,7 @@ window.reportModal = function (
       };
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/reports', {
             method: id ? 'PATCH' : 'POST',
             body: JSON.stringify({ ...record, chapterName, id: id || undefined })
@@ -5996,7 +5472,7 @@ window.deleteReport = async id => {
   if (!confirm('Delete this activity report?')) return;
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       await backendApi(`/api/reports?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
     } else {
@@ -6454,52 +5930,7 @@ function printReportSummary(
 // EXPORT PDF
 // =========================================================
 
-let reportPdfLibraryPromise = null;
-
-function loadExternalScript(src) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[data-dynamic-src="${src}"]`);
-    if (existing?.dataset.loaded === '1') return resolve();
-    if (existing) {
-      existing.addEventListener('load', resolve, { once: true });
-      existing.addEventListener('error', reject, { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.referrerPolicy = 'no-referrer';
-    script.dataset.dynamicSrc = src;
-    script.addEventListener('load', () => {
-      script.dataset.loaded = '1';
-      resolve();
-    }, { once: true });
-    script.addEventListener('error', () => reject(new Error('Unable to load the PDF export library.')), { once: true });
-    document.head.appendChild(script);
-  });
-}
-
-async function ensureReportPdfLibraries() {
-  if (window.jspdf?.jsPDF && typeof window.jspdf.jsPDF.prototype?.autoTable === 'function') return true;
-  if (reportPdfLibraryPromise) return reportPdfLibraryPromise;
-
-  reportPdfLibraryPromise = (async () => {
-    if (!window.jspdf?.jsPDF) {
-      await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    }
-    await loadExternalScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js');
-    return Boolean(window.jspdf?.jsPDF);
-  })();
-
-  try {
-    return await reportPdfLibraryPromise;
-  } finally {
-    reportPdfLibraryPromise = null;
-  }
-}
-
-async function exportReportsPdf(
+function exportReportsPdf(
   data
 ) {
   const reports =
@@ -6514,14 +5945,14 @@ async function exportReportsPdf(
     return;
   }
 
-  try {
-    const ready = await ensureReportPdfLibraries();
-    if (!ready) throw new Error('PDF library unavailable.');
-  } catch (error) {
+  if (
+    !window.jspdf?.jsPDF
+  ) {
     toast(
       'PDF library failed to load. Check your internet connection and try again.',
       'error'
     );
+
     return;
   }
 
@@ -7508,7 +6939,7 @@ window.eventModal = function (
       };
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/events', {
             method: id ? 'PATCH' : 'POST',
             body: JSON.stringify({ ...record, id: id || undefined })
@@ -7538,7 +6969,7 @@ window.deleteEvent = async id => {
   if (!confirm('Delete this event and all of its participant records?')) return;
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       await backendApi(`/api/events?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
     } else {
@@ -8063,7 +7494,7 @@ window.participantModal = (
       };
 
       try {
-        if (session?.backendAuth) {
+        if (session?.backendAuth && !session?.demo) {
           await backendApi('/api/participants', {
             method: id ? 'PATCH' : 'POST',
             body: JSON.stringify({ ...record, id: id || undefined })
@@ -8120,7 +7551,7 @@ window.deleteParticipant = async (eventId, id) => {
   if (!confirm('Delete this participant?')) return;
 
   try {
-    if (session?.backendAuth) {
+    if (session?.backendAuth && !session?.demo) {
       await backendApi(`/api/participants?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       await refreshAllCloudData({ render: false });
     } else {
@@ -8150,6 +7581,7 @@ function isLeadershipSession() {
 async function showAreaOnboarding() {
   if (
     page !== 'dashboard' ||
+    session?.demo ||
     !session?.backendAuth ||
     !isLeadershipSession() ||
     (session?.areaId && !session?.needsAreaSetup)
@@ -8387,9 +7819,7 @@ async function refreshCloudDataInBackground() {
   }
 }
 
-function scheduleBackgroundSync({ force = false } = {}) {
-  if (!force && cloudCacheIsFresh()) return;
-
+function scheduleBackgroundSync() {
   const run = () => {
     refreshCloudDataInBackground().catch(error => {
       console.warn('Background refresh failed:', error?.message || error);
@@ -8397,72 +7827,27 @@ function scheduleBackgroundSync({ force = false } = {}) {
   };
 
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(run, { timeout: 250 });
+    window.requestIdleCallback(run, { timeout: 450 });
   } else {
-    window.setTimeout(run, 30);
+    window.setTimeout(run, 80);
   }
 }
 
 async function bootstrapApplication() {
   try {
-    // Mandatory password setup and already-expired tokens are handled before any
-    // protected cache is rendered. Healthy sessions can render their strictly
-    // account/Area-scoped cache immediately while the server revalidates and
-    // refreshes data in the background.
-    if (session?.mustChangePassword) {
-      navigateWithLoader('/change-password', true);
-      return;
-    }
+    // Render immediately from cached/browser data so page switching never waits
+    // for Supabase/network synchronization.
+    const rendered = renderPageSafely();
+    if (!rendered) return;
 
-    if (session?.backendAuth && sessionExpiresSoon(session?.expiresAt, 0)) {
-      if (!session?.refreshToken) {
-        invalidateCloudSession();
-        return;
-      }
-
-      const refreshed = await refreshBackendSession({ force: true });
-      if (!refreshed && backendRefreshDefinitiveFailure) {
-        invalidateCloudSession();
-        return;
-      }
-      if (session?.mustChangePassword) {
-        navigateWithLoader('/change-password', true);
-        return;
-      }
-    }
-
-    const hasCache = hasUsableScopedCache();
-
-    // Area onboarding is its own authenticated flow and does not need the heavy
-    // dashboard sync before the selection dialog becomes usable.
-    if (session?.needsAreaSetup || !session?.areaId) {
-      renderPageSafely();
-      showAreaOnboarding().catch(error => {
-        if (session) console.warn('Area onboarding check skipped:', error?.message || error);
-      });
-      return;
-    }
-
-    if (hasCache) {
-      // Fast path: paint cached UI synchronously. /api/sync validates the server
-      // profile and reconciles fresh data shortly afterward.
-      if (!renderPageSafely()) return;
-      scheduleBackgroundSync();
-      return;
-    }
-
-    // First visit for this account/Area: keep the skeleton visible and perform
-    // one unified sync request instead of /auth/me + /members + /sync.
     try {
-      await refreshAllCloudData({ render: true });
+      await showAreaOnboarding();
     } catch (error) {
-      if (!session) return;
-      // With no cache there is nothing trustworthy/useful to display, so give a
-      // clear retry state rather than an empty dashboard.
-      renderPageFailure(error);
+      console.warn('Area onboarding check skipped:', error?.message || error);
     }
+
+    scheduleBackgroundSync();
   } catch (error) {
-    if (!session) return;
     renderPageFailure(error);
   }
 }
