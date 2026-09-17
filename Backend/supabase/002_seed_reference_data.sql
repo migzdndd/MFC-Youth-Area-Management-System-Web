@@ -22,8 +22,9 @@ cross join (values
   ('Household Servant'),
   ('Chapter Servant'),
   ('Area Servant'),
-  ('LIT Servant'),
+  ('Area LIT Servant'),
   ('Campus Servant'),
+  ('Area Kids Servant'),
   ('MFC High Servant')
 ) as service(service_name)
 on conflict (area_id, name) do nothing;

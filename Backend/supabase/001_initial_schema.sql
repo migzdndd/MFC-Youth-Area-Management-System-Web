@@ -37,7 +37,7 @@ create table if not exists public.members (
   status text not null default 'Active' check (status in ('Active', 'Inactive')),
   first_attended_youth_camp date,
   access_level text not null default 'member' check (
-    access_level in ('couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'chapter_servant', 'member')
+    access_level in ('couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant', 'member')
   ),
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -51,7 +51,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   member_id uuid unique references public.members(id) on delete cascade,
   role text not null default 'member' check (
-    role in ('couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'chapter_servant', 'member')
+    role in ('couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant', 'member')
   ),
   area_id uuid references public.areas(id) on delete restrict,
   chapter_id uuid references public.chapters(id) on delete set null,

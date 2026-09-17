@@ -5,7 +5,8 @@ export const SUPER_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
-  'campus_servant'
+  'campus_servant',
+  'area_kids_servant'
 ]);
 
 export function isSuperAdminRole(role) {

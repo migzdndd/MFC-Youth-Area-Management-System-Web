@@ -2,6 +2,11 @@ import { requireAuthenticatedProfile, isSuperAdminRole } from '../_lib/access.js
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { requireArea, loadAreaRow } from '../_lib/cloud-data.js';
 
+function normalizeServiceName(value) {
+  const service = String(value || '').trim();
+  return service === 'LIT Servant' ? 'Area LIT Servant' : service;
+}
+
 async function listServices(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   const areaId = requireArea(profile);
@@ -20,7 +25,7 @@ async function assignServices(req, res) {
   if (!isSuperAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can assign services.' });
   const areaId = requireArea(profile);
   const memberId = req.body?.memberId;
-  const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(value => String(value || '').trim()).filter(Boolean))];
+  const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(normalizeServiceName).filter(Boolean))];
   if (serviceNames.length > 1) return sendJson(res, 400, { ok: false, error: 'A member can only be assigned to one service.' });
   if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
   const member = await loadAreaRow(supabase, 'members', memberId, areaId, 'id');
@@ -32,7 +37,7 @@ async function assignServices(req, res) {
     .eq('area_id', areaId)
     .eq('is_active', true);
   if (serviceError) throw serviceError;
-  const byName = new Map((services || []).map(item => [item.name, item.id]));
+  const byName = new Map((services || []).map(item => [normalizeServiceName(item.name), item.id]));
   const unknown = serviceNames.filter(name => !byName.has(name));
   if (unknown.length) return sendJson(res, 400, { ok: false, error: `Unknown service: ${unknown[0]}` });
 

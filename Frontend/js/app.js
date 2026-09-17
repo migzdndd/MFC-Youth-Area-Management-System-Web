@@ -6,7 +6,7 @@
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
 const USER_KEY = 'mfc_demo_users';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 let activeModalCleanup = null;
 
 function initializeMotionEffects() {
@@ -31,16 +31,18 @@ const SERVICES = [
   'Household Servant',
   'Chapter Servant',
   'Area Servant',
-  'LIT Servant',
+  'Area LIT Servant',
   'Campus Servant',
+  'Area Kids Servant',
   'MFC High Servant'
 ];
 
 const ACCESS_LEVELS = [
   { value: 'couple_coordinator', label: 'Couple Coordinator/s' },
   { value: 'area_servant', label: 'Area Servant' },
-  { value: 'lit_servant', label: 'LIT Servant' },
+  { value: 'lit_servant', label: 'Area LIT Servant' },
   { value: 'campus_servant', label: 'Campus Servant' },
+  { value: 'area_kids_servant', label: 'Area Kids Servant' },
   { value: 'chapter_servant', label: 'Chapter Servant' },
   { value: 'member', label: 'Member' }
 ];
@@ -49,11 +51,17 @@ const ACCESS_ROLE_VALUES = new Set(
   ACCESS_LEVELS.map(item => item.value)
 );
 
+function normalizeServiceName(value) {
+  const service = String(value || '').trim();
+  return service === 'LIT Servant' ? 'Area LIT Servant' : service;
+}
+
 const SUPER_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'area_kids_servant',
   // Kept only for compatibility with the older prototype session.
   'area_admin'
 ]);
@@ -174,7 +182,7 @@ function cloudMemberToLocal(member, previous = {}) {
     accessLevel: normalizeAccessRole(member.access_level || 'member'),
     createdAt: member.created_at || previous.createdAt || null,
     updatedAt: member.updated_at || previous.updatedAt || null,
-    services: Array.isArray(previous.services) ? previous.services : [],
+    services: Array.isArray(previous.services) ? previous.services.map(normalizeServiceName).filter(Boolean) : [],
     chapterName: previous.chapterName || '',
     cloudBacked: true
   };
@@ -272,8 +280,8 @@ async function syncCloudModulesIntoLocalDb() {
     cloudBacked: true
   }));
 
-  data.services = services.map(row => row.name).filter(Boolean);
-  const serviceNameById = new Map(services.map(row => [String(row.id), row.name]));
+  data.services = services.map(row => normalizeServiceName(row.name)).filter(Boolean);
+  const serviceNameById = new Map(services.map(row => [String(row.id), normalizeServiceName(row.name)]));
   const serviceNamesByMember = new Map();
   memberServices.forEach(link => {
     const memberId = String(link.member_id || '');
@@ -353,7 +361,7 @@ function scopedChapter(data) {
   ) || null;
 }
 
-function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, LIT Servants, and Campus Servants can perform this action.') {
+function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, and Area Kids Servants can perform this action.') {
   if (isSuperAdminSession()) return false;
   toast(message, 'error');
   return true;
@@ -423,7 +431,7 @@ function normalizeDatabase(input) {
           ...member,
           accessLevel: normalizeAccessRole(member.accessLevel || 'member'),
           services: Array.isArray(member.services)
-            ? member.services.filter(Boolean).map(String)
+            ? member.services.map(normalizeServiceName).filter(Boolean)
             : []
         };
 
@@ -557,14 +565,14 @@ function normalizeDatabase(input) {
     : [];
 
   const services = Array.isArray(data.services)
-    ? [...new Set(data.services.filter(Boolean).map(String))]
+    ? [...new Set(data.services.map(normalizeServiceName).filter(Boolean))]
     : [];
 
   return {
     version: DB_VERSION,
     members,
     chapters,
-    services: services.length ? services : [...SERVICES],
+    services: [...new Set([...SERVICES, ...services])],
     reports,
     events: Array.isArray(data.events)
       ? data.events.filter(event => event && typeof event === 'object')
@@ -1739,7 +1747,7 @@ function renderChapterServantMembers(data) {
       ) +
       emptyState(
         'No chapter assignment',
-        'Ask an Area Servant, LIT Servant, Campus Servant, or Couple Coordinator to assign your account to a chapter.'
+        'Ask an Area Servant, Area LIT Servant, Campus Servant, Area Kids Servant, or Couple Coordinator to assign your account to a chapter.'
       );
     return;
   }
@@ -3183,7 +3191,7 @@ function renderChapterServantDashboard(data) {
       ) +
       emptyState(
         'No chapter assignment',
-        'Ask an Area Servant, LIT Servant, Campus Servant, or Couple Coordinator to assign your member record to a chapter.'
+        'Ask an Area Servant, Area LIT Servant, Campus Servant, Area Kids Servant, or Couple Coordinator to assign your member record to a chapter.'
       );
     return;
   }
@@ -3920,7 +3928,7 @@ function renderServices() {
   content.innerHTML =
     pageHeader(
       'Services',
-      'View the seven built-in MFC Youth service roles and assigned members.'
+      'View the eight built-in MFC Youth service roles and assigned members.'
     ) +
     `
     <div class="service-grid">
@@ -7733,7 +7741,7 @@ window.deleteParticipant = async (eventId, id) => {
 // =========================================================
 
 function isLeadershipSession() {
-  return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'chapter_servant'].includes(
+  return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(
     String(session?.role || '').trim().toLowerCase()
   );
 }

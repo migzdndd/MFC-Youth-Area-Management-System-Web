@@ -65,7 +65,7 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - Member creation creates only the organizational Member record. Optional portal access is claimed separately by the Member.
 - `POST /api/auth/member-claim` creates a self-chosen portal account after matching the verified email to an existing Member record.
 - Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
-- Super Admin roles are Couple Coordinator/s, Area Servant, LIT Servant, and Campus Servant.
+- Super Admin roles are Couple Coordinator/s, Area Servant, Area LIT Servant, Campus Servant, and Area Kids Servant.
 - RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
 
 ## Setup
@@ -73,7 +73,7 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 1. Create a Supabase project.
 2. Open Supabase SQL Editor and run `Backend/supabase/001_initial_schema.sql`.
 3. Run `Backend/supabase/002_seed_reference_data.sql` after confirming the Area seed values.
-4. Run `Backend/supabase/003_security_hardening.sql`, `004_servant_leader_password_policy.sql`, `005_cloud_modules.sql`, and `006_campus_servant_admin_role.sql` in order on an existing project.
+4. Run `Backend/supabase/003_security_hardening.sql`, `004_servant_leader_password_policy.sql`, `005_cloud_modules.sql`, `006_campus_servant_admin_role.sql`, and `007_area_kids_and_area_lit.sql` in order on an existing project.
 5. In Vercel Project Settings -> Environment Variables, add:
    - `SUPABASE_URL`
    - `SUPABASE_PUBLISHABLE_KEY`

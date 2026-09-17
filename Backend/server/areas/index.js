@@ -7,6 +7,7 @@ const LEADERSHIP_ROLES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'area_kids_servant',
   'chapter_servant'
 ]);
 
@@ -15,8 +16,9 @@ const DEFAULT_SERVICES = [
   'Household Servant',
   'Chapter Servant',
   'Area Servant',
-  'LIT Servant',
+  'Area LIT Servant',
   'Campus Servant',
+  'Area Kids Servant',
   'MFC High Servant'
 ];
 
