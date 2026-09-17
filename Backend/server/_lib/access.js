@@ -4,7 +4,8 @@ import { readBearerToken } from './http.js';
 export const SUPER_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
-  'lit_servant'
+  'lit_servant',
+  'campus_servant'
 ]);
 
 export function isSuperAdminRole(role) {

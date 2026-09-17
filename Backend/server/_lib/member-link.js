@@ -4,6 +4,7 @@ const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
+  'campus_servant',
   'chapter_servant'
 ]);
 
@@ -13,6 +14,7 @@ const LEADERSHIP_ROLES = new Set([
 const MEMBER_BACKED_ADMIN_ROLES = new Set([
   'area_servant',
   'lit_servant',
+  'campus_servant',
   'chapter_servant'
 ]);
 

@@ -20,7 +20,8 @@ async function assignServices(req, res) {
   if (!isSuperAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can assign services.' });
   const areaId = requireArea(profile);
   const memberId = req.body?.memberId;
-  const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 50);
+  const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(value => String(value || '').trim()).filter(Boolean))];
+  if (serviceNames.length > 1) return sendJson(res, 400, { ok: false, error: 'A member can only be assigned to one service.' });
   if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
   const member = await loadAreaRow(supabase, 'members', memberId, areaId, 'id');
   if (!member) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });

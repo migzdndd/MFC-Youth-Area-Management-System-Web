@@ -7,6 +7,7 @@ const ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
+  'campus_servant',
   'chapter_servant'
 ]);
 

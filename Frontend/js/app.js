@@ -40,6 +40,7 @@ const ACCESS_LEVELS = [
   { value: 'couple_coordinator', label: 'Couple Coordinator/s' },
   { value: 'area_servant', label: 'Area Servant' },
   { value: 'lit_servant', label: 'LIT Servant' },
+  { value: 'campus_servant', label: 'Campus Servant' },
   { value: 'chapter_servant', label: 'Chapter Servant' },
   { value: 'member', label: 'Member' }
 ];
@@ -52,6 +53,7 @@ const SUPER_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
+  'campus_servant',
   // Kept only for compatibility with the older prototype session.
   'area_admin'
 ]);
@@ -351,7 +353,7 @@ function scopedChapter(data) {
   ) || null;
 }
 
-function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, and LIT Servants can perform this action.') {
+function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, LIT Servants, and Campus Servants can perform this action.') {
   if (isSuperAdminSession()) return false;
   toast(message, 'error');
   return true;
@@ -1737,7 +1739,7 @@ function renderChapterServantMembers(data) {
       ) +
       emptyState(
         'No chapter assignment',
-        'Ask an Area Servant, LIT Servant, or Couple Coordinator to assign your account to a chapter.'
+        'Ask an Area Servant, LIT Servant, Campus Servant, or Couple Coordinator to assign your account to a chapter.'
       );
     return;
   }
@@ -2894,6 +2896,10 @@ window.serviceMember = id => {
 
   if (!member) return;
 
+  const currentService = Array.isArray(member.services) && member.services.length
+    ? member.services[0]
+    : '';
+
   const checks =
     data.services
       .map(
@@ -2902,19 +2908,10 @@ window.serviceMember = id => {
             class="check-row"
           >
             <input
-              type="checkbox"
-              value="${esc(
-          service
-        )}"
-              ${(
-            member.services ||
-            []
-          ).includes(
-            service
-          )
-            ? 'checked'
-            : ''
-          }
+              type="radio"
+              name="serviceAssignment"
+              value="${esc(service)}"
+              ${currentService === service ? 'checked' : ''}
             >
 
             ${esc(service)}
@@ -2924,7 +2921,7 @@ window.serviceMember = id => {
       .join('');
 
   openModal(
-    `Assign Services - ${esc(
+    `Assign Service - ${esc(
       fullName(member)
     )}`,
 
@@ -2938,9 +2935,10 @@ window.serviceMember = id => {
     `,
 
     async close => {
-      const selectedServices = [
-        ...document.querySelectorAll('#serviceChecks input:checked')
-      ].map(input => input.value);
+      const selectedService = document.querySelector(
+        '#serviceChecks input[name="serviceAssignment"]:checked'
+      )?.value || '';
+      const selectedServices = selectedService ? [selectedService] : [];
 
       try {
         if (session?.backendAuth && !session?.demo) {
@@ -2955,7 +2953,7 @@ window.serviceMember = id => {
         }
 
         close();
-        toast('Services updated.');
+        toast('Service updated.');
         renderMembers();
       } catch (error) {
         toast(error?.message || 'Unable to update services.', 'error');
@@ -3185,7 +3183,7 @@ function renderChapterServantDashboard(data) {
       ) +
       emptyState(
         'No chapter assignment',
-        'Ask an Area Servant, LIT Servant, or Couple Coordinator to assign your member record to a chapter.'
+        'Ask an Area Servant, LIT Servant, Campus Servant, or Couple Coordinator to assign your member record to a chapter.'
       );
     return;
   }
@@ -7735,7 +7733,7 @@ window.deleteParticipant = async (eventId, id) => {
 // =========================================================
 
 function isLeadershipSession() {
-  return ['couple_coordinator', 'area_servant', 'lit_servant', 'chapter_servant'].includes(
+  return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'chapter_servant'].includes(
     String(session?.role || '').trim().toLowerCase()
   );
 }

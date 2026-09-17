@@ -15,6 +15,7 @@ const ACCESS_LEVELS = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
+  'campus_servant',
   'chapter_servant',
   'member'
 ]);
