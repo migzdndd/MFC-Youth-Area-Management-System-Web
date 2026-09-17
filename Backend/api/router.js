@@ -17,6 +17,8 @@ import participants from '../server/participants/index.js';
 import reports from '../server/reports/index.js';
 import services from '../server/services/index.js';
 import sync from '../server/sync/index.js';
+import { apiError } from '../server/_lib/http.js';
+import { isRateLimited } from '../server/_lib/rate-limit.js';
 
 const ROUTES = new Map([
   ['health', health],
@@ -46,6 +48,23 @@ function normalizeRoute(value) {
 }
 
 export default async function handler(req, res) {
+  // 1. Set Defensive HTTP Security Headers globally
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // 2. Extract Client IP for Rate Limiting (handles Vercel/Proxy headers)
+  const clientIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown';
+  
+  // 3. Apply Rate Limiting (e.g. 150 requests per 15 minutes globally per IP)
+  if (isRateLimited(clientIp, 150)) {
+    return res.status(429).json({
+      ok: false,
+      error: 'Too many requests. Please try again later.'
+    });
+  }
+
   try {
     const route = normalizeRoute(req.query?.route);
     const routeHandler = ROUTES.get(route);
@@ -61,9 +80,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('API router error:', error);
     if (res.headersSent) return;
-    return res.status(500).json({
-      ok: false,
-      error: 'The server could not complete the request.'
-    });
+    // Fall back to robust apiError handler for safe client messages
+    return apiError(res, error);
   }
 }
