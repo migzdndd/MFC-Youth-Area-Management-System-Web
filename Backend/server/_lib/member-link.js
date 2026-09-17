@@ -1,4 +1,5 @@
 import { normalizeEmail } from './http.js';
+import { ensureRoleServiceAssignment } from './service-catalog.js';
 
 const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
@@ -134,6 +135,12 @@ export async function ensureLeadershipMemberRecord({
         .single();
       if (memberUpdateError) throw memberUpdateError;
 
+      await ensureRoleServiceAssignment(supabase, {
+        memberId: updatedMember.id,
+        areaId: targetAreaId,
+        role
+      });
+
       return {
         profile: { ...profile, area_id: targetAreaId, member_id: updatedMember.id },
         member: updatedMember,
@@ -209,6 +216,12 @@ export async function ensureLeadershipMemberRecord({
       .single();
     if (profileUpdateError) throw profileUpdateError;
 
+    await ensureRoleServiceAssignment(supabase, {
+      memberId: updatedMember.id,
+      areaId: targetAreaId,
+      role
+    });
+
     return {
       profile: updatedProfile,
       member: updatedMember,
@@ -240,6 +253,12 @@ export async function ensureLeadershipMemberRecord({
 
     if (memberError) throw memberError;
     createdMember = member;
+
+    await ensureRoleServiceAssignment(supabase, {
+      memberId: member.id,
+      areaId: targetAreaId,
+      role
+    });
 
     const profileUpdates = {
       member_id: member.id,

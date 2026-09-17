@@ -1,23 +1,13 @@
 import { requireAuthenticatedProfile, isSuperAdminRole } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { requireArea, loadAreaRow } from '../_lib/cloud-data.js';
-
-function normalizeServiceName(value) {
-  const service = String(value || '').trim();
-  return service === 'LIT Servant' ? 'Area LIT Servant' : service;
-}
+import { ensureStandardServices, normalizeServiceName } from '../_lib/service-catalog.js';
 
 async function listServices(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   const areaId = requireArea(profile);
-  const { data: services, error } = await supabase
-    .from('services')
-    .select('id, area_id, name, is_active, created_at, updated_at')
-    .eq('area_id', areaId)
-    .eq('is_active', true)
-    .order('name', { ascending: true });
-  if (error) throw error;
-  return sendJson(res, 200, { ok: true, services: services || [] });
+  const services = await ensureStandardServices(supabase, areaId);
+  return sendJson(res, 200, { ok: true, services });
 }
 
 async function assignServices(req, res) {
@@ -31,12 +21,7 @@ async function assignServices(req, res) {
   const member = await loadAreaRow(supabase, 'members', memberId, areaId, 'id');
   if (!member) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
 
-  const { data: services, error: serviceError } = await supabase
-    .from('services')
-    .select('id, name')
-    .eq('area_id', areaId)
-    .eq('is_active', true);
-  if (serviceError) throw serviceError;
+  const services = await ensureStandardServices(supabase, areaId);
   const byName = new Map((services || []).map(item => [normalizeServiceName(item.name), item.id]));
   const unknown = serviceNames.filter(name => !byName.has(name));
   if (unknown.length) return sendJson(res, 400, { ok: false, error: `Unknown service: ${unknown[0]}` });

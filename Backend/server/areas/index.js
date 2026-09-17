@@ -1,6 +1,7 @@
 import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
+import { STANDARD_SERVICES } from '../_lib/service-catalog.js';
 
 const LEADERSHIP_ROLES = new Set([
   'couple_coordinator',
@@ -11,16 +12,6 @@ const LEADERSHIP_ROLES = new Set([
   'chapter_servant'
 ]);
 
-const DEFAULT_SERVICES = [
-  'Unit Servant',
-  'Household Servant',
-  'Chapter Servant',
-  'Area Servant',
-  'Area LIT Servant',
-  'Campus Servant',
-  'Area Kids Servant',
-  'MFC High Servant'
-];
 
 function cleanAreaName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120);
@@ -105,7 +96,7 @@ async function createArea(req, res) {
 
     const { error: serviceError } = await supabase
       .from('services')
-      .insert(DEFAULT_SERVICES.map(serviceName => ({ area_id: area.id, name: serviceName, is_active: true })));
+      .insert(STANDARD_SERVICES.map(serviceName => ({ area_id: area.id, name: serviceName, is_active: true })));
     if (serviceError) throw serviceError;
 
     const memberLink = await ensureLeadershipMemberRecord({

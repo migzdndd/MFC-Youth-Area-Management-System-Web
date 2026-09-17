@@ -51,9 +51,44 @@ const ACCESS_ROLE_VALUES = new Set(
   ACCESS_LEVELS.map(item => item.value)
 );
 
+const SERVICE_ALIASES = new Map([
+  ['unit servant', 'Unit Servant'],
+  ['household servant', 'Household Servant'],
+  ['chapter servant', 'Chapter Servant'],
+  ['area servant', 'Area Servant'],
+  ['lit servant', 'Area LIT Servant'],
+  ['area lit servant', 'Area LIT Servant'],
+  ['lit_servant', 'Area LIT Servant'],
+  ['campus servant', 'Campus Servant'],
+  ['campus_servant', 'Campus Servant'],
+  ['kids servant', 'Area Kids Servant'],
+  ['area kids servant', 'Area Kids Servant'],
+  ['area_kids_servant', 'Area Kids Servant'],
+  ['mfc high servant', 'MFC High Servant']
+]);
+
+const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
+  area_servant: 'Area Servant',
+  lit_servant: 'Area LIT Servant',
+  campus_servant: 'Campus Servant',
+  area_kids_servant: 'Area Kids Servant',
+  chapter_servant: 'Chapter Servant'
+});
+
 function normalizeServiceName(value) {
-  const service = String(value || '').trim();
-  return service === 'LIT Servant' ? 'Area LIT Servant' : service;
+  const service = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!service) return '';
+  return SERVICE_ALIASES.get(service.toLowerCase()) || service;
+}
+
+function detectedMemberServices(member) {
+  const explicit = Array.isArray(member?.services)
+    ? [...new Set(member.services.map(normalizeServiceName).filter(Boolean))]
+    : [];
+  if (explicit.length) return [explicit[0]];
+
+  const inferred = ACCESS_ROLE_SERVICE_MAP[normalizeAccessRole(member?.accessLevel || 'member')];
+  return inferred ? [inferred] : [];
 }
 
 const SUPER_ADMIN_ROLES = new Set([
@@ -165,7 +200,7 @@ async function backendApi(path, options = {}) {
 }
 
 function cloudMemberToLocal(member, previous = {}) {
-  return {
+  const local = {
     ...previous,
     id: member.id,
     areaId: member.area_id ?? previous.areaId ?? null,
@@ -186,6 +221,8 @@ function cloudMemberToLocal(member, previous = {}) {
     chapterName: previous.chapterName || '',
     cloudBacked: true
   };
+  local.services = detectedMemberServices(local);
+  return local;
 }
 
 async function syncBackendMembersIntoLocalDb() {
@@ -292,11 +329,16 @@ async function syncCloudModulesIntoLocalDb() {
   });
 
   const chapterNameById = new Map(data.chapters.map(chapter => [String(chapter.id), chapter.name]));
-  data.members = data.members.map(member => ({
-    ...member,
-    chapterName: member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '',
-    services: serviceNamesByMember.get(String(member.id)) || []
-  }));
+  data.members = data.members.map(member => {
+    const explicitServices = serviceNamesByMember.get(String(member.id)) || [];
+    const nextMember = {
+      ...member,
+      chapterName: member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '',
+      services: explicitServices
+    };
+    nextMember.services = detectedMemberServices(nextMember);
+    return nextMember;
+  });
 
   data.events = events.map(cloudEventToLocal);
   data.participants = participants.map(cloudParticipantToLocal);
@@ -434,6 +476,7 @@ function normalizeDatabase(input) {
             ? member.services.map(normalizeServiceName).filter(Boolean)
             : []
         };
+        normalized.services = detectedMemberServices(normalized);
 
         const rawId = member.chapterId;
         const rawName = String(member.chapterName || '').trim();

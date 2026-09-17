@@ -3,6 +3,44 @@ const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
 const USER_KEY = 'mfc_demo_users';
 
+const STANDARD_SERVICES = [
+  'Unit Servant',
+  'Household Servant',
+  'Chapter Servant',
+  'Area Servant',
+  'Area LIT Servant',
+  'Campus Servant',
+  'Area Kids Servant',
+  'MFC High Servant'
+];
+
+const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
+  area_servant: 'Area Servant',
+  lit_servant: 'Area LIT Servant',
+  campus_servant: 'Campus Servant',
+  area_kids_servant: 'Area Kids Servant',
+  chapter_servant: 'Chapter Servant'
+});
+
+function normalizePortalServiceName(value) {
+  const service = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!service) return '';
+  const key = service.toLowerCase();
+  if (key === 'lit servant' || key === 'lit_servant') return 'Area LIT Servant';
+  if (key === 'kids servant' || key === 'area_kids_servant') return 'Area Kids Servant';
+  return service;
+}
+
+function detectedPortalServices(member) {
+  const explicit = Array.isArray(member?.services)
+    ? [...new Set(member.services.map(normalizePortalServiceName).filter(Boolean))]
+    : [];
+  if (explicit.length) return [explicit[0]];
+  const role = String(member?.accessLevel || 'member').trim().toLowerCase();
+  const inferred = ACCESS_ROLE_SERVICE_MAP[role];
+  return inferred ? [inferred] : [];
+}
+
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
@@ -187,7 +225,7 @@ async function syncMemberPortalCloudCache() {
   const services = Array.isArray(syncPayload?.services) ? syncPayload.services : [];
   const serviceLinks = Array.isArray(syncPayload?.memberServices) ? syncPayload.memberServices : [];
   const chapterNameById = new Map(chapters.map(row => [String(row.id), row.name]));
-  const serviceNameById = new Map(services.map(row => [String(row.id), row.name]));
+  const serviceNameById = new Map(services.map(row => [String(row.id), normalizePortalServiceName(row.name)]));
   const servicesByMember = new Map();
 
   serviceLinks.forEach(link => {
@@ -203,11 +241,15 @@ async function syncMemberPortalCloudCache() {
     const member = portalCloudMember(row, previous);
     member.chapterName = member.chapterId ? (chapterNameById.get(String(member.chapterId)) || '') : '';
     member.services = servicesByMember.get(String(member.id)) || [];
+    member.services = detectedPortalServices(member);
     return member;
   });
 
   data.chapters = chapters.map(row => ({ id: row.id, name: row.name, areaId: row.area_id, cloudBacked: true }));
-  data.services = services.map(row => row.name).filter(Boolean);
+  data.services = [...new Set([
+    ...STANDARD_SERVICES,
+    ...services.map(row => normalizePortalServiceName(row.name)).filter(Boolean)
+  ])];
   data.events = (Array.isArray(syncPayload?.events) ? syncPayload.events : []).map(row => {
     let localDateTime = '';
     if (row.starts_at) {

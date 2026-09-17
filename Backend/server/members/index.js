@@ -10,6 +10,7 @@ import {
   isValidEmail,
   apiError
 } from '../_lib/http.js';
+import { ensureRoleServiceAssignment } from '../_lib/service-catalog.js';
 
 const ACCESS_LEVELS = new Set([
   'couple_coordinator',
@@ -153,6 +154,12 @@ async function createMember(req, res) {
     .single();
   if (memberError) throw memberError;
 
+  await ensureRoleServiceAssignment(supabase, {
+    memberId: createdMember.id,
+    areaId,
+    role: accessLevel
+  });
+
   return sendJson(res, 201, { ok: true, member: createdMember });
 }
 
@@ -251,6 +258,12 @@ async function updateMember(req, res) {
     const { error: authUpdateError } = await supabase.auth.admin.updateUserById(linkedProfile.id, authChanges);
     if (authUpdateError) throw authUpdateError;
   }
+
+  await ensureRoleServiceAssignment(supabase, {
+    memberId: updated.id,
+    areaId: profile.area_id,
+    role: accessLevel
+  });
 
   return sendJson(res, 200, { ok: true, member: updated });
 }

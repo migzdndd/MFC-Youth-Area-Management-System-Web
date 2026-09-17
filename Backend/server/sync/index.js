@@ -1,12 +1,14 @@
 import { requireAuthenticatedProfile, isSuperAdminRole, isChapterServantRole } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { requireArea } from '../_lib/cloud-data.js';
+import { ensureStandardServices } from '../_lib/service-catalog.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
   try {
     const { supabase, profile } = await requireAuthenticatedProfile(req);
     const areaId = requireArea(profile);
+    await ensureStandardServices(supabase, areaId);
 
     let chaptersQuery = supabase.from('chapters').select('id, area_id, name, is_active, created_at, updated_at').eq('area_id', areaId).eq('is_active', true).order('name');
     let reportsQuery = supabase.from('activity_reports').select('id, area_id, chapter_id, prepared_by_member_id, prepared_by_name, chapter_name_snapshot, report_type, activity_date, title, activity, participant_count, location, event_id, notes, created_at, updated_at').eq('area_id', areaId).order('activity_date', { ascending: false });
