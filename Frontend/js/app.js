@@ -602,8 +602,9 @@ function save(data) {
   );
 }
 
+let uidSequence = 0;
 function uid() {
-  return Date.now() + Math.floor(Math.random() * 10000);
+  return Date.now() * 1000 + (++uidSequence % 1000);
 }
 
 function esc(value = '') {
@@ -1375,8 +1376,11 @@ function renderDashboard() {
         ${cards
       .map(
         card => `
-              <article
+              <a
                 class="summary-item ${card[0]}"
+                href="/${card[0]}"
+                style="text-decoration: none; color: inherit; display: flex; flex-direction: column;"
+                title="View ${esc(card[1])}"
               >
                 <div class="summary-label">
                   ${card[1]}
@@ -1395,7 +1399,10 @@ function renderDashboard() {
                 <p>
                   ${card[3]}
                 </p>
-              </article>
+                <span class="summary-link-hint" style="font-size: 0.76rem; color: var(--blue); font-weight: 600; margin-top: auto; padding-top: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                  Open module &rarr;
+                </span>
+              </a>
             `
       )
       .join('')}
@@ -1515,11 +1522,21 @@ function renderDashboard() {
                           </div>
                         </div>
 
-                        <span>
-                          ${fmtDateTime(
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>
+                            ${fmtDateTime(
             event.date
           )}
-                        </span>
+                          </span>
+                          <button
+                            class="btn"
+                            type="button"
+                            onclick='viewEvent(${inlineJsArg(event.id)})'
+                            style="padding: 3px 8px; font-size: 0.76rem;"
+                          >
+                            View
+                          </button>
+                        </div>
 
                       </div>
                     `
@@ -1568,11 +1585,21 @@ function renderDashboard() {
                           </div>
                         </div>
 
-                        <span>
-                          ${fmtDate(
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>
+                            ${fmtDate(
             event.date
           )}
-                        </span>
+                          </span>
+                          <button
+                            class="btn"
+                            type="button"
+                            onclick='viewEvent(${inlineJsArg(event.id)})'
+                            style="padding: 3px 8px; font-size: 0.76rem;"
+                          >
+                            View
+                          </button>
+                        </div>
 
                       </div>
                     `
@@ -2811,8 +2838,9 @@ function memberModal(id = null) {
   );
 }
 
-window.editMember =
-  memberModal;
+window.editMember = memberModal;
+window.manageAccount = memberModal;
+window.assignChapter = memberModal;
 
 window.deleteMember = async id => {
   if (denyUnlessSuperAdmin()) return;
@@ -3954,8 +3982,37 @@ function renderServices() {
   `;
 }
 
+window.removeMemberService = async (memberId, serviceName) => {
+  if (denyUnlessSuperAdmin()) return;
+  const data = db();
+  const member = data.members.find(m => String(m.id) === String(memberId));
+  if (!member) return;
+  if (!confirm(`Remove "${serviceName}" assignment from ${fullName(member)}?`)) return;
+
+  const updatedServices = (member.services || []).filter(s => s !== serviceName);
+  try {
+    if (session?.backendAuth && !session?.demo) {
+      await backendApi('/api/services', {
+        method: 'PATCH',
+        body: JSON.stringify({ memberId: member.id, serviceNames: updatedServices })
+      });
+      await refreshAllCloudData({ render: false });
+    } else {
+      member.services = updatedServices;
+      save(data);
+    }
+    toast(`Removed ${serviceName} from ${fullName(member)}.`);
+    activeModalCleanup?.();
+    window.viewService(serviceName);
+    renderServices();
+  } catch (error) {
+    toast(error?.message || 'Unable to update service assignment.', 'error');
+  }
+};
+
 window.viewService = service => {
   const data = db();
+  const canManage = isSuperAdminSession();
 
   const members =
     data.members.filter(
@@ -3975,22 +4032,39 @@ window.viewService = service => {
           ${members
         .map(
           member => `
-                <div class="mini-row">
+                <div class="mini-row" style="align-items: center;">
 
-                  <strong>
-                    ${esc(
+                  <div>
+                    <strong>
+                      ${esc(
             fullName(
               member
             )
           )}
-                  </strong>
+                    </strong>
 
-                  <span>
-                    ${esc(
+                    <div class="muted">
+                      ${esc(
             member.chapterName ||
             'No Chapter'
           )}
-                  </span>
+                    </div>
+                  </div>
+
+                  ${canManage
+                    ? `
+                      <button
+                        class="btn red"
+                        type="button"
+                        onclick='removeMemberService(${inlineJsArg(member.id)}, ${inlineJsArg(service)})'
+                        style="padding: 3px 8px; font-size: 0.76rem;"
+                        title="Remove ${esc(service)} assignment"
+                      >
+                        Remove
+                      </button>
+                    `
+                    : ''
+                  }
 
                 </div>
               `
@@ -4903,6 +4977,13 @@ function renderReports() {
                         >
                           <button
                             class="btn"
+                            onclick='viewReport(${inlineJsArg(report.id)})'
+                          >
+                            View
+                          </button>
+
+                          <button
+                            class="btn"
                             onclick='reportModal(${inlineJsArg(report.id)})'
                           >
                             Edit
@@ -5030,6 +5111,87 @@ function renderReports() {
     renderReports();
   };
 }
+
+window.viewReport = function (id) {
+  const data = db();
+  const report = data.reports.find(item => String(item.id) === String(id));
+  if (!report) return;
+
+  const linkedEvent = report.eventId
+    ? data.events.find(e => String(e.id) === String(report.eventId))
+    : null;
+
+  const canEdit = !isChapterServantSession() || report.chapter === scopedChapter(data)?.name;
+
+  const body = `
+    <div class="detail-grid">
+      <div class="detail-item full">
+        <span class="detail-label">Report Title</span>
+        <div class="detail-value"><strong>${esc(report.title || 'Untitled Report')}</strong></div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Activity Type</span>
+        <div class="detail-value"><span class="badge active">${esc(report.type || 'Activity')}</span></div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Chapter</span>
+        <div class="detail-value">${esc(report.chapter || '—')}</div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Activity Date</span>
+        <div class="detail-value">${esc(fmtDate(report.date))}</div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Location / Venue</span>
+        <div class="detail-value">${esc(report.location || '—')}</div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Prepared By</span>
+        <div class="detail-value">${esc(report.preparedBy || '—')}</div>
+      </div>
+
+      <div class="detail-item">
+        <span class="detail-label">Participants</span>
+        <div class="detail-value"><strong>${Number(report.participants || 0)}</strong> attendees</div>
+      </div>
+
+      <div class="detail-item full">
+        <span class="detail-label">Linked Event</span>
+        <div class="detail-value">${linkedEvent ? esc(linkedEvent.name) : '<span class="muted">No Linked Event</span>'}</div>
+      </div>
+
+      ${report.activity ? `
+        <div class="detail-item full">
+          <span class="detail-label">Activity Summary</span>
+          <div class="detail-value">${esc(report.activity)}</div>
+        </div>
+      ` : ''}
+
+      <div class="detail-item full">
+        <span class="detail-label">Highlights & Narrative</span>
+        <div class="detail-value" style="white-space: pre-wrap; line-height: 1.6;">${esc(report.highlights || 'No additional highlights or narrative recorded for this report.')}</div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line);">
+      ${canEdit ? `
+        <button class="btn blue" type="button" onclick='activeModalCleanup?.(); reportModal(${inlineJsArg(report.id)})'>
+          Edit Report
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  openModal(
+    `Activity Report - ${esc(report.title || 'Details')}`,
+    body
+  );
+};
 
 window.reportModal = function (
   id = null

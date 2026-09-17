@@ -63,7 +63,6 @@ a,
 .login-card,
 .login-form,
 .auth-info {
-  will-change: transform, opacity, filter;
   transition:
     transform var(--motion-fast) var(--ease-out),
     opacity var(--motion-fast) var(--ease-out),
@@ -76,6 +75,7 @@ button:focus-visible,
 .btn:focus-visible,
 a:hover,
 a:focus-visible {
+  will-change: transform;
   transform: translateY(-2px);
   box-shadow: 0 8px 18px rgba(8, 120, 189, 0.12);
 }

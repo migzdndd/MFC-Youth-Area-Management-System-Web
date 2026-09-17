@@ -506,7 +506,7 @@ const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
   backToLoginButton.addEventListener('click', () => {
     clearSession();
-    navigateWithLoader('/index.html');
+    navigateWithLoader('/');
   });
 }
 
@@ -529,8 +529,9 @@ if (forcePasswordForm) {
       if (pageIntro) pageIntro.textContent = 'Your account requires a password update before continuing.';
     }
 
-    forcePasswordForm.addEventListener('submit', event => {
+    forcePasswordForm.addEventListener('submit', async event => {
       event.preventDefault();
+      const submit = forcePasswordForm.querySelector('[type="submit"]');
       const currentPassword = document.getElementById('currentPassword').value;
       const password = document.getElementById('newPassword').value;
       const confirmation = document.getElementById('newPasswordConfirm').value;
@@ -553,6 +554,27 @@ if (forcePasswordForm) {
         return;
       }
 
+      // Backend-authenticated users: call the Supabase change-password API.
+      if (session.backendAuth && !session.demo) {
+        setButtonBusy(submit, true, 'Updating…');
+        try {
+          await apiJson('/api/auth/change-password', {
+            method: 'POST',
+            body: JSON.stringify({ currentPassword, newPassword: password })
+          });
+
+          const updatedSession = { ...session, mustChangePassword: false };
+          updateSession(updatedSession);
+          showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
+          setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
+        } catch (error) {
+          setButtonBusy(submit, false);
+          showMessage('passwordMessage', error?.message || 'Unable to update your password. Please try again.');
+        }
+        return;
+      }
+
+      // Local prototype fallback for browser-only demo accounts.
       const users = getUsers();
       const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
       if (!user || user.password !== currentPassword) {
