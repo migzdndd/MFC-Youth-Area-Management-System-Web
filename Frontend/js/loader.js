@@ -4,6 +4,7 @@
   const NAVIGATION_TIMEOUT_MS = 5000;
   let navigating = false;
   let navigationTimer = null;
+  let delayedShowTimer = null;
 
   function destinationLabel(url) {
     try {
@@ -211,6 +212,10 @@
         window.clearTimeout(navigationTimer);
         navigationTimer = null;
       }
+      if (delayedShowTimer) {
+        window.clearTimeout(delayedShowTimer);
+        delayedShowTimer = null;
+      }
       if (!overlay) return;
       overlay.classList.remove('is-active');
       overlay.setAttribute('aria-hidden', 'true');
@@ -223,13 +228,17 @@
     try {
       if (!url || navigating) return;
       navigating = true;
-      show();
 
-      const overlay = document.getElementById(LOADER_ID);
-      const destination = overlay?.querySelector('.page-loader__destination');
-      if (destination) destination.textContent = `Opening ${destinationLabel(url)}`;
+      // Navigation still starts immediately, but the full-screen overlay is
+      // delayed slightly so fast cached page changes do not flash a loader.
+      // If navigation really is slow, the overlay appears as feedback.
+      delayedShowTimer = window.setTimeout(() => {
+        show();
+        const overlay = document.getElementById(LOADER_ID);
+        const destination = overlay?.querySelector('.page-loader__destination');
+        if (destination) destination.textContent = `Opening ${destinationLabel(url)}`;
+      }, 120);
 
-      // No artificial delay. Navigation starts immediately.
       if (options.replace) {
         window.location.replace(url);
       } else {
@@ -329,6 +338,16 @@
 
   document.addEventListener('click', event => {
     try {
+      const navButton = event.target.closest?.('[data-nav]');
+      if (navButton) {
+        const target = navButton.getAttribute('data-nav');
+        if (target) {
+          event.preventDefault();
+          navigate(target);
+          return;
+        }
+      }
+
       const anchor = event.target.closest?.('a[href]');
       if (!shouldHandleLink(anchor, event)) return;
       event.preventDefault();

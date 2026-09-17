@@ -2,11 +2,10 @@ import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
 
-const LEADERSHIP_ROLES = new Set([
+const AREA_SETUP_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
-  'lit_servant',
-  'chapter_servant'
+  'lit_servant'
 ]);
 
 const DEFAULT_SERVICES = [
@@ -36,7 +35,7 @@ function areaCodeFromName(name) {
 
 async function listAreas(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
+  if (!AREA_SETUP_ROLES.has(String(profile.role || '').toLowerCase())) {
     return sendJson(res, 403, { ok: false, error: 'Area setup is available only to Servant Leader accounts.' });
   }
 
@@ -52,7 +51,7 @@ async function listAreas(req, res) {
 
 async function createArea(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
-  if (!LEADERSHIP_ROLES.has(String(profile.role || '').toLowerCase())) {
+  if (!AREA_SETUP_ROLES.has(String(profile.role || '').toLowerCase())) {
     return sendJson(res, 403, { ok: false, error: 'You do not have permission to create an Area.' });
   }
   if (profile.area_id) {
@@ -123,7 +122,11 @@ async function createArea(req, res) {
     });
   } catch (error) {
     if (createdArea?.id) {
-      await supabase.from('areas').delete().eq('id', createdArea.id).catch(() => {});
+      try {
+        await supabase.from('areas').delete().eq('id', createdArea.id);
+      } catch (cleanupError) {
+        console.error('Area rollback cleanup failed:', cleanupError);
+      }
     }
     throw error;
   }

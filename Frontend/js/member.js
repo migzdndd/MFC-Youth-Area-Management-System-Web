@@ -1,7 +1,7 @@
 // MFC Youth Member Portal - frontend prototype
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
-const USER_KEY = 'mfc_demo_users';
+const CLOUD_CACHE_PREFIX = `${DB_KEY}::cloud`;
 
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
@@ -12,6 +12,62 @@ function getSession() {
     safeParse(localStorage.getItem(SESSION_KEY), null) ||
     safeParse(sessionStorage.getItem(SESSION_KEY), null)
   );
+}
+
+function isCloudAuthenticatedSession(currentSession) {
+  return Boolean(
+    currentSession?.backendAuth === true &&
+    currentSession?.accessToken
+  );
+}
+
+function cacheIdentityPart(value, fallback) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  return encodeURIComponent(normalized);
+}
+
+function databaseStorageKey(currentSession = getSession()) {
+  if (!currentSession?.backendAuth) return DB_KEY;
+
+  const areaPart = cacheIdentityPart(currentSession.areaId, 'unassigned-area');
+  const accountPart = cacheIdentityPart(
+    currentSession.userId || currentSession.memberId || currentSession.email,
+    'unknown-account'
+  );
+
+  return `${CLOUD_CACHE_PREFIX}::${areaPart}::${accountPart}`;
+}
+
+function clearScopedDatabaseCache(currentSession = getSession()) {
+  const key = databaseStorageKey(currentSession);
+  if (key !== DB_KEY) localStorage.removeItem(key);
+}
+
+function updateStoredSession(nextSession) {
+  if (localStorage.getItem(SESSION_KEY)) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+  } else {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+  }
+}
+
+function clearStoredSession(currentSession = getSession()) {
+  clearScopedDatabaseCache(currentSession);
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function sessionExpiresSoon(expiresAt, skewSeconds = 60) {
+  if (!expiresAt) return false;
+
+  const numeric = Number(expiresAt);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return (numeric * 1000) <= (Date.now() + (skewSeconds * 1000));
+  }
+
+  const parsed = Date.parse(String(expiresAt));
+  return Number.isFinite(parsed) && parsed <= (Date.now() + (skewSeconds * 1000));
 }
 
 function esc(value = '') {
@@ -123,28 +179,185 @@ function eventCard(event, registration, timing) {
   `;
 }
 
-const session = getSession();
+let session = getSession();
+
+// Member Portal and Member View Preview require a real cloud-authenticated
+// Supabase session. Old browser/demo sessions are no longer accepted.
+if (session && !isCloudAuthenticatedSession(session)) {
+  clearStoredSession(session);
+  session = null;
+}
+
 const previewMode = Boolean(
   session &&
   session.role !== 'member' &&
+  isCloudAuthenticatedSession(session) &&
   new URLSearchParams(window.location.search).get('preview') === '1'
 );
 
+let portalRefreshPromise = null;
+let portalRefreshDefinitiveFailure = false;
 
-async function portalBackendApi(path) {
+async function refreshPortalSession({ force = false } = {}) {
+  if (!session?.backendAuth || !session?.refreshToken) return false;
+  if (!force && !sessionExpiresSoon(session?.expiresAt)) return true;
+  if (portalRefreshPromise) return portalRefreshPromise;
+
+  portalRefreshPromise = (async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    portalRefreshDefinitiveFailure = false;
+
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: session.refreshToken })
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || !payload?.session?.accessToken) {
+        portalRefreshDefinitiveFailure =
+          response.status === 401 ||
+          response.status === 403 ||
+          ['SESSION_REFRESH_FAILED', 'ACCOUNT_INACTIVE'].includes(String(payload?.code || ''));
+        return false;
+      }
+
+      Object.assign(session, {
+        accessToken: payload.session.accessToken,
+        refreshToken: payload.session.refreshToken || session.refreshToken,
+        expiresAt: payload.session.expiresAt || null,
+        userId: payload.user?.id ?? session.userId,
+        memberId: payload.user?.memberId ?? session.memberId,
+        email: payload.user?.email || session.email,
+        name: payload.user?.name || session.name,
+        role: payload.user?.role || session.role,
+        areaId: payload.user?.areaId ?? session.areaId,
+        chapterId: payload.user?.chapterId ?? session.chapterId,
+        mustChangePassword: payload.user?.mustChangePassword === true,
+        needsAreaSetup: payload.user?.role !== 'member' && !(payload.user?.areaId ?? session.areaId)
+      });
+
+      updateStoredSession(session);
+      return true;
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !(error instanceof TypeError)) {
+        console.warn('Member Portal session refresh failed:', error?.message || error);
+      }
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  })();
+
+  try {
+    return await portalRefreshPromise;
+  } finally {
+    portalRefreshPromise = null;
+  }
+}
+
+function invalidatePortalSession() {
+  const previous = session;
+  clearStoredSession(previous);
+  session = null;
+  navigateWithLoader('/', true);
+}
+
+async function portalBackendApi(path, options = {}) {
+  const {
+    timeoutMs: requestedTimeout,
+    _retriedAfterRefresh = false,
+    ...fetchOptions
+  } = options;
+
+  const isRefreshRequest = path === '/api/auth/refresh';
+
+  if (
+    !isRefreshRequest &&
+    !_retriedAfterRefresh &&
+    session?.backendAuth &&
+    session?.refreshToken &&
+    sessionExpiresSoon(session?.expiresAt)
+  ) {
+    await refreshPortalSession({ force: true }).catch(() => false);
+  }
+
   const token = session?.accessToken || '';
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  const timeout = window.setTimeout(() => controller.abort(), Number(requestedTimeout || 8000));
+
   try {
     const response = await fetch(path, {
-      method: 'GET',
+      ...fetchOptions,
+      method: fetchOptions.method || 'GET',
       cache: 'no-store',
       signal: controller.signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(fetchOptions.headers || {})
+      }
     });
+
     const body = await response.json().catch(() => ({ ok: false, error: 'Invalid server response.' }));
-    if (!response.ok) throw new Error(body?.error || 'Request failed.');
+
+    if (!response.ok) {
+      const code = String(body?.code || '');
+      const canRefresh =
+        response.status === 401 &&
+        !_retriedAfterRefresh &&
+        !isRefreshRequest &&
+        session?.backendAuth &&
+        Boolean(session?.refreshToken) &&
+        ['INVALID_SESSION', 'AUTH_REQUIRED'].includes(code);
+
+      if (canRefresh) {
+        const refreshed = await refreshPortalSession({ force: true });
+        if (refreshed) {
+          return portalBackendApi(path, {
+            ...fetchOptions,
+            timeoutMs: requestedTimeout,
+            _retriedAfterRefresh: true
+          });
+        }
+
+        if (portalRefreshDefinitiveFailure || response.status === 401) {
+          invalidatePortalSession();
+        }
+      }
+
+      if (response.status === 403 && code === 'ACCOUNT_INACTIVE') {
+        invalidatePortalSession();
+      }
+
+      if (response.status === 403 && code === 'PASSWORD_SETUP_REQUIRED') {
+        if (session) {
+          session.mustChangePassword = true;
+          updateStoredSession(session);
+        }
+        navigateWithLoader('/change-password', true);
+      }
+
+      const error = new Error(body?.error || 'Request failed.');
+      error.status = response.status;
+      error.code = code;
+      throw error;
+    }
+
     return body;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('The server took too long to respond. Please try again.');
+    }
+    if (error instanceof TypeError) {
+      throw new Error('Unable to reach the server. Check your connection and try again.');
+    }
+    throw error;
   } finally {
     window.clearTimeout(timeout);
   }
@@ -173,16 +386,44 @@ function portalCloudMember(member, previous = {}) {
 }
 
 async function syncMemberPortalCloudCache() {
-  if (!session?.backendAuth || session?.demo || !session?.areaId) return;
+  if (!session?.backendAuth || !session?.areaId) return false;
 
-  const [membersPayload, syncPayload] = await Promise.all([
-    portalBackendApi('/api/members'),
-    portalBackendApi('/api/sync')
-  ]);
+  // One unified request now returns the Member record, assignments, events,
+  // participants, and authoritative profile metadata.
+  const syncPayload = await portalBackendApi('/api/sync');
+  if (!session) return false;
 
-  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  if (syncPayload?.user) {
+    const previousKey = databaseStorageKey(session);
+    Object.assign(session, {
+      userId: syncPayload.user.id ?? session.userId,
+      memberId: syncPayload.user.memberId ?? session.memberId,
+      email: syncPayload.user.email || session.email,
+      name: syncPayload.user.name || session.name,
+      role: String(syncPayload.user.role || session.role || '').trim().toLowerCase(),
+      areaId: syncPayload.user.areaId ?? session.areaId,
+      chapterId: syncPayload.user.chapterId ?? session.chapterId,
+      mustChangePassword: syncPayload.user.mustChangePassword === true,
+      needsAreaSetup: syncPayload.user.role !== 'member' && !(syncPayload.user.areaId ?? session.areaId)
+    });
+    updateStoredSession(session);
+
+    const nextKey = databaseStorageKey(session);
+    if (previousKey !== nextKey && previousKey !== DB_KEY) localStorage.removeItem(previousKey);
+
+    if (session.mustChangePassword) {
+      navigateWithLoader('/change-password', true);
+      return false;
+    }
+    if (session.role !== 'member' && !previewMode) {
+      navigateWithLoader(session.role === 'chapter_servant' ? '/chapters' : '/dashboard', true);
+      return false;
+    }
+  }
+
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
   const previousMembers = Array.isArray(data.members) ? data.members : [];
-  const cloudMembers = Array.isArray(membersPayload?.members) ? membersPayload.members : [];
+  const cloudMembers = Array.isArray(syncPayload?.members) ? syncPayload.members : [];
   const chapters = Array.isArray(syncPayload?.chapters) ? syncPayload.chapters : [];
   const services = Array.isArray(syncPayload?.services) ? syncPayload.services : [];
   const serviceLinks = Array.isArray(syncPayload?.memberServices) ? syncPayload.memberServices : [];
@@ -236,8 +477,21 @@ async function syncMemberPortalCloudCache() {
     attended: Boolean(row.attended),
     cloudBacked: true
   }));
+  data.cloudSyncedAt = Number(syncPayload?.syncedAt || Date.now());
 
-  localStorage.setItem(DB_KEY, JSON.stringify(data));
+  localStorage.setItem(databaseStorageKey(session), JSON.stringify(data));
+  return true;
+}
+
+function memberPortalCacheIsFresh(maxAgeMs = 30000) {
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
+  const syncedAt = Number(data.cloudSyncedAt || 0);
+  const members = Array.isArray(data.members) ? data.members : [];
+  const linked = members.some(item =>
+    String(item.id) === String(session?.memberId) ||
+    String(item.email || '').trim().toLowerCase() === String(session?.email || '').trim().toLowerCase()
+  );
+  return linked && syncedAt > 0 && (Date.now() - syncedAt) < maxAgeMs;
 }
 
 function previewMemberFromSession(currentSession) {
@@ -257,25 +511,57 @@ function previewMemberFromSession(currentSession) {
 }
 
 async function bootstrapMemberPortal() {
-  try {
-    await syncMemberPortalCloudCache();
-  } catch (error) {
-    console.warn('Member Portal cloud sync skipped:', error?.message || error);
+  if (!session) {
+    navigateWithLoader('/', true);
+    return;
   }
 
-if (!session) {
-  navigateWithLoader('/', true);
-} else if (session.mustChangePassword) {
-  navigateWithLoader('/change-password', true);
-} else if (session.role !== 'member' && !previewMode) {
-  navigateWithLoader(
-    session.role === 'chapter_servant'
-      ? '/chapters'
-      : '/dashboard',
-    true
-  );
-} else {
-  const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
+  if (session.mustChangePassword) {
+    navigateWithLoader('/change-password', true);
+    return;
+  }
+
+  if (session.role !== 'member' && !previewMode) {
+    navigateWithLoader(
+      session.role === 'chapter_servant'
+        ? '/chapters'
+        : '/dashboard',
+      true
+    );
+    return;
+  }
+
+  // Refresh an expired/near-expiry session before loading protected cloud data.
+  // If the refresh is definitively rejected, invalidatePortalSession() will
+  // route the user back to sign-in instead of rendering stale cached data.
+  if (sessionExpiresSoon(session.expiresAt)) {
+    const refreshed = await refreshPortalSession({ force: true });
+    if (!refreshed && portalRefreshDefinitiveFailure) {
+      invalidatePortalSession();
+      return;
+    }
+
+    if (session?.mustChangePassword) {
+      navigateWithLoader('/change-password', true);
+      return;
+    }
+  }
+
+  // Recent account/Area-scoped cache makes repeat portal visits immediate.
+  // First load or stale cache performs one unified /api/sync request.
+  if (!memberPortalCacheIsFresh()) {
+    try {
+      await syncMemberPortalCloudCache();
+    } catch (error) {
+      if (!session) return;
+      console.warn('Member Portal cloud sync skipped:', error?.message || error);
+    }
+  }
+
+  if (!session) return;
+
+  {
+  const data = safeParse(localStorage.getItem(databaseStorageKey(session)) || '{}', {});
   const members = Array.isArray(data.members) ? data.members : [];
   const linkedMember = members.find(
     item => String(item.id) === String(session.memberId)
@@ -284,22 +570,21 @@ if (!session) {
   );
   const member = linkedMember || (previewMode ? previewMemberFromSession(session) : null);
 
-  const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
-  const account = Array.isArray(users)
-    ? users.find(item => String(item.id) === String(session.userId))
-    : null;
+  const validMemberCloudSession = Boolean(
+    session?.role === 'member' &&
+    isCloudAuthenticatedSession(session)
+  );
 
   if (
     !previewMode &&
     (
       !member ||
-      (!session.backendAuth && !account) ||
-      account?.isActive === false ||
+      !validMemberCloudSession ||
       String(member?.status || 'Active') === 'Inactive'
     )
   ) {
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
+    clearStoredSession(session);
+    session = null;
     navigateWithLoader('/', true);
   } else if (member) {
     if (previewMode) {
@@ -430,8 +715,8 @@ if (!session) {
 
 if (!previewMode) {
   document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
+    clearStoredSession(session);
+    session = null;
     navigateWithLoader('/');
   });
 

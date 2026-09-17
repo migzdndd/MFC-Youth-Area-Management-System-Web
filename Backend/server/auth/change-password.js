@@ -1,23 +1,17 @@
 import { requireAuthenticatedProfile } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
+import { validateStrongPassword } from '../_lib/password.js';
 
-function passwordError(password) {
-  if (password.length < 8) return 'Password must be at least 8 characters long.';
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    return 'Password must contain at least one letter and one number.';
-  }
-  return '';
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
 
   try {
     const newPassword = String(req.body?.newPassword || '');
-    const validationError = passwordError(newPassword);
+    const validationError = validateStrongPassword(newPassword);
     if (validationError) return sendJson(res, 400, { ok: false, error: validationError });
 
-    const { user, supabase } = await requireAuthenticatedProfile(req);
+    const { user, supabase } = await requireAuthenticatedProfile(req, { allowPasswordSetupPending: true });
 
     const { error: passwordUpdateError } = await supabase.auth.admin.updateUserById(
       user.id,

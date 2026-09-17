@@ -1,4 +1,4 @@
-import { createSupabaseAdmin } from './supabase.js';
+import { createSupabaseAdmin, createSupabaseAuthClient } from './supabase.js';
 import { readBearerToken } from './http.js';
 
 export const SUPER_ADMIN_ROLES = new Set([
@@ -15,7 +15,16 @@ export function isChapterServantRole(role) {
   return String(role || '').trim().toLowerCase() === 'chapter_servant';
 }
 
-export async function requireAuthenticatedUser(req) {
+/**
+ * Validates a user's access token with the normal Supabase Auth client, then
+ * uses the privileged backend client only for database/profile operations.
+ *
+ * Keeping token verification on the publishable/anon Auth client avoids
+ * mixing the backend secret/service-role authorization header with an end-user
+ * bearer token. This is especially important when using Supabase's newer
+ * publishable + secret API key format.
+ */
+export async function requireAuthenticatedProfile(req, options = {}) {
   const token = readBearerToken(req);
   if (!token) {
     const error = new Error('Authentication required.');
@@ -24,8 +33,8 @@ export async function requireAuthenticatedUser(req) {
     throw error;
   }
 
-  const supabase = createSupabaseAdmin();
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const authClient = createSupabaseAuthClient();
+  const { data: userData, error: userError } = await authClient.auth.getUser(token);
   if (userError || !userData?.user) {
     const error = new Error('Session is invalid or expired.');
     error.statusCode = 401;
@@ -33,15 +42,11 @@ export async function requireAuthenticatedUser(req) {
     throw error;
   }
 
-  return { supabase, user: userData.user, token };
-}
-
-export async function requireAuthenticatedProfile(req) {
-  const { supabase, user, token } = await requireAuthenticatedUser(req);
+  const supabase = createSupabaseAdmin();
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', userData.user.id)
     .maybeSingle();
 
   if (profileError) throw profileError;
@@ -52,5 +57,12 @@ export async function requireAuthenticatedProfile(req) {
     throw error;
   }
 
-  return { supabase, user, profile, token };
+  if (profile.must_change_password === true && options.allowPasswordSetupPending !== true) {
+    const error = new Error('Complete your account password setup before accessing protected Area data.');
+    error.statusCode = 403;
+    error.code = 'PASSWORD_SETUP_REQUIRED';
+    throw error;
+  }
+
+  return { supabase, user: userData.user, profile, token };
 }

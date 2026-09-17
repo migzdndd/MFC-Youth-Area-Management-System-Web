@@ -7,9 +7,8 @@
   <meta name="theme-color" content="#002847">
   <meta name="description" content="MFC Youth Area Management System web application.">
   <title>Sign In - MFC Youth Area Management System</title>
-  <style>
-    @import url('https://fonts.cdnfonts.com/css/visby');
-  </style>
+  <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/visby">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/png" href="/img/logo-2.png">
 </head>
@@ -61,13 +60,13 @@
             <img src="/img/logo-2.png" alt="MFC Youth Logo">
             <div><strong>MFC YOUTH</strong><span>Area Management System</span></div>
           </div>
-          <span class="secure-login-badge">Secure leader access</span>
+          <span class="secure-login-badge">Secure account access</span>
         </div>
 
         <div class="login-header login-header-modern">
           <span class="login-eyebrow">WELCOME BACK</span>
           <h1 id="loginTitle">Sign in to your Area</h1>
-          <p>Use your registered MFC Youth account to continue to the management dashboard.</p>
+          <p>Use your registered MFC Youth account to continue. Login accounts are created and managed by authorized Admins from the Members database.</p>
         </div>
 
         <form class="login-form login-form-modern" id="loginForm" novalidate>
@@ -87,23 +86,20 @@
             <svg class="input-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M13 8h-1V6a4 4 0 0 0-8 0v2H3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM6 6a2 2 0 0 1 4 0v2H6V6z" />
             </svg>
-            <input class="login-input" id="loginPassword" type="password" placeholder="Enter your password" autocomplete="current-password" required aria-label="Password">
+            <input class="login-input" id="loginPassword" type="password" placeholder="Account Password" autocomplete="current-password" aria-label="Password" required>
             <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button>
           </div>
+          <p class="field-help auth-field-help">Regular Member records do not require a login account. If Member Portal access is needed, an Admin can enable it from Members using the Enable Login button, and the Member can choose a password securely.</p>
 
           <div class="form-options">
             <label class="remember-me"><input id="rememberMe" type="checkbox"><span>Remember me</span></label>
-            <a href="/recover">Forgot password?</a>
+            <a href="/recover">Access help</a>
           </div>
 
           <div class="login-buttons login-buttons-modern">
-            <button class="btn-auth auth-slide-button auth-slide-primary" type="submit">Sign In</button>
-            <button class="btn-auth auth-slide-button auth-slide-secondary" type="button" onclick="navigateWithLoader('/register')">First-Time Access</button>
+            <button class="btn-auth auth-slide-button auth-slide-primary" type="submit">Continue</button>
+            <button class="btn-auth auth-slide-button auth-slide-secondary" type="button" data-nav="/register">First-Time Access</button>
           </div>
-
-          <div class="login-divider"><span>or</span></div>
-          <button class="btn-auth auth-slide-button auth-slide-demo" id="demoLoginButton" type="button">Open Demo Dashboard</button>
-          <p class="demo-login-note">Presentation mode only. Demo data is kept separate from your live Area records.</p>
         </form>
 
         <div class="auth-bottom auth-bottom-modern">
