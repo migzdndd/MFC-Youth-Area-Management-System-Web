@@ -5,6 +5,11 @@ import authAccount from '../server/auth/account.js';
 import authAdminRegister from '../server/auth/admin-register.js';
 import authChangePassword from '../server/auth/change-password.js';
 import authLogin from '../server/auth/login.js';
+import authLogout from '../server/auth/logout.js';
+import authChangeEmail from '../server/auth/change-email.js';
+import authForgotPassword from '../server/auth/forgot-password.js';
+import authResetPassword from '../server/auth/reset-password.js';
+import adminChangeEmail from '../server/admin/members/change-email.js';
 import authMe from '../server/auth/me.js';
 import authMemberClaim from '../server/auth/member-claim.js';
 import chapters from '../server/chapters/index.js';
@@ -26,6 +31,11 @@ const ROUTES = new Map([
   ['auth/admin-register', authAdminRegister],
   ['auth/change-password', authChangePassword],
   ['auth/login', authLogin],
+  ['auth/logout', authLogout],
+  ['auth/change-email', authChangeEmail],
+  ['auth/forgot-password', authForgotPassword],
+  ['auth/reset-password', authResetPassword],
+  ['admin/members/change-email', adminChangeEmail],
   ['auth/me', authMe],
   ['auth/member-claim', authMemberClaim],
   ['chapters', chapters],

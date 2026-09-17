@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Recover and reset your account access for the MFC Youth Area Management System.">
+  <meta name="description" content="Reset your password for the MFC Youth Area Management System.">
   <meta name="theme-color" content="#002847">
-  <title>Recover Account - MFC Youth Area Management System</title>
+  <title>Reset Password - MFC Youth Area Management System</title>
   <style>
     @import url('https://fonts.cdnfonts.com/css/visby');
   </style>
@@ -16,25 +16,103 @@
 
 <body class="auth-body">
   <main class="auth-page">
-    <section class="login-card auth-card" aria-labelledby="recoverTitle">
+    <section class="login-card auth-card" aria-labelledby="resetTitle">
       <div class="login-header">
         <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
-        <h1 id="recoverTitle">Reset Your Member Login</h1>
-        <p>For this frontend prototype, password resets are issued by an Super Admin.</p>
+        <h1 id="resetTitle">Set New Password</h1>
+        <p>Please enter your new password below.</p>
       </div>
-      <div class="login-form account-provision-info">
-        <div class="verification-badge">
-          <span>Forgot your password?</span>
-          <strong>Ask your Super Admin to reset your account login.</strong>
+      <form class="login-form" id="resetPasswordForm">
+        <div class="form-group">
+          <label for="newPassword">New Password</label>
+          <input type="password" id="newPassword" name="newPassword" required minlength="8">
+          <small>Must be at least 8 characters with letters and numbers.</small>
         </div>
-        <p class="prototype-note">Member Portal passwords are private. Use your configured Supabase recovery flow or contact an authorized administrator for account assistance.</p>
-        <div class="login-buttons"><button class="btn-auth btn-primary" type="button" onclick="navigateWithLoader('/')">Back
-            to Sign In</button></div>
-      </div>
+        
+        <div class="form-errors" id="resetPasswordError" style="display: none; color: red; margin-bottom: 1rem;"></div>
+        <div class="form-success" id="resetPasswordSuccess" style="display: none; color: green; margin-bottom: 1rem;"></div>
+
+        <div class="login-buttons">
+          <button class="btn-auth btn-primary" type="submit" id="submitBtn">Save New Password</button>
+        </div>
+      </form>
     </section>
   </main>
+  
   <script src="/js/loader.js"></script>
-  <script src="/js/auth.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Look for the token_hash in the URL query string OR fragment
+      // Typically it's in the query params if our endpoint specifies it via redirectTo
+      // e.g. /recover?token_hash=xxx&type=recovery
+      const urlParams = new URLSearchParams(window.location.search);
+      let token_hash = urlParams.get('token_hash');
+      
+      // Fallback: Supabase sometimes uses fragment #access_token=...&type=recovery
+      // But we requested a token_hash via email template configuration
+      if (!token_hash && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        token_hash = hashParams.get('token_hash'); // Custom email template handles it
+      }
+
+      if (!token_hash) {
+        document.getElementById('resetPasswordError').textContent = 'Invalid or missing recovery token. Please request a new link.';
+        document.getElementById('resetPasswordError').style.display = 'block';
+        document.getElementById('submitBtn').disabled = true;
+      } else {
+        // Store the token safely and optionally remove it from URL
+        window.__RECOVERY_TOKEN = token_hash;
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    });
+
+    document.getElementById('resetPasswordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const newPassword = document.getElementById('newPassword').value;
+      const errorDiv = document.getElementById('resetPasswordError');
+      const successDiv = document.getElementById('resetPasswordSuccess');
+      const submitBtn = document.getElementById('submitBtn');
+      const token_hash = window.__RECOVERY_TOKEN;
+      
+      if (!token_hash) return;
+
+      errorDiv.style.display = 'none';
+      successDiv.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+
+      try {
+        const response = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token_hash, newPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+          successDiv.textContent = data.message;
+          successDiv.style.display = 'block';
+          document.getElementById('resetPasswordForm').reset();
+          submitBtn.style.display = 'none';
+          setTimeout(() => {
+            navigateWithLoader('/');
+          }, 3000);
+        } else {
+          errorDiv.textContent = data.error || 'Failed to reset password.';
+          errorDiv.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Save New Password';
+        }
+      } catch (err) {
+        errorDiv.textContent = 'A network error occurred. Please try again.';
+        errorDiv.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save New Password';
+      }
+    });
+  </script>
 </body>
 
 </html>
