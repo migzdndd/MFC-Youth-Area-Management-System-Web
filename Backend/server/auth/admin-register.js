@@ -14,6 +14,7 @@ import {
   isValidEmail,
   apiError
 } from '../_lib/http.js';
+import { validateStrongPassword } from '../_lib/password.js';
 
 const ADMIN_ROLES = new Set([
   'couple_coordinator',
@@ -26,13 +27,6 @@ function cleanText(value, max = 160) {
   return String(value || '').trim().slice(0, max);
 }
 
-function passwordError(password) {
-  if (password.length < 8) return 'Password must be at least 8 characters long.';
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    return 'Password must contain at least one letter and one number.';
-  }
-  return '';
-}
 
 function registrationCodeMatches(input, expected) {
   const supplied = Buffer.from(String(input || ''), 'utf8');
@@ -52,7 +46,7 @@ function validateRegistrationInput(body) {
   if (!isValidEmail(email)) return { error: 'Enter a valid email address.' };
   if (!ADMIN_ROLES.has(role)) return { error: 'Select a valid Servant Leader access level.' };
 
-  const pError = passwordError(password);
+  const pError = validateStrongPassword(password);
   if (pError) return { error: pError };
   if (password !== confirmation) return { error: 'Passwords do not match.' };
 

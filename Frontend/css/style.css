@@ -32,7 +32,7 @@
   /* Typography */
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-muted: #64748b;
   --text-inverse: #ffffff;
   
   /* Status Colors */
@@ -46,6 +46,20 @@
   --warning-bg: #fffbeb;
   --warning-border: #fcd34d;
   
+
+  /* Compatibility + accessibility tokens */
+  --brand-400: #60a5fa;
+  --blue: #2563eb;
+  --blue2: #1d4ed8;
+  --blue-50: #eff6ff;
+  --blue-700: #1d4ed8;
+  --bg-body: #f8fafc;
+  --line: #d7e0e8;
+  --muted: #64748b;
+  --text: #0f172a;
+  --radius-full: 999px;
+  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.10), 0 8px 10px -6px rgb(15 23 42 / 0.10);
+
   /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
@@ -2414,7 +2428,7 @@ button:disabled {
   padding: clamp(24px, 4vw, 42px);
   border-radius: 22px;
   color: #fff;
-  background: linear-gradient(135deg, #002847 0%, #0f486f 62%, #0878bd 100%);
+  background: #002847;
   box-shadow: 0 18px 46px rgba(0, 40, 71, .16);
 }
 
@@ -2595,7 +2609,7 @@ button:disabled {
   padding: 18px 20px;
   border: 1px solid #d9e5ee;
   border-radius: 16px;
-  background: linear-gradient(135deg, #f8fbfe 0%, #eef6fb 100%);
+  background: #f8fbfe;
 }
 
 .chapter-scope-banner > div {
@@ -3056,7 +3070,7 @@ button:disabled {
 
 .area-onboarding-header {
   padding: 22px 24px 17px;
-  background: linear-gradient(135deg, #002847, #064b75);
+  background: #002847;
   color: #fff;
 }
 
@@ -3424,8 +3438,8 @@ html.page-is-loading body {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.78), transparent);
-  animation: skeleton-shimmer 1.05s ease-in-out infinite;
+  background: rgba(255,255,255,.52);
+  animation: skeleton-pulse 1.05s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -3586,7 +3600,7 @@ html.page-is-loading body {
   color: #64748b;
 }
 
-@keyframes skeleton-shimmer {
+@keyframes skeleton-pulse {
   100% { transform: translateX(100%); }
 }
 
@@ -3678,137 +3692,83 @@ html.page-is-loading body {
   --ui-shadow: 0 18px 48px rgba(10, 49, 78, .10);
 }
 
-/* ---------- Shared Uiverse slide-fill button system ---------- */
-.btn,
-.sidebar-nav a,
-.sidebar-account-action,
-.logout-link,
-.member-portal-nav a,
-.mobile-topbar button,
-.auth-slide-button {
-  --button-accent: var(--ui-accent);
-  --button-text: var(--ui-accent-strong);
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  z-index: 1;
-  cursor: pointer;
-  font-family: inherit;
-  font-weight: 800;
-  text-decoration: none;
-  transition: color .3s ease, border-color .3s ease, transform .18s ease, box-shadow .18s ease;
-}
-
-.btn::before,
-.sidebar-nav a::before,
-.sidebar-account-action::before,
-.logout-link::before,
-.member-portal-nav a::before,
-.mobile-topbar button::before,
-.auth-slide-button::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: var(--button-accent);
-  transform: translateX(-102%);
-  transition: transform .3s ease;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.btn:hover::before,
-.btn:focus-visible::before,
-.sidebar-nav a:hover::before,
-.sidebar-nav a:focus-visible::before,
-.sidebar-account-action:hover::before,
-.sidebar-account-action:focus-visible::before,
-.logout-link:hover::before,
-.logout-link:focus-visible::before,
-.member-portal-nav a:hover::before,
-.member-portal-nav a:focus-visible::before,
-.mobile-topbar button:hover::before,
-.mobile-topbar button:focus-visible::before,
-.auth-slide-button:hover::before,
-.auth-slide-button:focus-visible::before {
-  transform: translateX(0);
-}
-
+/* ---------- Standardized Button Classes ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 44px;
-  padding: .72rem 1.2rem;
-  font-size: .84rem;
-  color: var(--button-text);
-  border: 2px solid var(--button-accent);
-  border-radius: 10px;
-  background: transparent;
-  box-shadow: none;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 150ms ease;
 }
 
-.btn:hover,
-.btn:focus-visible {
-  color: #fff;
-  border-color: var(--button-accent);
-  background: transparent;
-  transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(8, 120, 189, .16);
+.btn:hover {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.btn:active {
+  transform: scale(0.98);
 }
 
 .btn.blue {
-  --button-accent: #0878bd;
-  --button-text: #0878bd;
-  background: transparent;
-  border-color: var(--button-accent);
-  color: var(--button-text);
+  background-color: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
 }
 
-.btn.blue:hover,
-.btn.blue:focus-visible {
-  background: transparent;
-  color: #fff;
+.btn.blue:hover {
+  background-color: #0369a1;
+  border-color: #0369a1;
+  color: #ffffff;
 }
 
 .btn.red {
-  --button-accent: #c93d49;
-  --button-text: #a92f39;
-  background: transparent;
-  border-color: var(--button-accent);
-  color: var(--button-text);
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
 }
 
-.btn.red:hover,
-.btn.red:focus-visible {
-  background: transparent;
-  color: #fff;
+.btn.red:hover {
+  background-color: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
 }
 
 .btn.green {
-  --button-accent: #2f8c5a;
-  --button-text: #246e48;
-  background: transparent;
-  border-color: var(--button-accent);
-  color: var(--button-text);
+  background-color: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
 }
 
-.btn.green:hover,
-.btn.green:focus-visible {
-  background: transparent;
-  color: #fff;
+.btn.green:hover {
+  background-color: #059669;
+  border-color: #059669;
+  color: #ffffff;
 }
 
 .actions-cell .btn,
 .toolbar .btn,
 .modal .btn,
 .page-actions .btn {
-  min-height: 40px;
-  padding: .62rem 1rem;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 14px;
 }
 
 /* ---------- App shell / sidebar ---------- */
@@ -4630,174 +4590,264 @@ html.page-is-loading body {
 }
 
 /* =========================================================
-   UNIVERSAL BUTTON SYSTEM — Uiverse.io by alexroumi
-   Applied to all action buttons and button-like controls.
-   Icon-only controls keep compact dimensions while sharing the
-   same visual treatment and hover animation.
+   COMPREHENSIVE ENTERPRISE BUTTON SYSTEM
+   Sleek, modern, accessible, high-contrast, perfectly sized
    ========================================================= */
+
+/* Reset any pseudo-elements */
+button::before,
+button::after,
+.btn::before,
+.btn::after,
+.btn-auth::before,
+.btn-auth::after,
+.link-button::before,
+.link-button::after,
+.sidebar-account-action::before,
+.sidebar-account-action::after,
+.logout-link::before,
+.logout-link::after,
+.auth-slide-button::before,
+.auth-slide-button::after {
+  display: none !important;
+}
+
+/* Base Button Style */
 button,
 .btn,
-.btn-auth,
-.link-button,
-.sidebar-account-action,
-.logout-link,
-.auth-slide-button {
-  padding: 15px 25px !important;
-  border: unset !important;
-  border-radius: 15px !important;
-  color: #212121 !important;
-  z-index: 1;
-  background: #e8e8e8 !important;
+.link-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  padding: 0 18px !important;
+  border-radius: 10px !important;
+  font-family: inherit !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  transition: all 150ms ease !important;
+  overflow: visible !important;
   position: relative !important;
-  font-family: inherit;
-  font-weight: 1000 !important;
-  font-size: 17px !important;
-  line-height: 1.15;
-  -webkit-box-shadow: 4px 8px 19px -3px rgba(0,0,0,0.27) !important;
-  box-shadow: 4px 8px 19px -3px rgba(0,0,0,0.27) !important;
-  transition: all 250ms !important;
-  overflow: hidden !important;
-  cursor: pointer;
-  text-decoration: none;
+  z-index: 1 !important;
 }
 
-button::before,
-.btn::before,
-.btn-auth::before,
-.link-button::before,
-.sidebar-account-action::before,
-.logout-link::before,
-.auth-slide-button::before {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: auto !important;
-  height: 100% !important;
-  width: 0 !important;
-  border-radius: 15px !important;
-  background-color: #212121 !important;
-  z-index: -1 !important;
-  -webkit-box-shadow: 4px 8px 19px -3px rgba(0,0,0,0.27) !important;
-  box-shadow: 4px 8px 19px -3px rgba(0,0,0,0.27) !important;
-  transition: all 250ms !important;
-  pointer-events: none;
+button:hover,
+.btn:hover,
+.link-button:hover {
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08) !important;
 }
 
-button:not(:disabled):hover,
-button:not(:disabled):focus-visible,
-.btn:not([aria-disabled="true"]):hover,
-.btn:not([aria-disabled="true"]):focus-visible,
-.btn-auth:not(:disabled):hover,
-.btn-auth:not(:disabled):focus-visible,
-.link-button:hover,
-.link-button:focus-visible,
-.sidebar-account-action:not(:disabled):hover,
-.sidebar-account-action:not(:disabled):focus-visible,
-.logout-link:not(:disabled):hover,
-.logout-link:not(:disabled):focus-visible,
-.auth-slide-button:not(:disabled):hover,
-.auth-slide-button:not(:disabled):focus-visible {
-  color: #e8e8e8 !important;
-  background: #e8e8e8 !important;
-  transform: none !important;
+button:active,
+.btn:active,
+.link-button:active {
+  transform: translateY(0) scale(0.98) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
 }
 
-button:not(:disabled):hover::before,
-button:not(:disabled):focus-visible::before,
-.btn:not([aria-disabled="true"]):hover::before,
-.btn:not([aria-disabled="true"]):focus-visible::before,
-.btn-auth:not(:disabled):hover::before,
-.btn-auth:not(:disabled):focus-visible::before,
-.link-button:hover::before,
-.link-button:focus-visible::before,
-.sidebar-account-action:not(:disabled):hover::before,
-.sidebar-account-action:not(:disabled):focus-visible::before,
-.logout-link:not(:disabled):hover::before,
-.logout-link:not(:disabled):focus-visible::before,
-.auth-slide-button:not(:disabled):hover::before,
-.auth-slide-button:not(:disabled):focus-visible::before {
-  width: 100% !important;
-}
-
-/* Keep primary semantic buttons using the universal shape, but retain their semantic colors */
+/* Primary Brand Buttons (Blue) */
 .btn.blue,
-.dashboard-hero .btn {
+.btn-primary,
+.dashboard-hero .btn.blue,
+#confirmAreaButton,
+#createAreaButton,
+#addChapterMember,
+#saveEventBtn,
+#saveMemberBtn {
+  background: #0284c7 !important;
+  border: 1px solid #0284c7 !important;
   color: #ffffff !important;
-  background: #0878bd !important;
-  border: unset !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.28) !important;
 }
 
 .btn.blue:hover,
-.btn.blue:focus-visible,
-.dashboard-hero .btn:hover,
-.dashboard-hero .btn:focus-visible {
+.btn-primary:hover,
+.dashboard-hero .btn.blue:hover,
+#confirmAreaButton:hover,
+#createAreaButton:hover,
+#addChapterMember:hover,
+#saveEventBtn:hover,
+#saveMemberBtn:hover {
+  background: #0369a1 !important;
+  border-color: #0369a1 !important;
   color: #ffffff !important;
-  background: #065b90 !important;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.38) !important;
 }
 
-/* Ensure red action buttons (like delete and logout) are actually red */
+/* Danger / Destructive Buttons (Red) */
 .btn.red,
+.btn-danger,
 .delete-account-button,
-.logout-link {
+.logout-link,
+#memberLogoutBtn {
+  background: #ef4444 !important;
+  border: 1px solid #ef4444 !important;
   color: #ffffff !important;
-  background: #d84a55 !important;
-  border: unset !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25) !important;
 }
 
 .btn.red:hover,
-.btn.red:focus-visible,
+.btn-danger:hover,
 .delete-account-button:hover,
-.delete-account-button:focus-visible,
 .logout-link:hover,
-.logout-link:focus-visible {
+#memberLogoutBtn:hover {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
   color: #ffffff !important;
-  background: #b5313a !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.38) !important;
 }
 
-.btn.green {
+/* Success Buttons (Green) */
+.btn.green,
+.btn-success {
+  background: #10b981 !important;
+  border: 1px solid #10b981 !important;
   color: #ffffff !important;
-  background: #2f8c5a !important;
-  border: unset !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25) !important;
 }
 
 .btn.green:hover,
-.btn.green:focus-visible {
+.btn-success:hover {
+  background: #059669 !important;
+  border-color: #059669 !important;
   color: #ffffff !important;
-  background: #20633f !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.38) !important;
 }
 
-/* Icon-only buttons stay compact; the Uiverse interaction is unchanged. */
-.icon-btn,
-#menuBtn {
-  width: 42px !important;
-  min-width: 42px !important;
+/* Sidebar Navigation Links */
+.sidebar-nav a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  width: 100% !important;
   height: 42px !important;
   min-height: 42px !important;
+  padding: 0 14px !important;
+  border-radius: 8px !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  color: #475569 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+  transition: all 150ms ease !important;
+}
+
+.sidebar-nav a:hover {
+  background: #eff6ff !important;
+  color: #0284c7 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.sidebar-nav a.active {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.28) !important;
+}
+
+.sidebar-nav a.active img,
+.sidebar-nav a.active .nav-icon {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* Sidebar Logout Button */
+.logout-link {
+  width: 100% !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+}
+
+/* Table Row / Inline Compact Action Buttons */
+table .btn,
+.table-action,
+.member-login-action,
+table button {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+/* Compact Icon Buttons */
+.icon-btn,
+#menuBtn {
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
   padding: 0 !important;
-  border-radius: 12px !important;
+  border-radius: 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
 }
 
-.icon-btn::before,
-#menuBtn::before {
-  border-radius: 12px !important;
+.icon-btn:hover,
+#menuBtn:hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
 }
 
-/* Disabled controls keep the universal shape without the hover fill. */
+/* Modal Close & Text Action Buttons */
+.modal-close {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  color: #64748b !important;
+  font-size: 1.25rem !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.modal-close:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Disabled Controls */
 button:disabled,
+.btn:disabled,
 .btn[aria-disabled="true"],
 .sidebar-account-action:disabled,
 .auth-slide-button:disabled {
-  opacity: .5 !important;
+  opacity: 0.5 !important;
   cursor: not-allowed !important;
   transform: none !important;
-}
-
-button:disabled::before,
-.btn[aria-disabled="true"]::before,
-.sidebar-account-action:disabled::before,
-.auth-slide-button:disabled::before {
-  display: none !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
 }
 
 /* =========================================================
@@ -5098,4 +5148,68 @@ button.password-toggle:focus-visible,
   color: #7dd3fc !important;
   box-shadow: none !important;
   transform: none !important;
+}
+
+
+/* =========================================================
+   2026 SECURITY & ACCESSIBILITY AUDIT OVERRIDES
+   ========================================================= */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+button,
+.btn,
+.nav-link,
+.icon-button,
+.action-btn,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: 44px;
+}
+
+button, .btn, .nav-link, .icon-button, .action-btn {
+  min-width: 44px;
+}
+
+input, select, textarea {
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.table-wrap, .table-responsive, .data-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  .page-content, .content, .main-content, .member-portal-main {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .modal-card, .modal-content, .area-onboarding-modal {
+    width: min(100%, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+
+  table {
+    min-width: 640px;
+  }
+}
+
+@media (max-width: 359px) {
+  .auth-page, .page-content, .content, .main-content {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 }

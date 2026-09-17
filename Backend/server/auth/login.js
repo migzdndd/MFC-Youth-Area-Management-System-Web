@@ -1,5 +1,7 @@
 import { createSupabaseAuthClient, createSupabaseAdmin } from '../_lib/supabase.js';
 import { sendJson, methodNotAllowed, normalizeEmail, isValidEmail, apiError } from '../_lib/http.js';
+import { assertBackendConfigured } from '../_lib/env.js';
+import { loginRateKeys, checkLoginRateLimit, recordLoginFailure, resetLoginRateLimit } from '../_lib/auth-rate-limit.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
@@ -12,14 +14,29 @@ export default async function handler(req, res) {
       return sendJson(res, 400, { ok: false, error: 'A valid email and password are required.' });
     }
 
+    const admin = createSupabaseAdmin();
+    const { supabaseSecretKey } = assertBackendConfigured();
+    const rateKeys = loginRateKeys(req, email, supabaseSecretKey);
+    const currentLimit = await checkLoginRateLimit(admin, rateKeys);
+    if (currentLimit.blocked) {
+      res.setHeader('Retry-After', String(currentLimit.retryAfterSeconds));
+      return sendJson(res, 429, { ok: false, error: 'Too many failed sign-in attempts. Try again later.', code: 'LOGIN_RATE_LIMITED' });
+    }
+
     const authClient = createSupabaseAuthClient();
     const { data, error } = await authClient.auth.signInWithPassword({ email, password });
 
     if (error || !data?.session || !data?.user) {
-      return sendJson(res, 401, { ok: false, error: 'Invalid email or password.' });
+      const failure = await recordLoginFailure(admin, rateKeys);
+      if (failure.blocked) res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+      return sendJson(res, failure.blocked ? 429 : 401, {
+        ok: false,
+        error: failure.blocked ? 'Too many failed sign-in attempts. Try again later.' : 'Invalid email or password.',
+        ...(failure.blocked ? { code: 'LOGIN_RATE_LIMITED' } : {})
+      });
     }
 
-    const admin = createSupabaseAdmin();
+    await resetLoginRateLimit(admin, rateKeys);
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .select('id, member_id, role, area_id, chapter_id, must_change_password, is_active')

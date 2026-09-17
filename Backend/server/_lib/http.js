@@ -67,9 +67,6 @@ export function apiError(res, error) {
   if (error?.code) body.code = error.code;
   if (error?.stage) body.stage = error.stage;
 
-  if (process.env.NODE_ENV !== 'production' && status >= 500) {
-    body.detail = error?.message || String(error);
-  }
 
   return sendJson(res, status, body);
 }

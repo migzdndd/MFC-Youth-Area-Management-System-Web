@@ -210,3 +210,7 @@ After deploying:
 8. Verify Area/Chapter restrictions still apply.
 9. Verify an expired access token refreshes automatically in both the management dashboard and Member Portal.
 10. Verify a setup-pending Member/Servant Leader is redirected to password setup before protected data is shown.
+
+## Security packaging requirement
+
+Do not distribute `Backend/.env.local` or any real environment file. Use `../scripts/package-source.ps1` to create source archives; it excludes `.env`/`.env.*` while retaining `.env.example`. See `../SECURITY.md` and `../AUDIT_REPORT_2026-09-17.md`.
