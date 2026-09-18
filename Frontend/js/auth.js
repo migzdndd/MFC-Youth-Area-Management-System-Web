@@ -20,6 +20,7 @@ const DB_KEY = 'mfc_web_database_v1';
 
 /** Set of valid access roles within the system */
 const ACCESS_ROLE_VALUES = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',
@@ -469,7 +470,7 @@ if (adminRegistrationForm) {
       showMessage('adminRegistrationMessage', 'Enter a valid email address.');
       return;
     }
-    if (!['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(role)) {
+    if (!['national_coordinator', 'couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(role)) {
       showMessage('adminRegistrationMessage', 'Select your System Access Level.');
       return;
     }

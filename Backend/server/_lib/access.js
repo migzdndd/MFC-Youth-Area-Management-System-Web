@@ -2,6 +2,7 @@ import { createSupabaseAdmin } from './supabase.js';
 import { readBearerToken } from './http.js';
 
 export const AREA_ADMIN_ROLES = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',

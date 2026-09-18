@@ -13,6 +13,7 @@ import {
 import { ensureRoleServiceAssignment } from '../_lib/service-catalog.js';
 
 const ACCESS_LEVELS = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',
@@ -59,7 +60,7 @@ async function listMembers(req, res) {
 
   let query = supabase
     .from('members')
-    .select('id, area_id, chapter_id, first_name, middle_name, last_name, birth_date, contact_number, email, address, status, first_attended_youth_camp, access_level, created_at, updated_at')
+    .select('id, area_id, chapter_id, first_name, middle_name, last_name, birth_date, contact_number, email, address, status, first_attended_youth_camp, access_level, academic_track, grade_level, school, created_at, updated_at')
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
@@ -95,6 +96,9 @@ async function createMember(req, res) {
   const birthDate = input.birthDate || null;
   const firstAttendedYouthCamp = input.firstAttendedYouthCamp || null;
   const status = String(input.status || 'Active') === 'Inactive' ? 'Inactive' : 'Active';
+  const academicTrack = cleanText(input.academicTrack, 100) || null;
+  const gradeLevel = cleanText(input.gradeLevel, 50) || null;
+  const school = cleanText(input.school, 255) || null;
 
   if (!firstName || !lastName) {
     return sendJson(res, 400, { ok: false, error: 'First name and last name are required.' });
@@ -148,6 +152,9 @@ async function createMember(req, res) {
       status,
       first_attended_youth_camp: firstAttendedYouthCamp,
       access_level: accessLevel,
+      academic_track: academicTrack,
+      grade_level: gradeLevel,
+      school,
       created_by: user.id
     })
     .select('*')
@@ -185,6 +192,9 @@ async function updateMember(req, res) {
   const birthDate = input.birthDate ?? existing.birth_date ?? null;
   const firstAttendedYouthCamp = input.firstAttendedYouthCamp ?? existing.first_attended_youth_camp ?? null;
   const status = String(input.status ?? existing.status) === 'Inactive' ? 'Inactive' : 'Active';
+  const academicTrack = cleanText(input.academicTrack ?? existing.academic_track, 100) || null;
+  const gradeLevel = cleanText(input.gradeLevel ?? existing.grade_level, 50) || null;
+  const school = cleanText(input.school ?? existing.school, 255) || null;
   const requestedRole = String(input.accessLevel ?? existing.access_level ?? 'member').trim().toLowerCase();
   const accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
   const chapterId = input.chapterId || null;
@@ -223,7 +233,10 @@ async function updateMember(req, res) {
       address,
       status,
       first_attended_youth_camp: firstAttendedYouthCamp,
-      access_level: accessLevel
+      access_level: accessLevel,
+      academic_track: academicTrack,
+      grade_level: gradeLevel,
+      school
     })
     .eq('id', memberId)
     .eq('area_id', profile.area_id)

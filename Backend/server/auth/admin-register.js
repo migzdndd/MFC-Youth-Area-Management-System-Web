@@ -4,6 +4,7 @@ import { assertAdminRegistrationConfigured } from '../_lib/env.js';
 import { sendJson, methodNotAllowed, normalizeEmail, isValidEmail, apiError } from '../_lib/http.js';
 
 const ADMIN_ROLES = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',

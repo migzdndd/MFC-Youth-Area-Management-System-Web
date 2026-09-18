@@ -66,6 +66,7 @@ const SERVICES = [
 ];
 
 const ACCESS_LEVELS = [
+  { value: 'national_coordinator', label: 'National Coordinator' },
   { value: 'couple_coordinator', label: 'Couple Coordinator/s' },
   { value: 'area_servant', label: 'Area Servant' },
   { value: 'lit_servant', label: 'Area LIT Servant' },
@@ -120,6 +121,7 @@ function detectedMemberServices(member) {
 }
 
 const AREA_ADMIN_ROLES = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',
@@ -251,6 +253,9 @@ function cloudMemberToLocal(member, previous = {}) {
     birthDate: member.birth_date || '',
     contact: member.contact_number || '',
     email: String(member.email || previous.email || '').trim().toLowerCase(),
+    school: member.school || previous.school || '',
+    academicTrack: member.academic_track || previous.academicTrack || '',
+    gradeLevel: member.grade_level || previous.gradeLevel || '',
     address: member.address || '',
     status: member.status || 'Active',
     firstAttendedYouthCamp: member.first_attended_youth_camp || '',
@@ -449,7 +454,7 @@ function scopedChapter(data) {
   ) || null;
 }
 
-function denyUnlessAreaAdmin(message = 'Only Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, and Area Kids Servants can perform this action.') {
+function denyUnlessAreaAdmin(message = 'Only National Coordinators, Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, and Area Kids Servants can perform this action.') {
   if (isAreaAdminSession()) return false;
   toast(message, 'error');
   return true;
@@ -523,6 +528,9 @@ function normalizeDatabase(input) {
       .map(member => {
         const normalized = {
           ...member,
+          school: String(member.school || '').trim(),
+          academicTrack: String(member.academicTrack || '').trim(),
+          gradeLevel: String(member.gradeLevel || '').trim(),
           accessLevel: normalizeAccessRole(member.accessLevel || 'member'),
           services: Array.isArray(member.services)
             ? member.services.map(normalizeServiceName).filter(Boolean)
@@ -1365,8 +1373,87 @@ if (sidebar && menuBtn) {
 // Main administrator dashboard with metrics, upcoming events, and quick actions.
 // ============================================================================
 
+function renderNationalCoordinatorDashboard(data) {
+  const areas = data.areas || [
+    { id: 'area-1', name: 'NCR Central' },
+    { id: 'area-2', name: 'NCR North' },
+    { id: 'area-3', name: 'NCR South' },
+    { id: 'area-4', name: 'Visayas' },
+    { id: 'area-5', name: 'Mindanao' }
+  ];
+
+  content.innerHTML = `
+    <section class="dashboard-hero animate-in is-visible">
+      <div class="dashboard-hero-copy">
+        <div class="dashboard-kicker"><span class="dashboard-live-dot"></span> National Workspace</div>
+        <h1>Welcome back, ${esc(session?.name || 'National Coordinator')}.</h1>
+        <p>You have Super Admin access. Select an Area below to view and manage its database.</p>
+        <div class="dashboard-identity-row">
+          <span>National Coordinator</span>
+          <span>Super Admin Access</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>MFC Youth Areas</h2>
+        <p>Select an area to access its records and metrics.</p>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="summary-card card" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 24px;">
+        ${areas.map(area => `
+          <button
+            class="summary-item"
+            style="border: none; background: var(--bg); cursor: pointer; text-align: left; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 100%; transition: transform 0.2s, box-shadow 0.2s;"
+            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'"
+            onmouseout="this.style.transform='none'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)'"
+            onclick='visitArea(${inlineJsArg(area.id)}, ${inlineJsArg(area.name)})'
+          >
+            <div class="summary-label" style="font-size: 1.1rem; color: var(--text); margin-bottom: 8px;">
+              ${esc(area.name)}
+            </div>
+            <p style="margin: 0; color: var(--muted); font-size: 0.85rem;">
+              Click to view database
+            </p>
+            <span class="summary-link-hint" style="font-size: 0.76rem; color: var(--blue); font-weight: 600; margin-top: auto; padding-top: 12px; display: inline-flex; align-items: center; gap: 4px;">
+              Visit Area &rarr;
+            </span>
+          </button>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+window.visitArea = async (areaId, areaName) => {
+  session.areaId = areaId;
+  session.areaName = areaName;
+  updateStoredSession(session);
+  
+  if (session.backendAuth && !session.demo) {
+    toast(`Switching to ${areaName}...`);
+    try {
+      await refreshAllCloudData({ render: false });
+      toast(`Welcome to ${areaName}`);
+    } catch (error) {
+      toast('Failed to load area data', 'error');
+    }
+  } else {
+    toast(`Switched to ${areaName}`);
+  }
+  
+  navigateWithLoader('/members', true);
+};
+
 function renderDashboard() {
   const data = db();
+
+  if (session?.role === 'national_coordinator') {
+    renderNationalCoordinatorDashboard(data);
+    return;
+  }
 
   const cloudSummary = session?.backendAuth && !session?.demo
     ? data.cloudDashboard
@@ -2603,6 +2690,33 @@ function memberModal(id = null) {
 
       </div>
 
+      <div class="form-group full">
+        <label for="mAcademicTrack">Academic Track</label>
+        <select class="select-input" id="mAcademicTrack">
+          <option value="">Select Academic Track</option>
+          <option value="High School (HS)" ${member.academicTrack === 'High School (HS)' ? 'selected' : ''}>High School (HS)</option>
+          <option value="Senior High School (SHS)" ${member.academicTrack === 'Senior High School (SHS)' ? 'selected' : ''}>Senior High School (SHS)</option>
+          <option value="College" ${member.academicTrack === 'College' ? 'selected' : ''}>College</option>
+          <option value="Graduated" ${member.academicTrack === 'Graduated' ? 'selected' : ''}>Graduated</option>
+        </select>
+      </div>
+
+      <div class="form-group full">
+        <label for="mGradeLevel">Grade / Year Level</label>
+        <select class="select-input" id="mGradeLevel">
+          <option value="">Select Grade Level</option>
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}" ${String(member.gradeLevel) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+      </div>
+
+      ${field(
+        'School',
+        'mSchool',
+        'text',
+        member.school || '',
+        'maxlength="100"'
+      )}
+
       <div
         class="form-group full"
       >
@@ -2830,6 +2944,10 @@ function memberModal(id = null) {
         chapterName:
           chapter?.name || '',
 
+        academicTrack: document.getElementById('mAcademicTrack').value,
+        gradeLevel: document.getElementById('mGradeLevel').value,
+        school: document.getElementById('mSchool').value.trim(),
+
         address:
           document
             .getElementById(
@@ -2883,6 +3001,9 @@ function memberModal(id = null) {
               status: record.status,
               accessLevel: record.accessLevel,
               chapterId: record.chapterId || null,
+              academicTrack: record.academicTrack || null,
+              gradeLevel: record.gradeLevel || null,
+              school: record.school || null,
               address: record.address || null
             })
           });
