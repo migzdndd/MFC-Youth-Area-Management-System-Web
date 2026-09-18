@@ -34,7 +34,15 @@ const SERVICES = [
   'Area LIT Servant',
   'Campus Servant',
   'Area Kids Servant',
-  'MFC High Servant'
+  'MFC High Servant',
+  'Music',
+  'Dance',
+  'Creative Writing',
+  'Graphics & Promo',
+  'Photography & Videography',
+  'HS',
+  'SHS',
+  'College'
 ];
 
 const ACCESS_LEVELS = [
@@ -42,6 +50,7 @@ const ACCESS_LEVELS = [
   { value: 'area_servant', label: 'Area Servant' },
   { value: 'lit_servant', label: 'Area LIT Servant' },
   { value: 'campus_servant', label: 'Campus Servant' },
+  { value: 'mfc_high_servant', label: 'MFC High Servant' },
   { value: 'area_kids_servant', label: 'Area Kids Servant' },
   { value: 'chapter_servant', label: 'Chapter Servant' },
   { value: 'member', label: 'Member' }
@@ -71,6 +80,7 @@ const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
   area_servant: 'Area Servant',
   lit_servant: 'Area LIT Servant',
   campus_servant: 'Campus Servant',
+  mfc_high_servant: 'MFC High Servant',
   area_kids_servant: 'Area Kids Servant',
   chapter_servant: 'Chapter Servant'
 });
@@ -96,6 +106,7 @@ const AREA_ADMIN_ROLES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   // Kept only for compatibility with the older prototype session.
   'area_admin'
@@ -1100,6 +1111,12 @@ if (isChapterServantSession()) {
   });
 }
 
+if (session?.role === 'lit_servant') {
+  document.querySelectorAll('.sidebar-nav a[href="/services"]').forEach(link => {
+    link.innerHTML = '<img src="/Icons/services.png" class="nav-icon" alt="">Service Tab';
+  });
+}
+
 if (logoutBtn) {
   const user =
     document.createElement('div');
@@ -1774,6 +1791,16 @@ function filteredMembers(data) {
       ${member.chapterName || ''}
       ${(member.services || []).join(' ')}
     `.toLowerCase();
+
+    if (session?.role === 'campus_servant') {
+      const hasCampusService = (member.services || []).some(s => s === 'SHS' || s === 'College');
+      if (!hasCampusService) return false;
+    }
+
+    if (session?.role === 'mfc_high_servant') {
+      const hasHighService = (member.services || []).includes('HS');
+      if (!hasHighService) return false;
+    }
 
     if (
       !haystack.includes(
@@ -4000,7 +4027,9 @@ function renderServices() {
     `
     <div class="service-grid">
 
-      ${data.services
+      ${(session?.role === 'lit_servant'
+        ? ['Music', 'Dance', 'Creative Writing', 'Graphics & Promo', 'Photography & Videography']
+        : data.services)
       .map(service => {
         const members =
           data.members.filter(

@@ -11,7 +11,15 @@ const STANDARD_SERVICES = [
   'Area LIT Servant',
   'Campus Servant',
   'Area Kids Servant',
-  'MFC High Servant'
+  'MFC High Servant',
+  'Music',
+  'Dance',
+  'Creative Writing',
+  'Graphics & Promo',
+  'Photography & Videography',
+  'HS',
+  'SHS',
+  'College'
 ];
 
 const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
@@ -394,80 +402,78 @@ if (!session) {
         eventRegistration(participants, member.id, event.id)?.attended
       ).length;
 
-    document.getElementById('memberPortalContent').innerHTML = `
-      ${previewMode ? `
+    document.getElementById('memberPortalContent').innerHTML = \`
+      \${previewMode ? \`
         <section class="member-preview-banner" role="status">
           <strong>Member Portal Preview</strong>
           <span>You are previewing the interface a regular Member sees. Your administrator session remains active.</span>
         </section>
-      ` : ''}
+      \` : ''}
 
-      <section class="member-welcome-card" id="overview">
-        <div class="member-welcome-copy">
-          <span class="member-eyebrow">${previewMode ? 'MEMBER VIEW PREVIEW' : 'MEMBER ACCESS'}</span>
-          <h1>Welcome, ${esc(member.firstName || fullName(member))}!</h1>
-          <p>
-            ${esc(member.chapterName || 'No Chapter Assigned')}
-            ${member.services?.length ? ` · ${esc(member.services.join(', '))}` : ''}
-          </p>
+      <div class="member-bento-grid">
+        
+        <div class="bento-card bento-hero">
+          <div class="member-hero-content">
+            <span class="member-eyebrow">\${previewMode ? 'MEMBER VIEW PREVIEW' : 'MEMBER ACCESS'}</span>
+            <h1>Welcome, \${esc(member.firstName || fullName(member))}!</h1>
+            <p>
+              \${esc(member.chapterName || 'No Chapter Assigned')}
+              \${member.services?.length ? \` · \${esc(member.services.join(', '))}\` : ''}
+            </p>
+          </div>
+          <div class="member-hero-badge">
+            <span>Account</span>
+            <strong>\${previewMode ? 'Preview' : 'Member'}</strong>
+          </div>
         </div>
 
-        <div class="member-hero-badge">
-          <span>Account</span>
-          <strong>${previewMode ? 'Preview' : 'Member'}</strong>
+        <div class="bento-card bento-stats">
+          <article><span>Upcoming Events</span><strong>\${allUpcomingEvents.length}</strong></article>
+          <article><span>My Registrations</span><strong>\${registeredUpcoming}</strong></article>
+          <article><span>Recently Attended</span><strong>\${attendedRecent}</strong></article>
+          <article><span>Total Event Records</span><strong>\${myRegistrations.length}</strong></article>
         </div>
-      </section>
 
-      <section class="member-quick-grid" aria-label="Member dashboard summary">
-        <article><span>Upcoming Events</span><strong>${allUpcomingEvents.length}</strong></article>
-        <article><span>My Registrations</span><strong>${registeredUpcoming}</strong></article>
-        <article><span>Recently Attended</span><strong>${attendedRecent}</strong></article>
-        <article><span>Total Event Records</span><strong>${myRegistrations.length}</strong></article>
-      </section>
+        <div class="bento-card bento-upcoming" id="upcoming">
+          <div class="member-section-heading">
+            <div><span class="member-eyebrow">WHAT'S NEXT</span><h2>Upcoming Events</h2></div>
+          </div>
+          <div class="member-event-stack">
+            \${upcomingEvents.length
+              ? upcomingEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'upcoming')).join('')
+              : \`<div class="member-empty-card"><strong>No upcoming events yet.</strong><span>New events will appear here once they are added by your Area.</span></div>\`
+            }
+          </div>
+        </div>
 
-      <section class="member-dashboard-section" id="upcoming">
-        <div class="member-section-heading">
-          <div><span class="member-eyebrow">WHAT'S NEXT</span><h2>Upcoming Events</h2></div>
-          <p>Recent announcements and upcoming MFC Youth activities.</p>
-        </div>
-        <div class="member-event-stack">
-          ${upcomingEvents.length
-            ? upcomingEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'upcoming')).join('')
-            : `<div class="member-empty-card"><strong>No upcoming events yet.</strong><span>New events will appear here once they are added by your Area.</span></div>`
-          }
-        </div>
-      </section>
-
-      <section class="member-dashboard-section" id="recent">
-        <div class="member-section-heading">
-          <div><span class="member-eyebrow">LOOKING BACK</span><h2>Recent Events</h2></div>
-          <p>See recently completed activities and your participation status.</p>
-        </div>
-        <div class="member-event-stack">
-          ${recentEvents.length
-            ? recentEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'past')).join('')
-            : `<div class="member-empty-card"><strong>No recent events yet.</strong><span>Completed Area events will appear here.</span></div>`
-          }
-        </div>
-      </section>
-
-      <section class="member-dashboard-section" id="profile">
-        <div class="member-section-heading">
-          <div><span class="member-eyebrow">MY ACCOUNT</span><h2>Member Profile</h2></div>
-          <p>${previewMode ? 'Preview of the profile section visible to a Member.' : 'Your profile is linked to the official Area Members database.'}</p>
-        </div>
-        <article class="member-portal-card">
-          <dl class="member-profile-list member-profile-wide">
-            <div><dt>Name</dt><dd>${esc(fullName(member) || '—')}</dd></div>
-            <div><dt>Email</dt><dd>${esc(member.email || '—')}</dd></div>
-            <div><dt>Chapter</dt><dd>${esc(member.chapterName || 'No Chapter Assigned')}</dd></div>
-            <div><dt>Contact</dt><dd>${esc(member.contact || '—')}</dd></div>
-            <div><dt>First Attended Youth Camp</dt><dd>${esc(fmtDate(member.firstAttendedYouthCamp))}</dd></div>
-            <div><dt>Services</dt><dd>${esc((member.services || []).join(', ') || 'No Service Assigned')}</dd></div>
+        <div class="bento-card bento-profile" id="profile">
+          <div class="member-section-heading">
+            <div><span class="member-eyebrow">MY ACCOUNT</span><h2>Member Profile</h2></div>
+          </div>
+          <dl class="member-profile-list">
+            <div><dt>Name</dt><dd>\${esc(fullName(member) || '—')}</dd></div>
+            <div><dt>Email</dt><dd>\${esc(member.email || '—')}</dd></div>
+            <div><dt>Chapter</dt><dd>\${esc(member.chapterName || 'No Chapter Assigned')}</dd></div>
+            <div><dt>Contact</dt><dd>\${esc(member.contact || '—')}</dd></div>
+            <div><dt>First Attended Youth Camp</dt><dd>\${esc(fmtDate(member.firstAttendedYouthCamp))}</dd></div>
+            <div><dt>Services</dt><dd>\${esc((member.services || []).join(', ') || 'No Service Assigned')}</dd></div>
           </dl>
-        </article>
-      </section>
-    `;
+        </div>
+
+        <div class="bento-card bento-recent" id="recent">
+          <div class="member-section-heading">
+            <div><span class="member-eyebrow">LOOKING BACK</span><h2>Recent Events</h2></div>
+          </div>
+          <div class="member-event-stack">
+            \${recentEvents.length
+              ? recentEvents.map(event => eventCard(event, eventRegistration(participants, member.id, event.id), 'past')).join('')
+              : \`<div class="member-empty-card"><strong>No recent events yet.</strong><span>Completed Area events will appear here.</span></div>\`
+            }
+          </div>
+        </div>
+
+      </div>
+    \`;
 
     document.getElementById('exitMemberPreview')?.addEventListener('click', () => {
       navigateWithLoader(session.role === 'chapter_servant' ? '/chapters' : '/dashboard');

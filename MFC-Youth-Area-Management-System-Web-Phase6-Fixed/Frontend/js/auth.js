@@ -14,6 +14,7 @@ const ACCESS_ROLE_VALUES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   'chapter_servant',
   'member'
