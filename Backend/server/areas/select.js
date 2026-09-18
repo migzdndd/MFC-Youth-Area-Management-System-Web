@@ -13,6 +13,13 @@ const LEADERSHIP_ROLES = new Set([
   'chapter_servant'
 ]);
 
+/**
+ * API Route Handler: Allows a leadership profile to select and assign themselves to an Area.
+ *
+ * @param {import('http').IncomingMessage} req - The HTTP request object.
+ * @param {import('http').ServerResponse} res - The HTTP response object.
+ * @returns {Promise<void>}
+ */
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
 

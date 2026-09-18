@@ -8240,6 +8240,11 @@ const renderers = {
   events: renderEvents
 };
 
+/**
+ * Renders a fallback UI when the main page rendering fails.
+ *
+ * @param {Error|any} error - The caught error object.
+ */
 function renderPageFailure(error) {
   console.error('Page render failed:', error);
 
@@ -8265,6 +8270,11 @@ function renderPageFailure(error) {
   });
 }
 
+/**
+ * Attempts to render the current page securely, falling back to an error state if it fails.
+ *
+ * @returns {boolean} True if rendered successfully, false otherwise.
+ */
 function renderPageSafely() {
   try {
     const renderer = renderers[page] || renderDashboard;
@@ -8323,10 +8333,18 @@ async function bootstrapApplication() {
 
 window.addEventListener('error', event => {
   console.error('Unhandled page error:', event?.error || event?.message || event);
+  // Contingency Fallback UI: Notify user of unhandled exception
+  if (typeof window.toast === 'function') {
+    window.toast('An unexpected error occurred. You may need to reload the page.', 'error');
+  }
 });
 
 window.addEventListener('unhandledrejection', event => {
   console.error('Unhandled async error:', event?.reason || event);
+  // Contingency Fallback UI: Notify user of async failure
+  if (typeof window.toast === 'function') {
+    window.toast('A background process failed. Please try your last action again.', 'error');
+  }
 });
 
 bootstrapApplication().catch(error => {

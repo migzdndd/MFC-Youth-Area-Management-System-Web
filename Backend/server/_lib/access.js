@@ -11,14 +11,33 @@ export const AREA_ADMIN_ROLES = new Set([
   'area_kids_servant'
 ]);
 
+/**
+ * Checks if the given role is considered an Area Admin role.
+ *
+ * @param {string} role - The user's role string.
+ * @returns {boolean} True if the role has Area Admin privileges.
+ */
 export function isAreaAdminRole(role) {
   return AREA_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
 }
 
+/**
+ * Checks if the given role is a Chapter Servant.
+ *
+ * @param {string} role - The user's role string.
+ * @returns {boolean} True if the role is a chapter servant.
+ */
 export function isChapterServantRole(role) {
   return String(role || '').trim().toLowerCase() === 'chapter_servant';
 }
 
+/**
+ * Authenticates a user based on the request's Bearer token.
+ *
+ * @param {import('http').IncomingMessage} req - The request object.
+ * @returns {Promise<{ supabase: import('@supabase/supabase-js').SupabaseClient, user: import('@supabase/supabase-js').User, token: string }>} 
+ * @throws {Error} 401 Unauthorized if the token is missing or invalid.
+ */
 export async function requireAuthenticatedUser(req) {
   const token = readBearerToken(req);
   if (!token) {
@@ -40,6 +59,13 @@ export async function requireAuthenticatedUser(req) {
   return { supabase, user: userData.user, token };
 }
 
+/**
+ * Authenticates a user and retrieves their active profile.
+ *
+ * @param {import('http').IncomingMessage} req - The request object.
+ * @returns {Promise<{ supabase: import('@supabase/supabase-js').SupabaseClient, user: import('@supabase/supabase-js').User, profile: Object, token: string }>}
+ * @throws {Error} 403 Forbidden if the profile is inactive.
+ */
 export async function requireAuthenticatedProfile(req) {
   const { supabase, user, token } = await requireAuthenticatedUser(req);
   const { data: profile, error: profileError } = await supabase
