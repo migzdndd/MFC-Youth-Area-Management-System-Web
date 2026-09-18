@@ -22,6 +22,7 @@ import participants from '../server/participants/index.js';
 import reports from '../server/reports/index.js';
 import services from '../server/services/index.js';
 import sync from '../server/sync/index.js';
+import dailyReadings from '../server/daily-readings/index.js';
 
 const ROUTES = new Map([
   ['health', health],
@@ -47,7 +48,8 @@ const ROUTES = new Map([
   ['participants', participants],
   ['reports', reports],
   ['services', services],
-  ['sync', sync]
+  ['sync', sync],
+  ['daily-readings', dailyReadings]
 ]);
 
 function normalizeRoute(value) {
