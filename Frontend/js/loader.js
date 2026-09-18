@@ -446,18 +446,18 @@
         <hr>
         <h3>3. Where You'll Go (Based on Your Role)</h3>
         <p>The MFC Youth Area Management System automatically customizes your experience depending on your current service role. Once you log in, you will be taken to the portal that fits your responsibilities:</p>
-        <h4>👤 General Members</h4>
+        <h4><img src="/Icons/members.png" alt="" style="width: 20px; vertical-align: middle; margin-right: 8px; filter: brightness(0) saturate(100%) invert(23%) sepia(13%) saturate(1212%) hue-rotate(174deg) brightness(96%) contrast(87%);"> General Members</h4>
         <ul>
           <li>Here, you can view your personal profile.</li>
           <li>See upcoming MFC Youth events in your area.</li>
           <li>Stay updated with recent announcements.</li>
         </ul>
-        <h4>🏘️ Chapter Servants</h4>
+        <h4><img src="/Icons/chapters.png" alt="" style="width: 20px; vertical-align: middle; margin-right: 8px; filter: brightness(0) saturate(100%) invert(23%) sepia(13%) saturate(1212%) hue-rotate(174deg) brightness(96%) contrast(87%);"> Chapter Servants</h4>
         <ul>
           <li>From here, you can manage your chapter’s member list.</li>
           <li>Keep track of chapter-specific activities and reports.</li>
         </ul>
-        <h4>👑 Area Admins, Coordinators & Other Servant Leaders</h4>
+        <h4><img src="/Icons/dashboard.png" alt="" style="width: 20px; vertical-align: middle; margin-right: 8px; filter: brightness(0) saturate(100%) invert(23%) sepia(13%) saturate(1212%) hue-rotate(174deg) brightness(96%) contrast(87%);"> Area Admins, Coordinators & Other Servant Leaders</h4>
         <ul>
           <li>This is your high-level control center.</li>
           <li>You’ll have access to area-wide analytics, activity reports, and cross-chapter member directories.</li>
