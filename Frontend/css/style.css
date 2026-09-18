@@ -1,6 +1,12 @@
-/* =========================================================
-   MFC Youth Area Management System - Web
-   ========================================================= */
+/* ============================================================================
+   MFC Youth Area Management System - Global Stylesheet
+   ============================================================================
+   Purpose:
+   - Provides all foundational CSS variables, typography (Inter), and colors.
+   - Defines global layouts (Auth screens, Member Portal, Area Dashboard).
+   - Contains styling for all components: cards, tables, forms, modals, alerts,
+     and skeleton loaders used across the application.
+   ============================================================================ */
 
 * {
   box-sizing: border-box;
@@ -4786,6 +4792,7 @@ html.page-is-loading body {
 
 /* ==========================================================================
    Access Guide Floating Button & Modal
+   Description: Styles for the global help overlay injected via loader.js
    ========================================================================== */
 .mfc-guide-fab {
   position: fixed;

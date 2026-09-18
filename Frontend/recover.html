@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<!--
+  =============================================================================
+  MFC Youth Area Management System
+  File: recover.html
+  Description: Account recovery and troubleshooting entry page.
+  =============================================================================
+-->
 <html lang="en">
 
 <head>
@@ -15,8 +22,10 @@
 </head>
 
 <body class="auth-body">
-  <main class="auth-page">
-    <section class="login-card auth-card" aria-labelledby="resetTitle">
+  <!-- Main Recover Account Container -->
+  <main class="auth-page auth-page-modern">
+    <!-- Recover Account Card -->
+    <section class="login-card login-card-modern animate-in" aria-labelledby="recoverTitle">
       <div class="login-header">
         <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
         <h1 id="resetTitle">Set New Password</h1>
@@ -29,7 +38,8 @@
           <small>Must be at least 8 characters with letters and numbers.</small>
         </div>
         
-        <div class="form-errors" id="resetPasswordError" style="display: none; color: red; margin-bottom: 1rem;"></div>
+        <!-- Help Content -->
+        <div class="form-errors auth-recovery-form" id="resetPasswordError" style="display: none; color: red; margin-bottom: 1rem;"></div>
         <div class="form-success" id="resetPasswordSuccess" style="display: none; color: green; margin-bottom: 1rem;"></div>
 
         <div class="login-buttons">

@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<!--
+  =============================================================================
+  MFC Youth Area Management System
+  File: register.html
+  Description: New member or servant leader registration form.
+  =============================================================================
+-->
 <html lang="en">
 
 <head>
@@ -15,8 +22,10 @@
 </head>
 
 <body class="auth-body" data-allow-authenticated="true">
+  <!-- Main Authentication Container -->
   <main class="auth-page auth-access-page">
     <div class="auth-access-layout">
+      <!-- Section: Member Account Claim -->
       <section class="login-card auth-card access-info-card" aria-labelledby="firstAccessTitle">
         <div class="login-header">
           <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
@@ -53,6 +62,7 @@
         <div class="auth-bottom">Your email must already belong to a Member record. Contact an authorized Servant Leader if it does not.</div>
       </section>
 
+      <!-- Section: Admin / Servant Leader Registration -->
       <section class="login-card auth-card admin-registration-card" aria-labelledby="adminRegisterTitle">
         <div class="login-header">
           <span class="brand-tag">Servant Leader Access</span>
@@ -60,6 +70,7 @@
           <p>For Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, Area Kids Servants, Chapter Servants, and other approved leadership access only. The account password you create here becomes your normal login password.</p>
         </div>
 
+        <!-- Admin Registration Form -->
         <form class="login-form admin-registration-form" id="adminRegistrationForm" novalidate>
           <p class="login-heading">Create Account</p>
           <div id="adminRegistrationMessage"></div>
@@ -74,6 +85,7 @@
             <input class="login-input" id="adminEmail" type="email" placeholder="Email Address" autocomplete="email" required>
           </label>
 
+          <!-- Role / Access Level Selection -->
           <label class="auth-field-label" for="adminRole">System Access Level</label>
           <label class="login-field" for="adminRole">
             <select class="login-input auth-select" id="adminRole" required>
@@ -119,6 +131,7 @@
       </section>
     </div>
   </main>
+  <!-- Global Authentication Footer -->
   <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank"
       rel="noopener noreferrer">mfcyouth.org</a> &middot; Powered & designed by <a href="https://migzdndd.github.io/web-portfolio/" target="_blank" rel="noopener noreferrer">migz.dev</a></footer>
   <script src="/js/loader.js"></script>
