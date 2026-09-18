@@ -8039,7 +8039,7 @@ window.deleteParticipant = async (eventId, id) => {
 // ============================================================================
 
 function isLeadershipSession() {
-  return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(
+  return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'mfc_high_servant', 'area_kids_servant', 'chapter_servant'].includes(
     String(session?.role || '').trim().toLowerCase()
   );
 }

@@ -22,13 +22,15 @@ const SERVICE_ALIASES = new Map([
   ['kids servant', 'Area Kids Servant'],
   ['area kids servant', 'Area Kids Servant'],
   ['area_kids_servant', 'Area Kids Servant'],
-  ['mfc high servant', 'MFC High Servant']
+  ['mfc high servant', 'MFC High Servant'],
+  ['mfc_high_servant', 'MFC High Servant']
 ]);
 
 const ROLE_SERVICE_MAP = Object.freeze({
   area_servant: 'Area Servant',
   lit_servant: 'Area LIT Servant',
   campus_servant: 'Campus Servant',
+  mfc_high_servant: 'MFC High Servant',
   area_kids_servant: 'Area Kids Servant',
   chapter_servant: 'Chapter Servant'
 });

@@ -7,6 +7,7 @@ const LEADERSHIP_ROLES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   'chapter_servant'
 ]);
@@ -18,6 +19,7 @@ const MEMBER_BACKED_ADMIN_ROLES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   'chapter_servant'
 ]);

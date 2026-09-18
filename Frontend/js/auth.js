@@ -25,6 +25,7 @@ const ACCESS_ROLE_VALUES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   'chapter_servant',
   'member'
@@ -470,7 +471,7 @@ if (adminRegistrationForm) {
       showMessage('adminRegistrationMessage', 'Enter a valid email address.');
       return;
     }
-    if (!['national_coordinator', 'couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(role)) {
+    if (!['national_coordinator', 'couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'mfc_high_servant', 'area_kids_servant', 'chapter_servant'].includes(role)) {
       showMessage('adminRegistrationMessage', 'Select your System Access Level.');
       return;
     }
