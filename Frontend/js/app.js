@@ -72,6 +72,7 @@ const ACCESS_LEVELS = [
   { value: 'lit_servant', label: 'Area LIT Servant' },
   { value: 'campus_servant', label: 'Campus Servant' },
   { value: 'area_kids_servant', label: 'Area Kids Servant' },
+  { value: 'mfc_high_servant', label: 'MFC High Servant' },
   { value: 'chapter_servant', label: 'Chapter Servant' },
   { value: 'member', label: 'Member' }
 ];
@@ -101,6 +102,7 @@ const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
   lit_servant: 'Area LIT Servant',
   campus_servant: 'Campus Servant',
   area_kids_servant: 'Area Kids Servant',
+  mfc_high_servant: 'MFC High Servant',
   chapter_servant: 'Chapter Servant'
 });
 
@@ -126,6 +128,7 @@ const AREA_ADMIN_ROLES = new Set([
   'area_servant',
   'lit_servant',
   'campus_servant',
+  'mfc_high_servant',
   'area_kids_servant',
   // Kept only for compatibility with the older prototype session.
   'area_admin'
@@ -1169,6 +1172,16 @@ if (isChapterServantSession()) {
   });
 }
 
+if (session?.role === 'lit_servant') {
+  document.querySelectorAll('.sidebar-nav a[href="/services"]').forEach(link => {
+    Array.from(link.childNodes).forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent.includes('Services')) {
+        node.textContent = node.textContent.replace('Services', 'Service Tab');
+      }
+    });
+  });
+}
+
 if (logoutBtn) {
   const user =
     document.createElement('div');
@@ -1463,7 +1476,7 @@ function renderDashboard() {
     [
       'members',
       'Total Members',
-      cloudSummary?.members ?? data.members.length,
+      (session.role === 'campus_servant' || session.role === 'mfc_high_servant') ? getVisibleMembers(data).length : (cloudSummary?.members ?? data.members.length),
       'People currently on record'
     ],
 
@@ -1501,7 +1514,7 @@ function renderDashboard() {
       .map(chapter => ({
         name: chapter.name,
 
-        count: data.members.filter(
+        count: getVisibleMembers(data).filter(
           member =>
             String(member.chapterId) ===
             String(chapter.id)
@@ -1550,9 +1563,11 @@ function renderDashboard() {
     )
     .slice(0, 5);
 
-  const activeMembers = cloudSummary?.activeMembers ?? data.members.filter(
+  const activeMembers = (session.role === 'campus_servant' || session.role === 'mfc_high_servant') 
+    ? getVisibleMembers(data).filter(member => member.status === 'Active').length 
+    : (cloudSummary?.activeMembers ?? data.members.filter(
     member => member.status === 'Active'
-  ).length;
+  ).length);
 
   const attended = cloudSummary?.attended ?? data.participants.filter(
     participant => participant.attended
@@ -1848,8 +1863,30 @@ let memberFilters = {
   chapter: 'All'
 };
 
+function getVisibleMembers(data) {
+  if (!session) return [];
+  
+  if (session.role === 'campus_servant') {
+    return data.members.filter(m => m.academicTrack === 'SHS' || m.academicTrack === 'College');
+  }
+  
+  if (session.role === 'mfc_high_servant') {
+    return data.members.filter(m => m.academicTrack === 'HS');
+  }
+  
+  if (isChapterServantSession()) {
+    const chapter = scopedChapter(data);
+    if (!chapter) return [];
+    return data.members.filter(m => String(m.chapterId) === String(chapter.id));
+  }
+  
+  // For other roles like Area Admin, Couple Coordinator, Area LIT Servant, etc.
+  return data.members;
+}
+
 function filteredMembers(data) {
-  return data.members.filter(member => {
+  const visible = getVisibleMembers(data);
+  return visible.filter(member => {
     const haystack = `
       ${member.firstName}
       ${member.middleName || ''}
@@ -2142,8 +2179,8 @@ function renderMembers() {
       Showing
       ${list.length}
       of
-      ${data.members.length}
-      member${data.members.length === 1
+      ${getVisibleMembers(data).length}
+      member${getVisibleMembers(data).length === 1
       ? ''
       : 's'}
     </div>
@@ -2297,7 +2334,7 @@ function renderMembers() {
           `
       : emptyState(
         'No matching members',
-        data.members.length
+        getVisibleMembers(data).length
           ? 'Change or clear the filters to see other members.'
           : 'Add the first MFC Youth member to begin managing your Area.'
       )
@@ -3118,8 +3155,13 @@ window.serviceMember = id => {
     ? member.services[0]
     : '';
 
+  let availableServices = data.services;
+  if (session?.role === 'lit_servant') {
+    availableServices = ['Music', 'Dance', 'Creative Writing', 'Graphics & Promo', 'Photography & Videography'];
+  }
+
   const checks =
-    data.services
+    availableServices
       .map(
         service => `
           <label
@@ -4136,16 +4178,23 @@ window.addMembersToChapter = async id => {
 
 function renderServices() {
   const data = db();
+  let displayServices = data.services;
+  
+  if (session?.role === 'lit_servant') {
+    displayServices = ['Music', 'Dance', 'Creative Writing', 'Graphics & Promo', 'Photography & Videography'];
+  }
 
   content.innerHTML =
     pageHeader(
-      'Services',
-      'View the eight built-in MFC Youth service roles and assigned members.'
+      session?.role === 'lit_servant' ? 'Service Tab' : 'Services',
+      session?.role === 'lit_servant' 
+        ? 'View Area LIT specific service roles and assigned members.'
+        : 'View the built-in MFC Youth service roles and assigned members.'
     ) +
     `
     <div class="service-grid">
 
-      ${data.services
+      ${displayServices
       .map(service => {
         const members =
           data.members.filter(
