@@ -4783,3 +4783,129 @@ html.page-is-loading body {
   background: #ecfdf5;
   color: #065f46;
 }
+
+/* ==========================================================================
+   Access Guide Floating Button & Modal
+   ========================================================================== */
+.mfc-guide-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--brand-blue, #0d6efd);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  cursor: pointer;
+  z-index: 9999;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.mfc-guide-fab:hover, .mfc-guide-fab:focus-visible {
+  transform: scale(1.05);
+  background: var(--brand-dark, #0b5ed7);
+}
+
+.mfc-guide-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.mfc-guide-modal.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mfc-guide-modal-content {
+  background: #fff;
+  color: #333;
+  width: 90%;
+  max-width: 600px;
+  max-height: 85vh;
+  border-radius: 12px;
+  padding: 35px 30px;
+  overflow-y: auto;
+  position: relative;
+  transform: translateY(20px);
+  transition: transform 0.3s;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  text-align: left;
+}
+
+.mfc-guide-modal.active .mfc-guide-modal-content {
+  transform: translateY(0);
+}
+
+.mfc-guide-close {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 32px;
+  cursor: pointer;
+  color: #777;
+  line-height: 1;
+  padding: 0;
+}
+
+.mfc-guide-close:hover {
+  color: #111;
+}
+
+.mfc-guide-modal-content h1 {
+  font-size: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 5px;
+}
+.mfc-guide-modal-content h2 {
+  font-size: 1.1rem;
+  color: #555;
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+.mfc-guide-modal-content h3 {
+  font-size: 1.2rem;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+.mfc-guide-modal-content h4 {
+  font-size: 1rem;
+  margin-top: 15px;
+  margin-bottom: 5px;
+}
+.mfc-guide-modal-content p,
+.mfc-guide-modal-content li {
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+.mfc-guide-modal-content p {
+  margin-bottom: 15px;
+}
+.mfc-guide-modal-content ul,
+.mfc-guide-modal-content ol {
+  padding-left: 20px;
+  margin-bottom: 15px;
+}
+.mfc-guide-modal-content hr {
+  border: 0;
+  border-top: 1px solid #eee;
+  margin: 25px 0;
+}

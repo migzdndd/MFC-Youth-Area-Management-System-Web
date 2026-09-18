@@ -404,7 +404,92 @@
   });
 
   // --------------------------------------------------------------------------
-  // 9. Global Exports
+  // 9. Global Access Guide Modal
+  // --------------------------------------------------------------------------
+  function ensureAccessGuideUI() {
+    if (document.getElementById('mfcGuideFab')) return;
+
+    const fab = document.createElement('button');
+    fab.id = 'mfcGuideFab';
+    fab.className = 'mfc-guide-fab';
+    fab.setAttribute('aria-label', 'Help & Access Guide');
+    fab.setAttribute('title', 'Help & Access Guide');
+    fab.innerHTML = '?';
+
+    const modal = document.createElement('div');
+    modal.id = 'mfcGuideModal';
+    modal.className = 'mfc-guide-modal';
+    
+    modal.innerHTML = `
+      <div class="mfc-guide-modal-content">
+        <button class="mfc-guide-close" id="mfcGuideClose" aria-label="Close Guide">&times;</button>
+        <h1>Welcome to the MFC Youth System</h1>
+        <h2>How to Access and Use the Portal</h2>
+        <p>Welcome! This quick guide will help you understand how to log in, what to expect when you access your account, and where you'll find your tools based on your role in MFC Youth.</p>
+        <hr>
+        <h3>1. Logging In</h3>
+        <p>To access your account, simply head to the main login page:</p>
+        <ol>
+          <li>Enter the <strong>Email Address</strong> associated with your MFC Youth profile.</li>
+          <li>Enter your <strong>Password</strong>.</li>
+          <li>(Optional) Check the <strong>"Remember Me"</strong> box if you are using a personal, trusted device.</li>
+          <li>Click <strong>Sign In</strong>.</li>
+        </ol>
+        <p><strong>Forgot your password?</strong> Don't worry! Click the "Forgot Password" link on the login page to securely reset it via email.</p>
+        <hr>
+        <h3>2. First-Time Setup & Security</h3>
+        <p>If this is your very first time logging in, or if an administrator recently reset your account, the system may ask you to update your security settings before you can proceed:</p>
+        <ul>
+          <li><strong>Change Password:</strong> You will be redirected to a secure page to choose a new, private password.</li>
+          <li><strong>Area Setup:</strong> If your local area profile isn't fully configured yet, you'll be asked to provide some quick details before jumping into the dashboard.</li>
+        </ul>
+        <hr>
+        <h3>3. Where You'll Go (Based on Your Role)</h3>
+        <p>The MFC Youth Area Management System automatically customizes your experience depending on your current service role. Once you log in, you will be taken to the portal that fits your responsibilities:</p>
+        <h4>👤 General Members</h4>
+        <ul>
+          <li>Here, you can view your personal profile.</li>
+          <li>See upcoming MFC Youth events in your area.</li>
+          <li>Stay updated with recent announcements.</li>
+        </ul>
+        <h4>🏘️ Chapter Servants</h4>
+        <ul>
+          <li>From here, you can manage your chapter’s member list.</li>
+          <li>Keep track of chapter-specific activities and reports.</li>
+        </ul>
+        <h4>👑 Area Admins, Coordinators & Other Servant Leaders</h4>
+        <ul>
+          <li>This is your high-level control center.</li>
+          <li>You’ll have access to area-wide analytics, activity reports, and cross-chapter member directories.</li>
+        </ul>
+        <hr>
+        <h3>Need Help?</h3>
+        <p>If you ever get lost, you can safely log out by clicking the <strong>"Logout"</strong> button located at the bottom of your sidebar navigation (or the top right in the Member Portal).</p>
+        <p>If you believe your account has the wrong role or you cannot access the features you need, please contact your immediate Area Administrator or Couple Coordinator for assistance.</p>
+      </div>
+    `;
+
+    document.body.appendChild(fab);
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.classList.remove('active');
+    
+    fab.addEventListener('click', () => modal.classList.add('active'));
+    document.getElementById('mfcGuideClose').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  // Ensure access guide UI is built when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureAccessGuideUI);
+  } else {
+    ensureAccessGuideUI();
+  }
+
+  // --------------------------------------------------------------------------
+  // 10. Global Exports
   // --------------------------------------------------------------------------
   window.MFCPageLoader = { show, hide, navigate };
   window.MFCPageSkeleton = { show: showPageSkeleton, clear: clearPageSkeleton };
