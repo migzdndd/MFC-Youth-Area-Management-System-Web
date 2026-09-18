@@ -1,14 +1,24 @@
-// =========================================================
-// MFC Youth Area Management System - Frontend Auth Prototype
-// Accounts are provisioned by administrators from the Members database.
-// Browser-only prototype: replace plaintext/localStorage auth with server-side
-// authentication + password hashing before production.
-// =========================================================
+/**
+ * ============================================================================
+ * MFC Youth Area Management System - Frontend Authentication
+ * ============================================================================
+ * Purpose:
+ * Manages client authentication, session storage, and account provisioning.
+ * - Handles sign-in (Cloud Supabase API with local demo fallback).
+ * - Routes authenticated users according to role (Dashboard, Chapters, Member Portal).
+ * - Handles servant leader registration and member self-service account claiming.
+ * - Handles password changes and email update workflows.
+ * ============================================================================
+ */
 
+// ----------------------------------------------------------------------------
+// 1. Storage Keys & Access Level Configuration
+// ----------------------------------------------------------------------------
 const USER_KEY = 'mfc_demo_users';
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
 
+/** Set of valid access roles within the system */
 const ACCESS_ROLE_VALUES = new Set([
   'couple_coordinator',
   'area_servant',
@@ -19,29 +29,39 @@ const ACCESS_ROLE_VALUES = new Set([
   'member'
 ]);
 
+/** Normalizes role string to canonical enum value */
 function normalizeAccessRole(value) {
   const role = String(value || 'member').trim().toLowerCase();
   if (role === 'area_admin') return 'area_servant';
   return ACCESS_ROLE_VALUES.has(role) ? role : 'member';
 }
 
+/** Extracts the normalized role for a member record */
 function roleForMember(member) {
   return normalizeAccessRole(member?.accessLevel || 'member');
 }
 
+/** Safely parses JSON with fallback */
 function safeParse(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
 
+/** Normalizes email for case-insensitive lookup */
 function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
+// ----------------------------------------------------------------------------
+// 2. Local Storage Cache: Members & Prototype Users
+// ----------------------------------------------------------------------------
+
+/** Reads cached member records from localStorage */
 function getMembers() {
   const data = safeParse(localStorage.getItem(DB_KEY) || '{}', {});
   return Array.isArray(data.members) ? data.members : [];
 }
 
+/** Reconciles and returns prototype demo users from localStorage */
 function getUsers() {
   const users = safeParse(localStorage.getItem(USER_KEY) || '[]', []);
   if (!Array.isArray(users)) return [];
@@ -134,20 +154,28 @@ function getUsers() {
   return normalized;
 }
 
+/** Saves user accounts to local storage */
 function saveUsers(users) {
   localStorage.setItem(USER_KEY, JSON.stringify(users));
 }
 
+// ----------------------------------------------------------------------------
+// 3. Session Management & Navigation Helpers
+// ----------------------------------------------------------------------------
+
+/** Reads current active session from localStorage or sessionStorage */
 function getSession() {
   return safeParse(localStorage.getItem(SESSION_KEY), null) || safeParse(sessionStorage.getItem(SESSION_KEY), null);
 }
 
+/** Persists session data to either localStorage (remember me) or sessionStorage */
 function saveSession(session, remember) {
   localStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(SESSION_KEY);
   (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session));
 }
 
+/** Updates the active session in-place in whichever storage it was saved */
 function updateSession(session) {
   if (localStorage.getItem(SESSION_KEY)) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -156,11 +184,13 @@ function updateSession(session) {
   }
 }
 
+/** Clears session storage on logout */
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(SESSION_KEY);
 }
 
+/** Determines landing route based on session state, permissions, and roles */
 function destinationFor(session) {
   if (session?.mustChangePassword) return '/change-password';
   if (session?.needsAreaSetup) return '/dashboard';
@@ -169,6 +199,11 @@ function destinationFor(session) {
   return '/dashboard';
 }
 
+// ----------------------------------------------------------------------------
+// 4. API Request Client & Backend Session Mapping
+// ----------------------------------------------------------------------------
+
+/** Performs authenticated JSON HTTP fetch requests to backend endpoints */
 async function apiJson(path, options = {}) {
   const activeSession = getSession();
   const accessToken = activeSession?.backendAuth && !activeSession?.demo
@@ -202,6 +237,7 @@ async function apiJson(path, options = {}) {
   return body;
 }
 
+/** Transforms backend login/register response into a standard client session object */
 function backendSessionFromResponse(payload, remember = false) {
   const user = payload?.user || {};
   const serverSession = payload?.session || {};
@@ -226,28 +262,37 @@ function backendSessionFromResponse(payload, remember = false) {
   return session;
 }
 
+// ----------------------------------------------------------------------------
+// 5. UI Helpers: Alerts, Validation & Motion Effects
+// ----------------------------------------------------------------------------
+
+/** Displays an alert box message in the specified container element */
 function showMessage(id, text, type = 'error') {
   const box = document.getElementById(id);
   if (!box) return;
   box.innerHTML = `<div class="message ${type}" role="status">${escapeHtml(text)}</div>`;
 }
 
+/** Escapes special HTML characters */
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char]));
 }
 
+/** Checks for standard email address syntax */
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+/** Validates password complexity: minimum 8 characters with at least one letter and number */
 function passwordError(password) {
   if (password.length < 8) return 'Password must be at least 8 characters long.';
   if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return 'Password must contain at least one letter and one number.';
   return '';
 }
 
+/** Toggles loading/busy status and label on form submission buttons */
 function setButtonBusy(button, busy, busyText = 'Please wait…') {
   if (!button) return;
   if (busy) {
@@ -260,6 +305,7 @@ function setButtonBusy(button, busy, busyText = 'Please wait…') {
   }
 }
 
+/** Connects show/hide password toggle buttons */
 function attachPasswordToggles() {
   document.querySelectorAll('[data-password-toggle]').forEach(button => {
     button.addEventListener('click', () => {
@@ -273,6 +319,7 @@ function attachPasswordToggles() {
   });
 }
 
+/** Sets up entry reveal animations with stagger */
 function initializeRevealAnimations() {
   const revealTargets = document.querySelectorAll('.animate-in');
   if (!revealTargets.length) return;
@@ -290,13 +337,17 @@ function initializeRevealAnimations() {
 
 window.addEventListener('DOMContentLoaded', initializeRevealAnimations);
 
-// Signed-in users who revisit the sign-in page go to the correct portal.
+// Redirect already signed-in users attempting to access public login/register pages
 const currentSession = getSession();
 if (currentSession && document.body.dataset.allowAuthenticated !== 'true') {
   navigateWithLoader(destinationFor(currentSession), true);
 }
 
-// ---------------- LOGIN ----------------
+// ----------------------------------------------------------------------------
+// 6. Login Flow (Demo & Cloud)
+// ----------------------------------------------------------------------------
+
+/** Starts a pre-configured offline demo session for testing */
 function startDemoLogin(remember = false) {
   const session = {
     email: 'admin@mfcyouth.local',
@@ -311,6 +362,7 @@ function startDemoLogin(remember = false) {
   navigateWithLoader('/dashboard');
 }
 
+// One-click demo login button
 const demoLoginButton = document.getElementById('demoLoginButton');
 if (demoLoginButton) {
   demoLoginButton.addEventListener('click', () => {
@@ -319,6 +371,7 @@ if (demoLoginButton) {
   });
 }
 
+// Main sign-in form handler
 const loginForm = document.getElementById('loginForm');
 if (loginForm) {
   loginForm.addEventListener('submit', async event => {
@@ -335,16 +388,14 @@ if (loginForm) {
 
     setButtonBusy(submit, true, 'Signing In…');
 
-    // Built-in management demo credentials remain available in addition to
-    // the one-click Demo Login button on the sign-in page.
+    // Built-in demo credentials check
     const demoOk = email === 'admin@mfcyouth.local' && password === 'admin123';
     if (demoOk) {
       startDemoLogin(remember);
       return;
     }
 
-    // Prefer the real backend. During the migration period, older browser-only
-    // prototype accounts remain available as a fallback.
+    // Authenticate via cloud backend with prototype fallback
     try {
       const payload = await apiJson('/api/auth/login', {
         method: 'POST',
@@ -394,7 +445,9 @@ if (loginForm) {
   });
 }
 
-// ---------------- SERVANT LEADER REGISTRATION ----------------
+// ----------------------------------------------------------------------------
+// 7. Servant Leader Registration Flow
+// ----------------------------------------------------------------------------
 const adminRegistrationForm = document.getElementById('adminRegistrationForm');
 if (adminRegistrationForm) {
   adminRegistrationForm.addEventListener('submit', async event => {
@@ -462,7 +515,9 @@ if (adminRegistrationForm) {
   });
 }
 
-// ---------------- MEMBER PORTAL ACCOUNT CLAIM ----------------
+// ----------------------------------------------------------------------------
+// 8. Member Portal Account Claim Flow
+// ----------------------------------------------------------------------------
 const memberClaimForm = document.getElementById('memberClaimForm');
 if (memberClaimForm) {
   memberClaimForm.addEventListener('submit', async event => {
@@ -510,7 +565,9 @@ if (memberClaimForm) {
   });
 }
 
-// ---------------- CHANGE PASSWORD ----------------
+// ----------------------------------------------------------------------------
+// 9. Password Update & Force Change Flow
+// ----------------------------------------------------------------------------
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
   backToLoginButton.addEventListener('click', async () => {
@@ -578,7 +635,7 @@ if (forcePasswordForm) {
         return;
       }
 
-      // Backend-authenticated users: call the Supabase change-password API.
+      // Backend-authenticated users: call the Supabase change-password API
       if (session.backendAuth && !session.demo) {
         setButtonBusy(submit, true, 'Updating…');
         try {
@@ -598,7 +655,7 @@ if (forcePasswordForm) {
         return;
       }
 
-      // Local prototype fallback for browser-only demo accounts.
+      // Local prototype fallback for browser-only demo accounts
       const users = getUsers();
       const user = users.find(item => String(item.id) === String(session.userId)) || users.find(item => item.email === session.email);
       if (!user || user.password !== currentPassword) {
@@ -619,8 +676,9 @@ if (forcePasswordForm) {
   }
 }
 
-
-// ---------------- CHANGE EMAIL ----------------
+// ----------------------------------------------------------------------------
+// 10. Email Address Change Flow
+// ----------------------------------------------------------------------------
 const changeEmailForm = document.getElementById('changeEmailForm');
 if (changeEmailForm) {
   const emailSession = getSession();
@@ -668,4 +726,5 @@ if (changeEmailForm) {
   }
 }
 
+// Initialize show/hide password toggle buttons
 attachPasswordToggles();

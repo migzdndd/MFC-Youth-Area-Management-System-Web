@@ -1,10 +1,30 @@
+/**
+ * ============================================================================
+ * MFC Youth Area Management System - Page Loader & Skeleton Transitions
+ * ============================================================================
+ * Purpose:
+ * Provides smooth, instantaneous page transitions across the application.
+ * - Displays contextual skeleton screens while content renders.
+ * - Displays a branded loader overlay on page navigation.
+ * - Prefetches target pages on link hover/idle to maximize responsiveness.
+ * - Exposes MFCPageLoader, MFCPageSkeleton, and navigateWithLoader to the window.
+ * ============================================================================
+ */
+
 (() => {
+  // --------------------------------------------------------------------------
+  // 1. Constants & Navigation State
+  // --------------------------------------------------------------------------
   const LOADER_ID = 'mfcPageLoader';
   const PREFETCH_DELAY_MS = 40;
   const NAVIGATION_TIMEOUT_MS = 5000;
   let navigating = false;
   let navigationTimer = null;
 
+  // --------------------------------------------------------------------------
+  // 2. Destination Route Label Resolver
+  // Returns human-friendly text for the loader overlay based on destination URL.
+  // --------------------------------------------------------------------------
   function destinationLabel(url) {
     try {
       const path = new URL(url, window.location.href).pathname.replace(/\/$/, '');
@@ -29,6 +49,12 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 3. Skeleton UI Generators
+  // Builds placeholder UI elements to eliminate layout shift while fetching data.
+  // --------------------------------------------------------------------------
+
+  /** Generates header skeleton with optional right-aligned action button */
   function skeletonHeader(withAction = true) {
     return `
       <header class="page-header skeleton-page-header" aria-hidden="true">
@@ -41,6 +67,7 @@
     `;
   }
 
+  /** Generates table skeleton with simulated rows and columns */
   function tableSkeleton(rows = 5, columns = 6) {
     const header = Array.from({ length: columns }, () => '<span class="skeleton-line skeleton-table-head"></span>').join('');
     const body = Array.from({ length: rows }, () => `
@@ -57,6 +84,7 @@
     `;
   }
 
+  /** Generates a grid of placeholder metric/data cards */
   function cardsSkeleton(count = 4) {
     return `
       <div class="skeleton-card-grid" aria-hidden="true">
@@ -71,6 +99,7 @@
     `;
   }
 
+  /** Generates toolbar placeholder containing search and filter controls */
   function toolbarSkeleton() {
     return `
       <div class="toolbar skeleton-toolbar" aria-hidden="true">
@@ -81,6 +110,7 @@
     `;
   }
 
+  /** Maps current page identifier to appropriate skeleton layout */
   function pageSkeleton(page) {
     switch (page) {
       case 'dashboard':
@@ -113,6 +143,10 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 4. Skeleton DOM Insertion & Lifecycle
+  // Mounts skeleton into target container before rendering actual application content.
+  // --------------------------------------------------------------------------
   function showPageSkeleton() {
     try {
       const root = document.getElementById('pageContent') || document.getElementById('memberPortalContent');
@@ -147,6 +181,7 @@
     }
   }
 
+  /** Cleans up skeleton placeholders once live application data is rendered */
   function clearPageSkeleton() {
     try {
       const roots = [
@@ -163,6 +198,10 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 5. Fullscreen Animated Page Loader
+  // Creates and controls branded overlay during navigation.
+  // --------------------------------------------------------------------------
   function ensureLoader() {
     try {
       if (document.getElementById(LOADER_ID) || !document.body) return;
@@ -191,6 +230,7 @@
     }
   }
 
+  /** Activates the full-page loading animation overlay */
   function show() {
     try {
       ensureLoader();
@@ -205,6 +245,7 @@
     }
   }
 
+  /** Dismisses the loading animation overlay */
   function hide() {
     try {
       const overlay = document.getElementById(LOADER_ID);
@@ -221,6 +262,10 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 6. Navigation Trigger
+  // Initiates navigation with loader overlay and fallback timeout.
+  // --------------------------------------------------------------------------
   function navigate(url, options = {}) {
     try {
       if (!url || navigating) return;
@@ -231,13 +276,14 @@
       const destination = overlay?.querySelector('.page-loader__destination');
       if (destination) destination.textContent = `Opening ${destinationLabel(url)}`;
 
-      // No artificial delay. Navigation starts immediately.
+      // Immediate browser navigation
       if (options.replace) {
         window.location.replace(url);
       } else {
         window.location.assign(url);
       }
 
+      // Safety timeout: ensure loader clears if navigation is interrupted
       navigationTimer = window.setTimeout(() => {
         if (navigating) hide();
       }, NAVIGATION_TIMEOUT_MS);
@@ -251,11 +297,15 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 7. Link Click & Prefetch Evaluation
+  // Determines if an anchor should be intercepted for enhanced SPA-like loading.
+  // --------------------------------------------------------------------------
   function shouldHandleLink(anchor, event) {
     try {
       if (!anchor || event.defaultPrevented) return false;
-      if (event.button !== 0) return false;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+      if (event.button !== 0) return false; // Left click only
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false; // Ignore modified clicks
       if (anchor.hasAttribute('download')) return false;
       if (anchor.target && anchor.target.toLowerCase() !== '_self') return false;
 
@@ -276,6 +326,7 @@
 
   const prefetched = new Set();
 
+  /** Injects prefetch link tags for visited or hovered internal links */
   function prefetchUrl(rawUrl) {
     try {
       const target = new URL(rawUrl, window.location.href);
@@ -293,6 +344,7 @@
     } catch {}
   }
 
+  /** Preheats navigation for all visible in-viewport links during browser idle time */
   function warmVisibleNavigation() {
     try {
       const links = [...document.querySelectorAll('a[href]')]
@@ -317,10 +369,14 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // 8. Event Listeners & Initialization
+  // --------------------------------------------------------------------------
   ensureLoader();
   showPageSkeleton();
   warmVisibleNavigation();
 
+  // Prefetch page on hover / pointer-over
   document.addEventListener('pointerover', event => {
     try {
       const anchor = event.target.closest?.('a[href]');
@@ -329,6 +385,7 @@
     } catch {}
   }, { passive: true });
 
+  // Intercept valid internal navigation clicks
   document.addEventListener('click', event => {
     try {
       const anchor = event.target.closest?.('a[href]');
@@ -340,11 +397,15 @@
     }
   }, true);
 
+  // Handle browser back/forward history cache restores
   window.addEventListener('pageshow', () => {
     hide();
     showPageSkeleton();
   });
 
+  // --------------------------------------------------------------------------
+  // 9. Global Exports
+  // --------------------------------------------------------------------------
   window.MFCPageLoader = { show, hide, navigate };
   window.MFCPageSkeleton = { show: showPageSkeleton, clear: clearPageSkeleton };
   window.navigateWithLoader = (url, replace = false) => navigate(url, { replace });

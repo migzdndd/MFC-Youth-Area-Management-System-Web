@@ -1,7 +1,35 @@
-// =========================================================
-// MFC Youth Area Management System - Frontend Application
-// Supabase-backed application. localStorage is used only as a fast UI cache/fallback for authenticated cloud data and demo mode.
-// =========================================================
+/**
+ * ============================================================================
+ * MFC Youth Area Management System - Main Application (Frontend)
+ * ============================================================================
+ * Supabase-backed single-page management application for MFC Youth Area Servants.
+ * Features:
+ *   - Local Cache / Fallback: localStorage is used as a fast UI cache for live cloud data.
+ *   - Role-Based Access Control: Couple Coordinators, Area Servants, LIT/Campus/Kids Servants, Chapter Servants.
+ *   - Real-Time Cloud Sync: Periodically reconciles local cache with Supabase backend.
+ *
+ * SECTION DIRECTORY:
+ *   1. Core Constants, Services & Access Roles (Lines ~30)
+ *   2. Authenticated Backend API Client (Lines ~160)
+ *   3. Cloud Synchronization & Entity Mappers (Lines ~210)
+ *   4. Role Permissions & Chapter Scoping (Lines ~380)
+ *   5. Database Normalization & Persistence (Lines ~450)
+ *   6. Formatting, Validation & Helper Utilities (Lines ~660)
+ *   7. Toast Notifications (Lines ~825)
+ *   8. Modal Dialogs & Confirmation Prompts (Lines ~850)
+ *   9. Application Bootstrap & Session Verification (Lines ~1060)
+ *  10. Navigation & Mobile Sidebar (Lines ~1210)
+ *  11. Dashboard Module (Lines ~1305)
+ *  12. Members Module & GIG Contribution Management (Lines ~1690)
+ *  13. Chapters Module & Servant Scoping (Lines ~3200)
+ *  14. Services Module & Assignments (Lines ~3950)
+ *  15. Activity Reports Module (Lines ~4115)
+ *  16. Report Summary, Printing & PDF Export (Lines ~5685)
+ *  17. Events & Attendance Tracking Module (Lines ~6650)
+ *  18. Area Onboarding Wizard (Lines ~7765)
+ *  19. Page Router, Error Boundary & Live Sync (Lines ~7960)
+ * ============================================================================
+ */
 
 const DB_KEY = 'mfc_web_database_v1';
 const SESSION_KEY = 'mfc_demo_session';
@@ -149,7 +177,11 @@ function updateStoredSession(nextSession) {
   } else {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
   }
-}
+// ============================================================================
+// SECTION 2: AUTHENTICATED BACKEND API CLIENT
+// Wrapper around native fetch that handles Bearer token authentication,
+// timeouts, error status parsing, and connection fallbacks.
+// ============================================================================
 
 async function backendApi(path, options = {}) {
   const token = session?.accessToken || '';
@@ -197,7 +229,11 @@ async function backendApi(path, options = {}) {
   } finally {
     window.clearTimeout(timeout);
   }
-}
+// ============================================================================
+// SECTION 3: CLOUD SYNCHRONIZATION & ENTITY MAPPERS
+// Reconciles live data from Supabase backend into the local cache schema.
+// Maps members, chapters, services, events, participants, and GIG records.
+// ============================================================================
 
 function cloudMemberToLocal(member, previous = {}) {
   const local = {
@@ -371,7 +407,11 @@ async function refreshAllCloudData({ render = true } = {}) {
   await syncCloudModulesIntoLocalDb();
   if (render) renderPageSafely();
   return true;
-}
+// ============================================================================
+// SECTION 4: ROLE PERMISSIONS & CHAPTER SCOPING
+// Controls role-based capabilities (Area Admin vs. Chapter Servant).
+// Filters visibility to specific chapter data when logged in as Chapter Servant.
+// ============================================================================
 
 function isAreaAdminSession() {
   return isAreaAdminRole(session?.role);
@@ -439,7 +479,11 @@ function isOwnMemberRecord(member) {
   const currentEmail = authEmail(session?.email || '');
   const recordEmail = authEmail(member.email || '');
   return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
-}
+// ============================================================================
+// SECTION 5: DATABASE NORMALIZATION & PERSISTENCE
+// Validates, sanitizes, and persists entity records to localStorage.
+// Ensures consistent schema shape across version migrations.
+// ============================================================================
 
 function normalizeDatabase(input) {
   const data = input && typeof input === 'object' ? input : {};
@@ -653,7 +697,11 @@ function save(data) {
     DB_KEY,
     JSON.stringify(normalizeDatabase(data))
   );
-}
+// ============================================================================
+// SECTION 6: FORMATTING, VALIDATION & HELPER UTILITIES
+// Currency formatting, date & time localization, age calculation,
+// string escaping (XSS protection), and name resolution helpers.
+// ============================================================================
 
 let uidSequence = 0;
 function uid() {
@@ -821,9 +869,10 @@ function validEmail(value) {
   );
 }
 
-// =========================================================
-// TOAST NOTIFICATIONS
-// =========================================================
+// ============================================================================
+// SECTION 7: TOAST NOTIFICATIONS
+// Non-intrusive feedback toasts for user actions (create, edit, delete, error).
+// ============================================================================
 
 function toast(text, type = 'success') {
   const wrap = document.getElementById('toastWrap');
@@ -841,9 +890,10 @@ function toast(text, type = 'success') {
   setTimeout(() => item.remove(), 3000);
 }
 
-// =========================================================
-// MODAL
-// =========================================================
+// ============================================================================
+// SECTION 8: MODAL DIALOGS & CONFIRMATION PROMPTS
+// Reusable accessible modal dialog system for forms, details, and delete confirmations.
+// ============================================================================
 
 function openModal(
   title,
@@ -1051,9 +1101,10 @@ function emptyState(title, text) {
   `;
 }
 
-// =========================================================
-// APP BOOTSTRAP
-// =========================================================
+// ============================================================================
+// SECTION 9: APPLICATION BOOTSTRAP & SESSION VERIFICATION
+// Initializes local state, verifies authentication, and enforces password change.
+// ============================================================================
 
 seedDB();
 
@@ -1204,9 +1255,10 @@ if (logoutBtn) {
   };
 }
 
-// =========================================================
-// MOBILE SIDEBAR
-// =========================================================
+// ============================================================================
+// SECTION 10: MOBILE SIDEBAR & NAVIGATION UI
+// Controls responsive drawer toggle, overlay scrim, and active page link styling.
+// ============================================================================
 
 const sidebar =
   document.getElementById('sidebar');
@@ -1298,9 +1350,10 @@ if (sidebar && menuBtn) {
   );
 }
 
-// =========================================================
-// DASHBOARD
-// =========================================================
+// ============================================================================
+// SECTION 11: DASHBOARD MODULE
+// Main administrator dashboard with metrics, upcoming events, and quick actions.
+// ============================================================================
 
 function renderDashboard() {
   const data = db();
@@ -1687,9 +1740,10 @@ function renderDashboard() {
   `;
 }
 
-// =========================================================
-// MEMBERS
-// =========================================================
+// ============================================================================
+// SECTION 12: MEMBERS MODULE & GIG CONTRIBUTION MANAGEMENT
+// Member roster, filtering, profile creation/updates, and GIG logging.
+// ============================================================================
 
 let memberFilters = {
   search: '',
@@ -3198,9 +3252,10 @@ window.deleteGigContribution = async (memberId, contributionId) => {
   }
 };
 
-// =========================================================
-// CHAPTERS
-// =========================================================
+// ============================================================================
+// SECTION 13: CHAPTERS MODULE & SERVANT SCOPING
+// Chapter listings, creation, chapter servant assignments, and scoped metrics.
+// ============================================================================
 
 let chapterSearch = '';
 
@@ -3943,9 +3998,10 @@ window.addMembersToChapter = async id => {
   });
 };
 
-// =========================================================
-// SERVICES
-// =========================================================
+// ============================================================================
+// SECTION 14: SERVICES MODULE & ASSIGNMENTS
+// Service role directory, member assignments, and responsibilities.
+// ============================================================================
 
 function renderServices() {
   const data = db();
@@ -4111,9 +4167,10 @@ window.viewService = service => {
   );
 };
 
-// =========================================================
-// REPORTS
-// =========================================================
+// ============================================================================
+// SECTION 15: ACTIVITY REPORTS MODULE
+// Activity reporting (Household, Assembly, Fellowship) and attendance tracking.
+// ============================================================================
 
 const REPORT_TYPES = [
   'Core Household',
@@ -5679,9 +5736,10 @@ window.deleteReport = async id => {
   }
 };
 
-// =========================================================
-// PRINT REPORT SUMMARY
-// =========================================================
+// ============================================================================
+// SECTION 16: REPORT SUMMARY, PRINTING & PDF EXPORT
+// Formatted print view and vector PDF export generation using jsPDF.
+// ============================================================================
 
 function printReportSummary(
   data
@@ -6648,9 +6706,10 @@ function exportReportsPdf(
   );
 }
 
-// =========================================================
-// EVENTS
-// =========================================================
+// ============================================================================
+// SECTION 17: EVENTS & ATTENDANCE TRACKING MODULE
+// Event scheduling, venue info, registration roster, fees, and attendance checklists.
+// ============================================================================
 
 let eventFilters = {
   search: '',
@@ -7761,9 +7820,10 @@ window.deleteParticipant = async (eventId, id) => {
 };
 
 
-// =========================================================
-// AREA ONBOARDING FOR NEW SERVANT LEADER ACCOUNTS
-// =========================================================
+// ============================================================================
+// SECTION 18: AREA ONBOARDING WIZARD
+// Setup flow for newly registered area servant leaders to create or link an Area.
+// ============================================================================
 
 function isLeadershipSession() {
   return ['couple_coordinator', 'area_servant', 'lit_servant', 'campus_servant', 'area_kids_servant', 'chapter_servant'].includes(
@@ -7953,9 +8013,10 @@ async function showAreaOnboarding() {
   });
 }
 
-// =========================================================
-// PAGE RENDER
-// =========================================================
+// ============================================================================
+// SECTION 19: PAGE ROUTER, ERROR BOUNDARY & LIVE SYNC
+// Dispatches view rendering based on body[data-page], sets up periodic sync polling.
+// ============================================================================
 
 const renderers = {
   dashboard: renderDashboard,
