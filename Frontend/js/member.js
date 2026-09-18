@@ -1,19 +1,17 @@
 /**
  * ============================================================================
- * MFC Youth Member Portal - Client Application
+ * MFC Youth Member Portal Client Application
  * ============================================================================
  * Purpose:
  * Provides the member-facing portal for MFC Youth members.
- * - Displays member profile details, assigned chapter, and ministries/services.
- * - Lists upcoming and recent events with personal registration/attendance status.
- * - Synchronizes cloud data (Supabase backend) with localStorage for offline/fast UI.
- * - Supports administrative "Preview Mode" allowing area leaders to view the portal.
+ * Displays member profile details, assigned chapter, and ministries/services.
+ * Lists upcoming and recent events with personal registration/attendance status.
+ * Synchronizes cloud data (Supabase backend) with localStorage for offline/fast UI.
+ * Supports administrative "Preview Mode" allowing area leaders to view the portal.
  * ============================================================================
  */
 
-// ----------------------------------------------------------------------------
 // 1. Storage Keys & Standard Services
-// ----------------------------------------------------------------------------
 const SESSION_KEY = 'mfc_demo_session';
 const DB_KEY = 'mfc_web_database_v1';
 const USER_KEY = 'mfc_demo_users';
@@ -39,9 +37,7 @@ const ACCESS_ROLE_SERVICE_MAP = Object.freeze({
   chapter_servant: 'Chapter Servant'
 });
 
-// ----------------------------------------------------------------------------
 // 2. Service Normalization & Role Inference
-// ----------------------------------------------------------------------------
 
 /** Normalizes service title strings to canonical display names */
 function normalizePortalServiceName(value) {
@@ -64,9 +60,7 @@ function detectedPortalServices(member) {
   return inferred ? [inferred] : [];
 }
 
-// ----------------------------------------------------------------------------
 // 3. General Utilities: Safe JSON, Session, Sanitization & Date Formatting
-// ----------------------------------------------------------------------------
 
 /** Safely parses JSON strings with a fallback return value */
 function safeParse(raw, fallback) {
@@ -140,9 +134,7 @@ function fullName(member) {
   ].filter(Boolean).join(' ');
 }
 
-// ----------------------------------------------------------------------------
 // 4. Event Card & Registration UI Helpers
-// ----------------------------------------------------------------------------
 
 /** Looks up registration status for a given member and event */
 function eventRegistration(participants, memberId, eventId) {
@@ -208,9 +200,7 @@ const previewMode = Boolean(
   new URLSearchParams(window.location.search).get('preview') === '1'
 );
 
-// ----------------------------------------------------------------------------
 // 5. Cloud Data Synchronization (Backend API → Local Cache)
-// ----------------------------------------------------------------------------
 
 /** Makes an authenticated GET request to the backend with timeout */
 async function portalBackendApi(path) {
@@ -330,10 +320,8 @@ async function syncMemberPortalCloudCache() {
   localStorage.setItem(DB_KEY, JSON.stringify(data));
 }
 
-// ----------------------------------------------------------------------------
 // 6. Preview Mode Mock Generator
 // Creates a temporary synthetic member object when an admin previews this page.
-// ----------------------------------------------------------------------------
 function previewMemberFromSession(currentSession) {
   const name = String(currentSession?.name || currentSession?.email || 'Area Servant').trim();
   const parts = name.split(/\s+/).filter(Boolean);
@@ -350,9 +338,7 @@ function previewMemberFromSession(currentSession) {
   };
 }
 
-// ----------------------------------------------------------------------------
 // 7. Member Portal Initialization & Rendering Flow
-// ----------------------------------------------------------------------------
 async function bootstrapMemberPortal() {
   try {
     await syncMemberPortalCloudCache();
@@ -531,9 +517,7 @@ async function bootstrapMemberPortal() {
     }
   }
 
-  // --------------------------------------------------------------------------
   // 8. Event Listeners: Logout & Change Password Actions
-  // --------------------------------------------------------------------------
   if (!previewMode) {
     document.getElementById('memberLogoutBtn')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
@@ -572,9 +556,7 @@ async function bootstrapMemberPortal() {
   }
 }
 
-// ----------------------------------------------------------------------------
 // 9. Execute Bootstrap
-// ----------------------------------------------------------------------------
 bootstrapMemberPortal().catch(error => {
   console.error('Member Portal failed to load:', error);
   const root = document.getElementById('memberPortalContent');
