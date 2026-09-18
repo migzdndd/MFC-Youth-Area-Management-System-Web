@@ -1,4 +1,4 @@
-import { requireAuthenticatedProfile, isSuperAdminRole } from '../_lib/access.js';
+import { requireAuthenticatedProfile, isAreaAdminRole } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 
 export default async function handler(req, res) {
@@ -6,8 +6,8 @@ export default async function handler(req, res) {
 
   try {
     const { profile } = await requireAuthenticatedProfile(req);
-    if (!isSuperAdminRole(profile.role)) {
-      return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can reset member logins.' });
+    if (!isAreaAdminRole(profile.role)) {
+      return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can reset member logins.' });
     }
 
     return sendJson(res, 410, {

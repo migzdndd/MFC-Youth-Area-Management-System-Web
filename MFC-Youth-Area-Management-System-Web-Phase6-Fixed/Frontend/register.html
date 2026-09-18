@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#002847">
+  <meta name="description" content="MFC Youth first-time access and Servant Leader registration.">
+  <title>First-Time Access - MFC Youth Area Management System</title>
+  <style>
+    @import url('https://fonts.cdnfonts.com/css/visby');
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/img/logo-2.png">
+</head>
+
+<body class="auth-body" data-allow-authenticated="true">
+  <main class="auth-page auth-access-page">
+    <div class="auth-access-layout">
+      <section class="login-card auth-card access-info-card" aria-labelledby="firstAccessTitle">
+        <div class="login-header">
+          <img class="logo-mark" src="/img/logo.png" alt="MFC Youth Logo">
+          <span class="brand-tag">Member Access</span>
+          <h1 id="firstAccessTitle">First-Time Access</h1>
+          <p>Member records are maintained by authorized Servant Leaders. Portal access is optional and must be created by the Member.</p>
+        </div>
+        <div class="login-form account-provision-info">
+          <div class="verification-badge">
+            <span>How member access works</span>
+            <strong>Member record → verified email → private portal password</strong>
+          </div>
+          <ol class="account-steps">
+            <li>An authorized Servant Leader adds you to the Members database using your official email address.</li>
+            <li>Use the same email address already stored in your Member record.</li>
+            <li>Create your own private password and verify your email address.</li>
+            <li>After verification, sign in to access the Member Portal.</li>
+          </ol>
+          <form class="login-form member-claim-form" id="memberClaimForm" novalidate>
+            <p class="login-heading">Create / Claim Member Portal Account</p>
+            <div id="memberClaimMessage"></div>
+            <label class="auth-field-label" for="memberClaimEmail">Member Email Address</label>
+            <label class="login-field" for="memberClaimEmail"><input class="login-input" id="memberClaimEmail" type="email" placeholder="Member Email Address" autocomplete="email" required></label>
+            <label class="auth-field-label" for="memberClaimPassword">Create Password</label>
+            <label class="login-field" for="memberClaimPassword"><input class="login-input" id="memberClaimPassword" type="password" placeholder="Create Password" autocomplete="new-password" required></label>
+            <label class="auth-field-label" for="memberClaimPasswordConfirm">Confirm Password</label>
+            <label class="login-field" for="memberClaimPasswordConfirm"><input class="login-input" id="memberClaimPasswordConfirm" type="password" placeholder="Confirm Password" autocomplete="new-password" required></label>
+            <div class="login-buttons"><button class="btn-auth btn-primary" id="memberClaimButton" type="submit">Create Portal Account</button></div>
+          </form>
+          <div class="login-buttons">
+            <button class="btn-auth btn-primary" type="button" onclick="navigateWithLoader('/')">Back to Sign In</button>
+          </div>
+        </div>
+        <div class="auth-bottom">Your email must already belong to a Member record. Contact an authorized Servant Leader if it does not.</div>
+      </section>
+
+      <section class="login-card auth-card admin-registration-card" aria-labelledby="adminRegisterTitle">
+        <div class="login-header">
+          <span class="brand-tag">Servant Leader Access</span>
+          <h1 id="adminRegisterTitle">Register an Admin Account</h1>
+          <p>For Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, Area Kids Servants, Chapter Servants, and other approved leadership access only. The account password you create here becomes your normal login password.</p>
+        </div>
+
+        <form class="login-form admin-registration-form" id="adminRegistrationForm" novalidate>
+          <p class="login-heading">Create Account</p>
+          <div id="adminRegistrationMessage"></div>
+
+          <label class="auth-field-label" for="adminDisplayName">Full Name</label>
+          <label class="login-field" for="adminDisplayName">
+            <input class="login-input" id="adminDisplayName" type="text" placeholder="Full Name" autocomplete="name" required>
+          </label>
+
+          <label class="auth-field-label" for="adminEmail">Email Address</label>
+          <label class="login-field" for="adminEmail">
+            <input class="login-input" id="adminEmail" type="email" placeholder="Email Address" autocomplete="email" required>
+          </label>
+
+          <label class="auth-field-label" for="adminRole">System Access Level</label>
+          <label class="login-field" for="adminRole">
+            <select class="login-input auth-select" id="adminRole" required>
+              <option value="">Select Access Level</option>
+              <option value="couple_coordinator">Couple Coordinator/s</option>
+              <option value="area_servant">Area Servant</option>
+              <option value="lit_servant">Area LIT Servant</option>
+              <option value="campus_servant">Campus Servant</option>
+              <option value="area_kids_servant">Area Kids Servant</option>
+              <option value="chapter_servant">Chapter Servant</option>
+            </select>
+          </label>
+
+          <label class="auth-field-label" for="adminVerificationCode">Administrator Registration Password</label>
+          <div class="login-field">
+            <input class="login-input" id="adminVerificationCode" type="password" placeholder="Enter verification password" autocomplete="off" required>
+            <button class="password-toggle" type="button" data-password-toggle="adminVerificationCode" aria-label="Show administrator registration password">Show</button>
+          </div>
+          <p class="field-help auth-field-help">This registration-only password verifies that the person creating the account is an approved Servant Leader.</p>
+
+          <label class="auth-field-label" for="adminPassword">Account Password</label>
+          <div class="login-field">
+            <input class="login-input" id="adminPassword" type="password" placeholder="Create Account Password" autocomplete="new-password" required>
+            <button class="password-toggle" type="button" data-password-toggle="adminPassword" aria-label="Show account password">Show</button>
+          </div>
+
+          <label class="auth-field-label" for="adminPasswordConfirm">Confirm Account Password</label>
+          <div class="login-field">
+            <input class="login-input" id="adminPasswordConfirm" type="password" placeholder="Confirm Account Password" autocomplete="new-password" required>
+            <button class="password-toggle" type="button" data-password-toggle="adminPasswordConfirm" aria-label="Show confirmed account password">Show</button>
+          </div>
+
+          <div class="registration-security-note">
+            <strong>Registration only</strong>
+            <span>The administrator registration password only authorizes Servant Leader registration. Your chosen Account Password becomes your login password and does not require a first-login reset.</span>
+          </div>
+
+          <div class="login-buttons">
+            <button class="btn-auth btn-primary" id="adminRegisterButton" type="submit">Register Admin Account</button>
+          </div>
+        </form>
+        <div class="auth-bottom">After registration, you will choose or create your Area. No temporary password is issued for self-registered Servant Leaders.</div>
+      </section>
+    </div>
+  </main>
+  <footer class="auth-footer">Visit the Official MFC Youth Page at <a href="https://mfcyouth.org" target="_blank"
+      rel="noopener noreferrer">mfcyouth.org</a></footer>
+  <script src="/js/loader.js"></script>
+  <script src="/js/auth.js"></script>
+</body>
+
+</html>

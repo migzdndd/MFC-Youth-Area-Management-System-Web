@@ -39,6 +39,36 @@ export default async function handler(req, res) {
       return sendJson(res, 403, { ok: false, error: 'This account is not active.' });
     }
 
+    const authEmail = String(data.user.email || '').trim().toLowerCase();
+    if (linkedProfile.member_id && authEmail) {
+      const { data: linkedMember, error: memberLookupError } = await admin
+        .from('members')
+        .select('id, email')
+        .eq('id', linkedProfile.member_id)
+        .maybeSingle();
+
+      if (memberLookupError) throw memberLookupError;
+
+      const currentMemberEmail = String(linkedMember?.email || '').trim().toLowerCase();
+      if (linkedMember?.id && currentMemberEmail !== authEmail) {
+        const { error: emailSyncError } = await admin
+          .from('members')
+          .update({ email: authEmail, updated_at: new Date().toISOString() })
+          .eq('id', linkedMember.id);
+
+        if (emailSyncError) {
+          console.error(JSON.stringify({
+            event: 'AUTH_EMAIL_MEMBER_SYNC',
+            auth_user_id: data.user.id,
+            target_member_id: linkedMember.id,
+            timestamp: new Date().toISOString(),
+            status: 'FAILURE',
+            error_code: 'MEMBER_EMAIL_SYNC_FAILED'
+          }));
+        }
+      }
+    }
+
     return sendJson(res, 200, {
       ok: true,
       session: {

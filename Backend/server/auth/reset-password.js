@@ -11,16 +11,18 @@ function validatePassword(password) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
-  
+
+  const authClient = createSupabaseAuthClient();
+  let recoverySessionEstablished = false;
+
   try {
     const { token_hash, newPassword } = req.body || {};
-    if (!token_hash) return sendJson(res, 400, { ok: false, error: 'Recovery token is missing.' });
-    
+    if (!token_hash) {
+      return sendJson(res, 400, { ok: false, error: 'Recovery token is missing.' });
+    }
+
     const validationError = validatePassword(newPassword);
     if (validationError) return sendJson(res, 400, { ok: false, error: validationError });
-
-    // This creates a non-persistent client (persistSession: false, autoRefreshToken: false)
-    const authClient = createSupabaseAuthClient(); 
 
     const { data: verifyData, error: verifyError } = await authClient.auth.verifyOtp({
       token_hash: String(token_hash),
@@ -31,25 +33,29 @@ export default async function handler(req, res) {
       return sendJson(res, 401, { ok: false, error: 'The recovery link is invalid or has expired.' });
     }
 
-    // Set the returned recovery session explicitly
-    await authClient.auth.setSession({
+    const { error: setSessionError } = await authClient.auth.setSession({
       access_token: verifyData.session.access_token,
       refresh_token: verifyData.session.refresh_token
     });
+    if (setSessionError) throw setSessionError;
+    recoverySessionEstablished = true;
 
-    // Update the password using the authenticated user context
     const { error: updateError } = await authClient.auth.updateUser({ password: newPassword });
-    
-    // Explicitly sign out/revoke the recovery session regardless of update success
-    await authClient.auth.signOut();
-    
     if (updateError) throw updateError;
 
     return sendJson(res, 200, {
       ok: true,
-      message: 'Password has been successfully reset. Please log in with your new password.'
+      message: 'Password has been successfully reset. Please sign in with your new password.'
     });
   } catch (error) {
     return apiError(res, error);
+  } finally {
+    if (recoverySessionEstablished) {
+      try {
+        await authClient.auth.signOut({ scope: 'local' });
+      } catch {
+        // The recovery client is non-persistent and discarded after this request.
+      }
+    }
   }
 }

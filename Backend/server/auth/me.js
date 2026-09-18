@@ -34,6 +34,31 @@ export default async function handler(req, res) {
       member = data;
     }
 
+    // Supabase Auth is authoritative for the signed-in email address. After a
+    // secure email-change confirmation completes, repair public.members on the
+    // next authenticated account fetch. A sync failure must not roll Auth back.
+    const authEmail = String(user.email || '').trim().toLowerCase();
+    const memberEmail = String(member?.email || '').trim().toLowerCase();
+    if (member?.id && authEmail && authEmail !== memberEmail) {
+      const { error: emailSyncError } = await supabase
+        .from('members')
+        .update({ email: authEmail, updated_at: new Date().toISOString() })
+        .eq('id', member.id);
+
+      if (emailSyncError) {
+        console.error(JSON.stringify({
+          event: 'AUTH_EMAIL_MEMBER_SYNC',
+          auth_user_id: user.id,
+          target_member_id: member.id,
+          timestamp: new Date().toISOString(),
+          status: 'FAILURE',
+          error_code: 'MEMBER_EMAIL_SYNC_FAILED'
+        }));
+      } else {
+        member = { ...member, email: authEmail };
+      }
+    }
+
     return sendJson(res, 200, {
       ok: true,
       user: {

@@ -19,7 +19,9 @@
         '/reports': 'Reports',
         '/services': 'Services',
         '/register': 'Account access',
-        '/change-password': 'Security settings'
+        '/change-password': 'Security settings',
+        '/forgot-password': 'Password recovery',
+        '/reset-password': 'Reset password'
       };
       return labels[path] || 'Your next page';
     } catch {

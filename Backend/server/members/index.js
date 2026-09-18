@@ -1,6 +1,6 @@
 import {
   requireAuthenticatedProfile,
-  isSuperAdminRole,
+  isAreaAdminRole,
   isChapterServantRole
 } from '../_lib/access.js';
 import {
@@ -63,7 +63,7 @@ async function listMembers(req, res) {
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
-  if (isSuperAdminRole(profile.role)) {
+  if (isAreaAdminRole(profile.role)) {
     query = query.eq('area_id', profile.area_id);
   } else if (isChapterServantRole(profile.role)) {
     query = profile.chapter_id
@@ -81,7 +81,7 @@ async function listMembers(req, res) {
 
 async function createMember(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
-  if (!isSuperAdminRole(profile.role) && !isChapterServantRole(profile.role)) {
+  if (!isAreaAdminRole(profile.role) && !isChapterServantRole(profile.role)) {
     return sendJson(res, 403, { ok: false, error: 'You do not have permission to add members.' });
   }
 
@@ -165,8 +165,8 @@ async function createMember(req, res) {
 
 async function updateMember(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  if (!isSuperAdminRole(profile.role)) {
-    return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can edit member records.' });
+  if (!isAreaAdminRole(profile.role)) {
+    return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can edit member records.' });
   }
 
   const input = req.body || {};
@@ -270,8 +270,8 @@ async function updateMember(req, res) {
 
 async function deleteMember(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  if (!isSuperAdminRole(profile.role)) {
-    return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can delete member records.' });
+  if (!isAreaAdminRole(profile.role)) {
+    return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can delete member records.' });
   }
 
   const memberId = req.query?.id || req.body?.id;

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#002847">
+  <meta name="description" content="MFC Youth Member Portal.">
+  <title>Member Portal - MFC Youth</title>
+  <style>
+    @import url('https://fonts.cdnfonts.com/css/visby');
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/img/logo-2.png">
+</head>
+
+<body class="member-portal-body">
+  <header class="member-portal-topbar">
+    <div class="member-portal-brand">
+      <img src="/img/logo-2.png" alt="MFC Youth Logo">
+      <div>
+        <strong>MFC YOUTH</strong>
+        <span>Member Portal</span>
+      </div>
+    </div>
+
+    <nav class="member-portal-nav" aria-label="Member portal navigation">
+      <a href="#overview">Home</a>
+      <a href="#upcoming">Upcoming</a>
+      <a href="#recent">Recent</a>
+      <a href="#profile">My Profile</a>
+    </nav>
+
+    <div class="member-portal-actions">
+      <button class="btn" id="changeEmailBtn" type="button">Change Email</button>
+      <button class="btn" id="changePasswordBtn" type="button">Change Password</button>
+      <button class="btn red" id="memberLogoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="member-portal-main" id="memberPortalContent"></main>
+
+  <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+  <script src="/js/loader.js"></script>
+  <script src="/js/member.js"></script>
+</body>
+
+</html>

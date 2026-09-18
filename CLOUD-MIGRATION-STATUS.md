@@ -45,7 +45,7 @@ Every route authenticates the Supabase access token on the Backend and applies A
 
 ## Area isolation
 
-- Super Admin roles: scoped to their own `area_id`.
+- Area-level servant roles: scoped to their own `area_id`.
 - Chapter Servant: Chapter/member/report/GIG data is limited to the assigned Chapter where applicable.
 - Member: cloud sync exposes only the member's own Member/Service/GIG/participant records while Area events remain visible for the Member Portal.
 

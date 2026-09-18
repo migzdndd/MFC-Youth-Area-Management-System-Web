@@ -1,7 +1,7 @@
 import { createSupabaseAdmin } from './supabase.js';
 import { readBearerToken } from './http.js';
 
-export const SUPER_ADMIN_ROLES = new Set([
+export const AREA_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
@@ -9,8 +9,8 @@ export const SUPER_ADMIN_ROLES = new Set([
   'area_kids_servant'
 ]);
 
-export function isSuperAdminRole(role) {
-  return SUPER_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
+export function isAreaAdminRole(role) {
+  return AREA_ADMIN_ROLES.has(String(role || '').trim().toLowerCase());
 }
 
 export function isChapterServantRole(role) {

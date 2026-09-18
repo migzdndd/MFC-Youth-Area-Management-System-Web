@@ -21,13 +21,20 @@ export default async function handler(req, res) {
       baseUrl = `${protocol}://${req.headers.host}`;
     }
 
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: baseUrl ? `${baseUrl}/reset-password.html` : undefined
+    const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: baseUrl ? `${baseUrl}/reset-password` : undefined
     });
+    if (recoveryError) throw recoveryError;
 
     return genericResponse();
   } catch (error) {
-    // Explicitly swallow errors to prevent enumeration
+    console.warn(JSON.stringify({
+      event: 'PASSWORD_RECOVERY_REQUEST',
+      timestamp: new Date().toISOString(),
+      status: 'UPSTREAM_FAILURE',
+      error_code: 'RECOVERY_REQUEST_FAILED'
+    }));
+    // Keep the client response identical so account existence is never exposed.
     return genericResponse();
   }
 }

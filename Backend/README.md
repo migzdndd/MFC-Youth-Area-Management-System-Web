@@ -53,6 +53,11 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - `POST /api/areas/select`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`
+- `POST /api/auth/change-email`
+- `POST /api/auth/logout`
+- `POST /api/auth/forgot-password`
+- `POST /api/auth/reset-password`
+- `POST /api/admin/members/change-email` (Area-level servant override for provisioned accounts)
 - `GET/POST/PATCH/DELETE /api/members`
 - `GET/POST/PATCH/DELETE /api/chapters`
 - `POST /api/chapters/assign-members`
@@ -65,7 +70,7 @@ The public API URLs remain unchanged (`/api/auth/login`, `/api/members`, etc.). 
 - Member creation creates only the organizational Member record. Optional portal access is claimed separately by the Member.
 - `POST /api/auth/member-claim` creates a self-chosen portal account after matching the verified email to an existing Member record.
 - Chapter Servant member creation is enforced server-side: the new member is assigned to the servant's chapter and receives Member access.
-- Super Admin roles are Couple Coordinator/s, Area Servant, Area LIT Servant, Campus Servant, and Area Kids Servant.
+- Area-level servant roles are Couple Coordinator/s, Area Servant, Area LIT Servant, Campus Servant, and Area Kids Servant.
 - The canonical Services catalog contains Unit Servant, Household Servant, Chapter Servant, Area Servant, Area LIT Servant, Campus Servant, Area Kids Servant, and MFC High Servant. Missing built-in services are repaired automatically during Services/Sync requests, while migration 008 backfills older databases.
 - RLS is enabled with no anonymous table policies. The browser cannot directly read/write database tables.
 

@@ -170,10 +170,17 @@ function destinationFor(session) {
 }
 
 async function apiJson(path, options = {}) {
+  const activeSession = getSession();
+  const accessToken = activeSession?.backendAuth && !activeSession?.demo
+    ? String(activeSession.accessToken || '')
+    : '';
+
   const response = await fetch(path, {
     ...options,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(options.headers || {})
     }
   });
@@ -358,13 +365,13 @@ if (loginForm) {
 
       if (user.role === 'legacy') {
         setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This older account is not linked to a member record. Ask a Super Admin to add or link you from the Members page.');
+        showMessage('loginMessage', 'This older account is not linked to a member record. Ask an Area-level servant to add or link you from the Members page.');
         return;
       }
 
       if (user.isActive === false) {
         setButtonBusy(submit, false);
-        showMessage('loginMessage', 'This account is currently inactive. Contact your Super Admin.');
+        showMessage('loginMessage', 'This account is currently inactive. Contact an Area-level servant.');
         return;
       }
 
@@ -506,7 +513,22 @@ if (memberClaimForm) {
 // ---------------- CHANGE PASSWORD ----------------
 const backToLoginButton = document.getElementById('backToLoginButton');
 if (backToLoginButton) {
-  backToLoginButton.addEventListener('click', () => {
+  backToLoginButton.addEventListener('click', async () => {
+    const activeSession = getSession();
+    backToLoginButton.disabled = true;
+    backToLoginButton.textContent = 'Signing Out…';
+
+    if (activeSession?.backendAuth && !activeSession?.demo && activeSession?.accessToken) {
+      try {
+        await apiJson('/api/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ scope: 'local' })
+        });
+      } catch {
+        // Local browser state is still cleared so the user is not left signed in on this device.
+      }
+    }
+
     clearSession();
     navigateWithLoader('/');
   });
@@ -593,6 +615,55 @@ if (forcePasswordForm) {
       updateSession(updatedSession);
       showMessage('passwordMessage', 'Password updated successfully. Redirecting…', 'success');
       setTimeout(() => { navigateWithLoader(destinationFor(updatedSession)); }, 650);
+    });
+  }
+}
+
+
+// ---------------- CHANGE EMAIL ----------------
+const changeEmailForm = document.getElementById('changeEmailForm');
+if (changeEmailForm) {
+  const emailSession = getSession();
+  const newEmailInput = document.getElementById('newAccountEmail');
+
+  if (!emailSession || emailSession.demo || !emailSession.backendAuth) {
+    changeEmailForm.querySelectorAll('input, button').forEach(element => { element.disabled = true; });
+    showMessage('emailChangeMessage', 'Email changes are available only for signed-in cloud accounts.');
+  } else {
+    changeEmailForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const submit = changeEmailForm.querySelector('[type="submit"]');
+      const newEmail = normalizeEmail(newEmailInput?.value || '');
+
+      if (!isValidEmail(newEmail)) {
+        showMessage('emailChangeMessage', 'Enter a valid new email address.');
+        newEmailInput?.focus();
+        return;
+      }
+      if (newEmail === normalizeEmail(emailSession.email || '')) {
+        showMessage('emailChangeMessage', 'Enter an email address different from your current email.');
+        newEmailInput?.focus();
+        return;
+      }
+
+      setButtonBusy(submit, true, 'Requesting…');
+      try {
+        const payload = await apiJson('/api/auth/change-email', {
+          method: 'POST',
+          body: JSON.stringify({ newEmail })
+        });
+
+        showMessage(
+          'emailChangeMessage',
+          payload?.message || 'Email change requested. Complete the confirmation email process before the new address becomes active.',
+          'success'
+        );
+        changeEmailForm.reset();
+      } catch (error) {
+        showMessage('emailChangeMessage', error?.message || 'Unable to request the email change. Please try again.');
+      } finally {
+        setButtonBusy(submit, false);
+      }
     });
   }
 }

@@ -1,13 +1,28 @@
-import { requireAuthenticatedProfile, isSuperAdminRole } from '../../_lib/access.js';
+import { requireAuthenticatedProfile, isAreaAdminRole } from '../../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError, isValidEmail, normalizeEmail } from '../../_lib/http.js';
+
+function audit({ actorId, memberId, status, errorCode = null }) {
+  const entry = {
+    event: 'ADMIN_EMAIL_OVERRIDE',
+    action: 'CHANGE_MEMBER_AUTH_EMAIL',
+    actor_id: actorId,
+    target_member_id: memberId,
+    timestamp: new Date().toISOString(),
+    status
+  };
+  if (errorCode) entry.error_code = errorCode;
+  const line = JSON.stringify(entry);
+  if (status === 'SUCCESS') console.info(line);
+  else console.error(line);
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['POST']);
 
   try {
     const { user, profile, supabase } = await requireAuthenticatedProfile(req);
-    
-    if (!isSuperAdminRole(profile.role)) {
+
+    if (!isAreaAdminRole(profile.role)) {
       return sendJson(res, 403, { ok: false, error: 'Only Area-level servants can override email addresses.' });
     }
 
@@ -23,7 +38,7 @@ export default async function handler(req, res) {
 
     const { data: targetMember, error: memberError } = await supabase
       .from('members')
-      .select('id, area_id')
+      .select('id, area_id, email')
       .eq('id', memberId)
       .maybeSingle();
 
@@ -37,24 +52,26 @@ export default async function handler(req, res) {
       .select('id, member_id')
       .eq('member_id', targetMember.id)
       .maybeSingle();
-      
+
     if (profileError) throw profileError;
-    if (!targetProfile || !targetProfile.id) {
-      return sendJson(res, 400, { ok: false, error: 'This member does not have a provisioned portal account.', code: 'ACCOUNT_NOT_PROVISIONED' });
+    if (!targetProfile?.id) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'This member does not have a provisioned portal account.',
+        code: 'ACCOUNT_NOT_PROVISIONED'
+      });
+    }
+    if (targetProfile.id === user.id) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Use Account Security to change your own sign-in email.',
+        code: 'SELF_SERVICE_REQUIRED'
+      });
     }
 
-    const authId = targetProfile.id;
-    const { data: authData, error: authUpdateError } = await supabase.auth.admin.updateUserById(authId, { email: newEmail });
-
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(targetProfile.id, { email: newEmail });
     if (authUpdateError) {
-      console.error(JSON.stringify({
-        event: 'ADMIN_EMAIL_OVERRIDE',
-        actor_id: user.id,
-        target_member_id: targetMember.id,
-        timestamp: new Date().toISOString(),
-        status: 'FAILURE',
-        error_code: 'AUTH_UPDATE_FAILED'
-      }));
+      audit({ actorId: user.id, memberId: targetMember.id, status: 'FAILURE', errorCode: 'AUTH_UPDATE_FAILED' });
       throw authUpdateError;
     }
 
@@ -64,29 +81,20 @@ export default async function handler(req, res) {
       .eq('id', targetMember.id);
 
     if (syncError) {
-      console.error(JSON.stringify({
-        event: 'ADMIN_EMAIL_OVERRIDE',
-        actor_id: user.id,
-        target_member_id: targetMember.id,
-        timestamp: new Date().toISOString(),
-        status: 'SUCCESS',
-        error_code: 'SYNC_FAILED'
-      }));
-    } else {
-      console.info(JSON.stringify({
-        event: 'ADMIN_EMAIL_OVERRIDE',
-        actor_id: user.id,
-        target_member_id: targetMember.id,
-        timestamp: new Date().toISOString(),
-        status: 'SUCCESS'
-      }));
+      audit({ actorId: user.id, memberId: targetMember.id, status: 'PARTIAL_FAILURE', errorCode: 'MEMBER_SYNC_FAILED' });
+      return sendJson(res, 200, {
+        ok: true,
+        syncPending: true,
+        message: 'The account email was changed. The Member record will be synchronized on a later authenticated account fetch.'
+      });
     }
 
+    audit({ actorId: user.id, memberId: targetMember.id, status: 'SUCCESS' });
     return sendJson(res, 200, {
       ok: true,
+      syncPending: false,
       message: 'Account email has been successfully overridden.'
     });
-
   } catch (error) {
     return apiError(res, error);
   }

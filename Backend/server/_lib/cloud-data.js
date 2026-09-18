@@ -1,5 +1,5 @@
 import {
-  isSuperAdminRole,
+  isAreaAdminRole,
   isChapterServantRole
 } from './access.js';
 
@@ -26,8 +26,8 @@ export function requireArea(profile) {
   return profile.area_id;
 }
 
-export function requireSuperAdmin(profile, message = 'Only Super Admin access levels can perform this action.') {
-  if (!isSuperAdminRole(profile?.role)) {
+export function requireAreaAdmin(profile, message = 'Only Area-level servant accounts can perform this action.') {
+  if (!isAreaAdminRole(profile?.role)) {
     const error = new Error(message);
     error.statusCode = 403;
     error.code = 'FORBIDDEN';
@@ -36,7 +36,7 @@ export function requireSuperAdmin(profile, message = 'Only Super Admin access le
 }
 
 export function requireLeadership(profile) {
-  if (!isSuperAdminRole(profile?.role) && !isChapterServantRole(profile?.role)) {
+  if (!isAreaAdminRole(profile?.role) && !isChapterServantRole(profile?.role)) {
     const error = new Error('You do not have permission to manage this data.');
     error.statusCode = 403;
     error.code = 'FORBIDDEN';

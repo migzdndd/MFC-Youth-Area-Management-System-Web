@@ -1,4 +1,4 @@
-import { requireAuthenticatedProfile, isSuperAdminRole } from '../_lib/access.js';
+import { requireAuthenticatedProfile, isAreaAdminRole } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
 import { requireArea, loadAreaRow } from '../_lib/cloud-data.js';
 import { ensureStandardServices, normalizeServiceName } from '../_lib/service-catalog.js';
@@ -12,7 +12,7 @@ async function listServices(req, res) {
 
 async function assignServices(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  if (!isSuperAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Super Admin access levels can assign services.' });
+  if (!isAreaAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can assign services.' });
   const areaId = requireArea(profile);
   const memberId = req.body?.memberId;
   const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(normalizeServiceName).filter(Boolean))];

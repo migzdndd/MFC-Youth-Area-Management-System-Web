@@ -91,7 +91,7 @@ function detectedMemberServices(member) {
   return inferred ? [inferred] : [];
 }
 
-const SUPER_ADMIN_ROLES = new Set([
+const AREA_ADMIN_ROLES = new Set([
   'couple_coordinator',
   'area_servant',
   'lit_servant',
@@ -120,8 +120,8 @@ function inlineJsArg(value) {
     .replace(/'/g, '\\u0027');
 }
 
-function isSuperAdminRole(value) {
-  return SUPER_ADMIN_ROLES.has(String(value || '').trim().toLowerCase());
+function isAreaAdminRole(value) {
+  return AREA_ADMIN_ROLES.has(String(value || '').trim().toLowerCase());
 }
 
 function isChapterServantRole(value) {
@@ -373,8 +373,8 @@ async function refreshAllCloudData({ render = true } = {}) {
   return true;
 }
 
-function isSuperAdminSession() {
-  return isSuperAdminRole(session?.role);
+function isAreaAdminSession() {
+  return isAreaAdminRole(session?.role);
 }
 
 function isChapterServantSession() {
@@ -403,14 +403,14 @@ function scopedChapter(data) {
   ) || null;
 }
 
-function denyUnlessSuperAdmin(message = 'Only Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, and Area Kids Servants can perform this action.') {
-  if (isSuperAdminSession()) return false;
+function denyUnlessAreaAdmin(message = 'Only Couple Coordinators, Area Servants, Area LIT Servants, Campus Servants, and Area Kids Servants can perform this action.') {
+  if (isAreaAdminSession()) return false;
   toast(message, 'error');
   return true;
 }
 
 function canManageOwnChapterMember(data, member) {
-  if (isSuperAdminSession()) return true;
+  if (isAreaAdminSession()) return true;
   if (!isChapterServantSession() || !member) return false;
 
   const chapter = scopedChapter(data);
@@ -1181,10 +1181,25 @@ if (logoutBtn) {
     }
   }
 
-  logoutBtn.onclick = () => {
+  logoutBtn.onclick = async () => {
+    const originalText = logoutBtn.textContent;
+    logoutBtn.disabled = true;
+    logoutBtn.textContent = 'Signing Out…';
+
+    if (session?.backendAuth && !session?.demo && session?.accessToken) {
+      try {
+        await backendApi('/api/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ scope: 'local' })
+        });
+      } catch (error) {
+        console.warn('Backend logout could not be confirmed; clearing this browser session anyway.', error?.message || error);
+      }
+    }
+
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
-
+    logoutBtn.textContent = originalText;
     navigateWithLoader('/');
   };
 }
@@ -2406,9 +2421,9 @@ window.viewMember = function(id) {
 
 function memberModal(id = null) {
   if (id) {
-    if (denyUnlessSuperAdmin()) return;
-  } else if (!isSuperAdminSession() && !isChapterServantSession()) {
-    toast('Only Super Admin access levels and Chapter Servants can add members.', 'error');
+    if (denyUnlessAreaAdmin()) return;
+  } else if (!isAreaAdminSession() && !isChapterServantSession()) {
+    toast('Only Area-level servant accounts and Chapter Servants can add members.', 'error');
     return;
   }
 
@@ -2516,7 +2531,7 @@ function memberModal(id = null) {
             >
             <input id="mAccessLevel" type="hidden" value="member">
             <small class="field-help">
-              Chapter Servants can create member accounts, but only Super Admin access levels can grant elevated system access.
+              Chapter Servants can create member accounts, but only Area-level servant accounts can grant elevated system access.
             </small>
           `
           : `
@@ -2822,6 +2837,30 @@ function memberModal(id = null) {
       let savedRecord = record;
 
       if (session?.backendAuth && !session?.demo) {
+        const originalEmail = String(member?.email || '').trim().toLowerCase();
+        const emailChanged = Boolean(id && email && email !== originalEmail);
+
+        if (emailChanged && isOwnMemberRecord(member)) {
+          toast('Use Account Security to change your own sign-in email so the secure confirmation flow is preserved.', 'error');
+          return;
+        }
+
+        if (emailChanged && isAreaAdminSession()) {
+          try {
+            await backendApi('/api/admin/members/change-email', {
+              method: 'POST',
+              body: JSON.stringify({ id, newEmail: email })
+            });
+          } catch (error) {
+            if (error?.body?.code !== 'ACCOUNT_NOT_PROVISIONED') {
+              toast(error?.message || 'Unable to update the member account email.', 'error');
+              return;
+            }
+            // The Member record has no Auth account yet. It is safe to update
+            // only public.members; no portal account is created implicitly.
+          }
+        }
+
         try {
           const payload = await backendApi('/api/members', {
             method: id ? 'PATCH' : 'POST',
@@ -2896,7 +2935,7 @@ window.manageAccount = memberModal;
 window.assignChapter = memberModal;
 
 window.deleteMember = async id => {
-  if (denyUnlessSuperAdmin()) return;
+  if (denyUnlessAreaAdmin()) return;
 
   const data = db();
   const member = data.members.find(item => String(item.id) === String(id));
@@ -2936,7 +2975,7 @@ window.deleteMember = async id => {
 };
 
 window.serviceMember = id => {
-  if (denyUnlessSuperAdmin()) return;
+  if (denyUnlessAreaAdmin()) return;
 
   const data = db();
 
@@ -3601,7 +3640,7 @@ function renderChapters() {
 }
 
 function chapterModal(id = null) {
-  if (denyUnlessSuperAdmin()) return;
+  if (denyUnlessAreaAdmin()) return;
 
   const data = db();
 
@@ -3672,7 +3711,7 @@ window.editChapter =
   chapterModal;
 
 window.deleteChapter = async id => {
-  if (denyUnlessSuperAdmin()) return;
+  if (denyUnlessAreaAdmin()) return;
 
   const data = db();
   if (data.members.some(member => String(member.chapterId) === String(id))) {
@@ -3783,7 +3822,7 @@ window.addMembersToChapter = async id => {
       toast('You can only add unassigned members to your assigned chapter.', 'error');
       return;
     }
-  } else if (!isSuperAdminSession()) {
+  } else if (!isAreaAdminSession()) {
     toast('You do not have permission to assign chapter members.', 'error');
     return;
   }
@@ -4032,7 +4071,7 @@ function renderServices() {
 }
 
 window.removeMemberService = async (memberId, serviceName) => {
-  if (denyUnlessSuperAdmin()) return;
+  if (denyUnlessAreaAdmin()) return;
   const data = db();
   const member = data.members.find(m => String(m.id) === String(memberId));
   if (!member) return;
@@ -4061,7 +4100,7 @@ window.removeMemberService = async (memberId, serviceName) => {
 
 window.viewService = service => {
   const data = db();
-  const canManage = isSuperAdminSession();
+  const canManage = isAreaAdminSession();
 
   const members =
     data.members.filter(
@@ -4514,7 +4553,7 @@ function renderReports() {
         ) +
         emptyState(
           'No chapter assignment',
-          'Ask a Super Admin to assign your account to a chapter before creating activity reports.'
+          'Ask an Area-level servant to assign your account to a chapter before creating activity reports.'
         );
       return;
     }
@@ -5676,7 +5715,7 @@ window.deleteReport = async id => {
       toast('You can only delete activity reports for your assigned chapter.', 'error');
       return;
     }
-  } else if (!isSuperAdminSession()) {
+  } else if (!isAreaAdminSession()) {
     toast('You do not have permission to delete activity reports.', 'error');
     return;
   }
@@ -6757,7 +6796,7 @@ function eventAttendance(
 function renderEvents() {
   const data = db();
 
-  const canManage = isSuperAdminSession();
+  const canManage = isAreaAdminSession();
 
   const list =
     filteredEvents(data);
@@ -7038,7 +7077,7 @@ function renderEvents() {
 window.eventModal = function (
   id = null
 ) {
-  if (denyUnlessSuperAdmin('Only Super Admin access levels can create or edit Area events.')) return;
+  if (denyUnlessAreaAdmin('Only Area-level servant accounts can create or edit Area events.')) return;
 
   const data = db();
 
@@ -7176,7 +7215,7 @@ window.eventModal = function (
 };
 
 window.deleteEvent = async id => {
-  if (denyUnlessSuperAdmin('Only Super Admin access levels can delete Area events.')) return;
+  if (denyUnlessAreaAdmin('Only Area-level servant accounts can delete Area events.')) return;
   if (!confirm('Delete this event and all of its participant records?')) return;
 
   try {
@@ -7201,7 +7240,7 @@ window.deleteEvent = async id => {
 
 window.viewEvent = id => {
   const data = db();
-  const canManage = isSuperAdminSession();
+  const canManage = isAreaAdminSession();
 
   const event =
     data.events.find(
@@ -7480,7 +7519,7 @@ window.participantModal = (
   eventId,
   id = null
 ) => {
-  if (denyUnlessSuperAdmin('Only Super Admin access levels can manage event participants.')) return;
+  if (denyUnlessAreaAdmin('Only Area-level servant accounts can manage event participants.')) return;
 
   const data = db();
 
@@ -7758,7 +7797,7 @@ window.participantModal = (
 };
 
 window.deleteParticipant = async (eventId, id) => {
-  if (denyUnlessSuperAdmin('Only Super Admin access levels can manage event participants.')) return;
+  if (denyUnlessAreaAdmin('Only Area-level servant accounts can manage event participants.')) return;
   if (!confirm('Delete this participant?')) return;
 
   try {

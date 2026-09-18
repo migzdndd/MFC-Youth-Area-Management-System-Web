@@ -1,6 +1,6 @@
-import { requireAuthenticatedProfile, isSuperAdminRole } from '../_lib/access.js';
+import { requireAuthenticatedProfile, isAreaAdminRole } from '../_lib/access.js';
 import { sendJson, methodNotAllowed, apiError } from '../_lib/http.js';
-import { cleanText, nullableText, requireArea, requireSuperAdmin, asNonNegativeNumber, asNonNegativeInteger, loadAreaRow } from '../_lib/cloud-data.js';
+import { cleanText, nullableText, requireArea, requireAreaAdmin, asNonNegativeNumber, asNonNegativeInteger, loadAreaRow } from '../_lib/cloud-data.js';
 
 function eventPayload(input, areaId, userId) {
   const rawDate = String(input.date || '').trim();
@@ -46,7 +46,7 @@ async function listEvents(req, res) {
 
 async function createEvent(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
-  requireSuperAdmin(profile, 'Only Super Admin access levels can add Area events.');
+  requireAreaAdmin(profile, 'Only Area-level servant accounts can add Area events.');
   const areaId = requireArea(profile);
   const payload = eventPayload(req.body || {}, areaId, user.id);
   const { data, error } = await supabase.from('events').insert(payload).select('*').single();
@@ -56,7 +56,7 @@ async function createEvent(req, res) {
 
 async function updateEvent(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  requireSuperAdmin(profile, 'Only Super Admin access levels can edit Area events.');
+  requireAreaAdmin(profile, 'Only Area-level servant accounts can edit Area events.');
   const areaId = requireArea(profile);
   const id = req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Event ID is required.' });
@@ -71,7 +71,7 @@ async function updateEvent(req, res) {
 
 async function deleteEvent(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  requireSuperAdmin(profile, 'Only Super Admin access levels can delete Area events.');
+  requireAreaAdmin(profile, 'Only Area-level servant accounts can delete Area events.');
   const areaId = requireArea(profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Event ID is required.' });

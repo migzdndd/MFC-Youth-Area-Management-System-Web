@@ -19,3 +19,13 @@ Run `Backend/supabase/003_security_hardening.sql` after the schema and seed scri
 - Queries are scoped by `profiles.area_id`; Chapter Servants are additionally constrained to their assigned Chapter where applicable.
 - Regular Members receive only their own member-linked service/GIG/participant data while Area events remain visible to the Member Portal.
 - Run `Backend/supabase/005_cloud_modules.sql` after migrations 001-004 on an existing project.
+
+
+## Phase 6 authentication hardening
+- Password changes verify the current password using an isolated non-persistent Supabase session, revoke that temporary session, and then update the password with the caller's original access token.
+- Password recovery uses `token_hash` + `verifyOtp(..., type: 'recovery')`; the token is removed from the browser URL immediately after the reset page reads it.
+- Forgot-password responses are deliberately generic so an attacker cannot learn whether an email address is registered.
+- Self-service email changes go through Supabase Auth secure email-change behavior. `public.members.email` is synchronized from the authoritative Auth email on a later authenticated login/account fetch.
+- Area-level servant roles may use the server-side admin email override for another Member in the same Area. Chapter Servants and Members are denied. No account is created implicitly when a Member has no provisioned Auth account.
+- Browser session-token storage remains a temporary accepted risk for this beta. Avoid DOM XSS sinks and never expose the backend secret/service-role key to browser code.
+- Single-session-per-user must remain disabled while the current-password verification flow uses a temporary second session.

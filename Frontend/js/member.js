@@ -471,9 +471,33 @@ if (!session) {
 }
 
 if (!previewMode) {
-  document.getElementById('memberLogoutBtn')?.addEventListener('click', () => {
+  document.getElementById('memberLogoutBtn')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const originalText = button?.textContent || 'Logout';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Signing Out…';
+    }
+
+    if (session?.backendAuth && !session?.demo && session?.accessToken) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`
+          },
+          body: JSON.stringify({ scope: 'local' })
+        });
+      } catch (error) {
+        console.warn('Backend logout could not be confirmed; clearing this browser session anyway.', error?.message || error);
+      }
+    }
+
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
+    if (button) button.textContent = originalText;
     navigateWithLoader('/');
   });
 
