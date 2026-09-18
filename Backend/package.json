@@ -8,6 +8,7 @@
     "node": "24.x"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "cheerio": "^1.0.0"
   }
 }

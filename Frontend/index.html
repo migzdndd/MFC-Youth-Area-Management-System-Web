@@ -63,7 +63,7 @@
           </article>
           <article class="daily-readings-card-wrapper" style="grid-column: span 2;">
             <strong id="dailyReadingsTitle">Daily Readings</strong>
-            <div id="dailyReadingsContent" style="margin-top: 8px; font-size: 12px; color: var(--muted); line-height: 1.4; max-height: 120px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; white-space: pre-wrap;">
+            <div id="dailyReadingsContent" style="margin-top: 8px; font-size: 12px; color: var(--muted); line-height: 1.4;">
               Loading today's readings...
             </div>
           </article>
@@ -176,24 +176,100 @@
       }
 
       // Fetch Daily Readings
-      const dailyReadingsContent = document.getElementById('dailyReadingsContent');
-      const dailyReadingsTitle = document.getElementById('dailyReadingsTitle');
-      if (dailyReadingsContent && dailyReadingsTitle) {
+      async function loadDailyReadings() {
+        const content = document.getElementById('dailyReadingsContent');
+        const title = document.getElementById('dailyReadingsTitle');
+        if (!content || !title) return;
+
+        // Determine date in Asia/Manila
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).formatToParts(new Date());
+        
+        const y = parts.find(p => p.type === 'year').value;
+        const m = parts.find(p => p.type === 'month').value;
+        const d = parts.find(p => p.type === 'day').value;
+        const targetDate = `${y}-${m}-${d}`;
+        const cacheKey = `mfc_daily_readings_${targetDate}`;
+
+        function renderReadings(data) {
+          title.innerHTML = `Daily Readings<br><span style="font-size: 11px; font-weight: 400; opacity: 0.8;">${data.day}, ${data.date}</span>`;
+          
+          let html = `<div style="margin-bottom: 8px;">
+            <strong style="display:block; color: var(--text);">${data.celebration}</strong>
+          </div>`;
+
+          if (data.readings && data.readings.length > 0) {
+            html += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+            data.readings.forEach(reading => {
+              html += `
+                <details style="background: rgba(0,0,0,0.03); border-radius: 4px; padding: 4px 8px;">
+                  <summary style="cursor: pointer; font-weight: 600; outline: none; display: list-item;">
+                    ${reading.type}
+                    <div style="font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px;">${reading.reference}</div>
+                  </summary>
+                  <div style="margin-top: 8px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; padding-bottom: 4px; color: var(--text);">
+                    ${reading.text}
+                  </div>
+                </details>
+              `;
+            });
+            html += `</div>`;
+          } else {
+            html += `<p>No readings parsed.</p>`;
+          }
+
+          html += `
+            <div style="margin-top: 12px; font-size: 11px; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 8px;">
+              <a href="${data.source.url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: none;">
+                Source: ${data.source.name} Daily Readings
+              </a>
+            </div>
+          `;
+          
+          content.innerHTML = html;
+        }
+
+        function renderError(dateStr) {
+          content.innerHTML = `
+            <p style="margin-bottom: 8px;">Today's readings are temporarily unavailable.</p>
+            <a href="https://www.ewtn.com/daily-readings/${dateStr}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 4px 8px; background: var(--primary); color: white; border-radius: 4px; text-decoration: none; font-weight: 500;">
+              View on EWTN
+            </a>
+          `;
+        }
+
+        // Check cache first
         try {
-          const response = await fetch('/api/daily-readings');
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) {
+            const data = JSON.parse(cached);
+            renderReadings(data);
+            return;
+          }
+        } catch(e) {}
+
+        // Fetch from API
+        try {
+          const response = await fetch(`/api/daily-readings?date=${targetDate}`);
           if (!response.ok) throw new Error('Network response was not ok');
           const data = await response.json();
           if (data.ok) {
-            dailyReadingsTitle.textContent = data.title || 'Daily Readings';
-            dailyReadingsContent.textContent = data.body || 'No readings found.';
+            localStorage.setItem(cacheKey, JSON.stringify(data));
+            renderReadings(data);
           } else {
             throw new Error(data.error || 'Unknown error');
           }
         } catch (error) {
           console.error('Failed to fetch daily readings:', error);
-          dailyReadingsContent.textContent = 'Unable to load daily readings at this time.';
+          renderError(targetDate);
         }
       }
+
+      loadDailyReadings();
     });
   </script>
 </body>
