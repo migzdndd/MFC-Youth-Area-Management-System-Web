@@ -177,6 +177,8 @@ function updateStoredSession(nextSession) {
   } else {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
   }
+}
+
 // ============================================================================
 // SECTION 2: AUTHENTICATED BACKEND API CLIENT
 // Wrapper around native fetch that handles Bearer token authentication,
@@ -229,6 +231,8 @@ async function backendApi(path, options = {}) {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
 // ============================================================================
 // SECTION 3: CLOUD SYNCHRONIZATION & ENTITY MAPPERS
 // Reconciles live data from Supabase backend into the local cache schema.
@@ -407,6 +411,8 @@ async function refreshAllCloudData({ render = true } = {}) {
   await syncCloudModulesIntoLocalDb();
   if (render) renderPageSafely();
   return true;
+}
+
 // ============================================================================
 // SECTION 4: ROLE PERMISSIONS & CHAPTER SCOPING
 // Controls role-based capabilities (Area Admin vs. Chapter Servant).
@@ -479,6 +485,8 @@ function isOwnMemberRecord(member) {
   const currentEmail = authEmail(session?.email || '');
   const recordEmail = authEmail(member.email || '');
   return Boolean(currentEmail && recordEmail && currentEmail === recordEmail);
+}
+
 // ============================================================================
 // SECTION 5: DATABASE NORMALIZATION & PERSISTENCE
 // Validates, sanitizes, and persists entity records to localStorage.
@@ -697,6 +705,8 @@ function save(data) {
     DB_KEY,
     JSON.stringify(normalizeDatabase(data))
   );
+}
+
 // ============================================================================
 // SECTION 6: FORMATTING, VALIDATION & HELPER UTILITIES
 // Currency formatting, date & time localization, age calculation,
@@ -8030,10 +8040,12 @@ const renderers = {
 function renderPageFailure(error) {
   console.error('Page render failed:', error);
 
-  if (!content) return;
+  const target = content || document.getElementById('pageContent');
+  if (!target) return;
 
-  content.removeAttribute('aria-busy');
-  content.innerHTML = `
+  window.MFCPageSkeleton?.clear?.();
+  target.removeAttribute('aria-busy');
+  target.innerHTML = `
     <section class="card page-load-error" role="alert">
       <h2>We couldn't finish loading this page.</h2>
       <p>Your data was not changed. You can safely try loading the page again.</p>
@@ -8107,11 +8119,11 @@ async function bootstrapApplication() {
 }
 
 window.addEventListener('error', event => {
-  console.error('Unhandled page error:', event.error || event.message);
+  console.error('Unhandled page error:', event?.error || event?.message || event);
 });
 
 window.addEventListener('unhandledrejection', event => {
-  console.error('Unhandled async error:', event.reason);
+  console.error('Unhandled async error:', event?.reason || event);
 });
 
 bootstrapApplication().catch(error => {
