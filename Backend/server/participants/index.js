@@ -12,7 +12,7 @@ async function memberInArea(supabase, memberId, areaId) {
 
 async function listParticipants(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const { data: events, error: eventError } = await supabase.from('events').select('id').eq('area_id', areaId);
   if (eventError) throw eventError;
   const eventIds = (events || []).map(item => item.id);
@@ -40,7 +40,7 @@ async function listParticipants(req, res) {
 async function createParticipant(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can register event participants.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const eventId = req.body?.eventId;
   const memberId = req.body?.memberId;
   if (!eventId || !memberId) return sendJson(res, 400, { ok: false, error: 'Event and member are required.' });
@@ -66,7 +66,7 @@ async function createParticipant(req, res) {
 async function updateParticipant(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can edit event participants.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Participant ID is required.' });
   const { data: existing, error: existingError } = await supabase.from('event_participants').select('id, event_id').eq('id', id).maybeSingle();
@@ -84,7 +84,7 @@ async function updateParticipant(req, res) {
 async function deleteParticipant(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can delete event participants.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Participant ID is required.' });
   const { data: existing, error: existingError } = await supabase.from('event_participants').select('id, event_id').eq('id', id).maybeSingle();

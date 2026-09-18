@@ -4,7 +4,7 @@ import { cleanText, nullableText, requireArea, validateIsoDate, asNonNegativeInt
 
 async function listReports(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   let query = supabase
     .from('activity_reports')
     .select('id, area_id, chapter_id, prepared_by_member_id, prepared_by_name, chapter_name_snapshot, report_type, activity_date, title, activity, participant_count, location, event_id, notes, created_at, updated_at')
@@ -24,7 +24,7 @@ async function listReports(req, res) {
 async function saveReport(req, res, isUpdate) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role) && !isChapterServantRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'You do not have permission to manage activity reports.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const input = req.body || {};
   let chapterId = input.chapterId || null;
   if (isChapterServantRole(profile.role)) chapterId = profile.chapter_id;
@@ -71,7 +71,7 @@ async function saveReport(req, res, isUpdate) {
 async function deleteReport(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role) && !isChapterServantRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'You do not have permission to delete activity reports.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Report ID is required.' });
   const existing = await loadAreaRow(supabase, 'activity_reports', id, areaId, 'id, chapter_id');

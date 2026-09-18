@@ -31,7 +31,7 @@ async function validateAssignmentScope(supabase, profile, chapterId, areaId) {
 
 async function listUnassigned(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const chapterId = req.query?.chapterId;
   await validateAssignmentScope(supabase, profile, chapterId, areaId);
 
@@ -50,7 +50,7 @@ async function listUnassigned(req, res) {
 
 async function assignMembers(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const chapterId = req.body?.chapterId;
   const memberIds = [...new Set((Array.isArray(req.body?.memberIds) ? req.body.memberIds : []).map(String).filter(Boolean))].slice(0, 250);
   await validateAssignmentScope(supabase, profile, chapterId, areaId);

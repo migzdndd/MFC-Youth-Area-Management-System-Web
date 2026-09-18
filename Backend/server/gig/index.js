@@ -12,7 +12,7 @@ async function canManageMember(supabase, profile, memberId, areaId) {
 
 async function listGig(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   let query = supabase
     .from('gig_contributions')
     .select('id, area_id, chapter_id, member_id, amount, contribution_date, notes, created_at')
@@ -32,7 +32,7 @@ async function listGig(req, res) {
 
 async function createGig(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const memberId = req.body?.memberId;
   const member = await canManageMember(supabase, profile, memberId, areaId);
   if (!member) return sendJson(res, 403, { ok: false, error: 'You can only manage GIG records for members you are allowed to manage.' });
@@ -54,7 +54,7 @@ async function createGig(req, res) {
 
 async function deleteGig(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Contribution ID is required.' });
   const existing = await loadAreaRow(supabase, 'gig_contributions', id, areaId, 'id, member_id');

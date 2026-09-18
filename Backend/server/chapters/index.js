@@ -8,7 +8,7 @@ import { cleanText, requireArea, requireAreaAdmin, loadAreaRow } from '../_lib/c
 
 async function listChapters(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
 
   let query = supabase
     .from('chapters')
@@ -34,7 +34,7 @@ async function listChapters(req, res) {
 async function createChapter(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const name = cleanText(req.body?.name, 100);
   if (!name) return sendJson(res, 400, { ok: false, error: 'Chapter name is required.' });
 
@@ -59,7 +59,7 @@ async function createChapter(req, res) {
 async function updateChapter(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.body?.id;
   const name = cleanText(req.body?.name, 100);
   if (!id || !name) return sendJson(res, 400, { ok: false, error: 'Chapter ID and name are required.' });
@@ -91,7 +91,7 @@ async function updateChapter(req, res) {
 async function deleteChapter(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Chapter ID is required.' });
 

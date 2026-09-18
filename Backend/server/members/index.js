@@ -11,6 +11,7 @@ import {
   apiError
 } from '../_lib/http.js';
 import { ensureRoleServiceAssignment } from '../_lib/service-catalog.js';
+import { requireArea } from '../_lib/cloud-data.js';
 
 const ACCESS_LEVELS = new Set([
   'national_coordinator',
@@ -64,8 +65,10 @@ async function listMembers(req, res) {
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 
+  const areaId = requireArea(req, profile);
+
   if (isAreaAdminRole(profile.role)) {
-    query = query.eq('area_id', profile.area_id);
+    query = query.eq('area_id', areaId);
   } else if (isChapterServantRole(profile.role)) {
     query = profile.chapter_id
       ? query.eq('chapter_id', profile.chapter_id)
@@ -107,7 +110,7 @@ async function createMember(req, res) {
 
   const requestedRole = String(input.accessLevel || 'member').trim().toLowerCase();
   let accessLevel = ACCESS_LEVELS.has(requestedRole) ? requestedRole : 'member';
-  const areaId = profile.area_id;
+  const areaId = requireArea(req, profile);
   let chapterId = input.chapterId || null;
 
   if (isChapterServantRole(profile.role)) {
@@ -180,7 +183,8 @@ async function updateMember(req, res) {
   const memberId = input.id;
   if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
 
-  const existing = await loadAreaMember(supabase, memberId, profile.area_id);
+  const areaId = requireArea(req, profile);
+  const existing = await loadAreaMember(supabase, memberId, areaId);
   if (!existing) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
 
   const firstName = cleanText(input.firstName ?? existing.first_name, 100);
@@ -209,7 +213,7 @@ async function updateMember(req, res) {
     return sendJson(res, 400, { ok: false, error: 'A Chapter Servant must be assigned to a chapter.' });
   }
 
-  await validateChapter(supabase, chapterId, profile.area_id);
+  await validateChapter(supabase, chapterId, areaId);
 
   const { data: duplicate, error: duplicateError } = await supabase
     .from('members')
@@ -239,7 +243,7 @@ async function updateMember(req, res) {
       school
     })
     .eq('id', memberId)
-    .eq('area_id', profile.area_id)
+    .eq('area_id', areaId)
     .select('*')
     .single();
   if (updateError) throw updateError;
@@ -274,7 +278,7 @@ async function updateMember(req, res) {
 
   await ensureRoleServiceAssignment(supabase, {
     memberId: updated.id,
-    areaId: profile.area_id,
+    areaId,
     role: accessLevel
   });
 
@@ -290,7 +294,8 @@ async function deleteMember(req, res) {
   const memberId = req.query?.id || req.body?.id;
   if (!memberId) return sendJson(res, 400, { ok: false, error: 'Member ID is required.' });
 
-  const member = await loadAreaMember(supabase, memberId, profile.area_id);
+  const areaId = requireArea(req, profile);
+  const member = await loadAreaMember(supabase, memberId, areaId);
   if (!member) return sendJson(res, 404, { ok: false, error: 'Member not found in your Area.' });
 
   // A signed-in leader must never be able to remove their own member record
@@ -330,7 +335,7 @@ async function deleteMember(req, res) {
     .from('members')
     .delete()
     .eq('id', memberId)
-    .eq('area_id', profile.area_id);
+    .eq('area_id', areaId);
   if (memberDeleteError) throw memberDeleteError;
 
   return sendJson(res, 200, {

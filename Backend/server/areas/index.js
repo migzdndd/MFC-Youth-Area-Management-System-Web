@@ -4,6 +4,7 @@ import { ensureLeadershipMemberRecord } from '../_lib/member-link.js';
 import { STANDARD_SERVICES } from '../_lib/service-catalog.js';
 
 const LEADERSHIP_ROLES = new Set([
+  'national_coordinator',
   'couple_coordinator',
   'area_servant',
   'lit_servant',

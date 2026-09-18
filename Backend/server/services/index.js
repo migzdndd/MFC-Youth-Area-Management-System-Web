@@ -5,7 +5,7 @@ import { ensureStandardServices, normalizeServiceName } from '../_lib/service-ca
 
 async function listServices(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const services = await ensureStandardServices(supabase, areaId);
   return sendJson(res, 200, { ok: true, services });
 }
@@ -13,7 +13,7 @@ async function listServices(req, res) {
 async function assignServices(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   if (!isAreaAdminRole(profile.role)) return sendJson(res, 403, { ok: false, error: 'Only Area-level servant accounts can assign services.' });
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const memberId = req.body?.memberId;
   const serviceNames = [...new Set((Array.isArray(req.body?.serviceNames) ? req.body.serviceNames : []).map(normalizeServiceName).filter(Boolean))];
   if (serviceNames.length > 1) return sendJson(res, 400, { ok: false, error: 'A member can only be assigned to one service.' });

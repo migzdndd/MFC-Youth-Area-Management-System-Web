@@ -34,7 +34,7 @@ function eventPayload(input, areaId, userId) {
 
 async function listEvents(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const { data, error } = await supabase
     .from('events')
     .select('id, area_id, name, description, venue, starts_at, ends_at, fee, manual_attendance, created_at, updated_at')
@@ -47,7 +47,7 @@ async function listEvents(req, res) {
 async function createEvent(req, res) {
   const { supabase, profile, user } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile, 'Only Area-level servant accounts can add Area events.');
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const payload = eventPayload(req.body || {}, areaId, user.id);
   const { data, error } = await supabase.from('events').insert(payload).select('*').single();
   if (error) throw error;
@@ -57,7 +57,7 @@ async function createEvent(req, res) {
 async function updateEvent(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile, 'Only Area-level servant accounts can edit Area events.');
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Event ID is required.' });
   const existing = await loadAreaRow(supabase, 'events', id, areaId, 'id');
@@ -72,7 +72,7 @@ async function updateEvent(req, res) {
 async function deleteEvent(req, res) {
   const { supabase, profile } = await requireAuthenticatedProfile(req);
   requireAreaAdmin(profile, 'Only Area-level servant accounts can delete Area events.');
-  const areaId = requireArea(profile);
+  const areaId = requireArea(req, profile);
   const id = req.query?.id || req.body?.id;
   if (!id) return sendJson(res, 400, { ok: false, error: 'Event ID is required.' });
   const existing = await loadAreaRow(supabase, 'events', id, areaId, 'id');

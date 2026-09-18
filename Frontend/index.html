@@ -61,6 +61,12 @@
               <li>Loading recent updates...</li>
             </ul>
           </article>
+          <article class="daily-readings-card-wrapper" style="grid-column: span 2;">
+            <strong id="dailyReadingsTitle">Daily Readings</strong>
+            <div id="dailyReadingsContent" style="margin-top: 8px; font-size: 12px; color: var(--muted); line-height: 1.4; max-height: 120px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; white-space: pre-wrap;">
+              Loading today's readings...
+            </div>
+          </article>
         </div>
 
         <div class="login-hero-footer">
@@ -167,6 +173,26 @@
       } catch (error) {
         console.error('Failed to fetch changelogs:', error);
         changelogsList.innerHTML = '<li>Unable to load changelogs at this time.</li>';
+      }
+
+      // Fetch Daily Readings
+      const dailyReadingsContent = document.getElementById('dailyReadingsContent');
+      const dailyReadingsTitle = document.getElementById('dailyReadingsTitle');
+      if (dailyReadingsContent && dailyReadingsTitle) {
+        try {
+          const response = await fetch('/api/daily-readings');
+          if (!response.ok) throw new Error('Network response was not ok');
+          const data = await response.json();
+          if (data.ok) {
+            dailyReadingsTitle.textContent = data.title || 'Daily Readings';
+            dailyReadingsContent.textContent = data.body || 'No readings found.';
+          } else {
+            throw new Error(data.error || 'Unknown error');
+          }
+        } catch (error) {
+          console.error('Failed to fetch daily readings:', error);
+          dailyReadingsContent.textContent = 'Unable to load daily readings at this time.';
+        }
       }
     });
   </script>

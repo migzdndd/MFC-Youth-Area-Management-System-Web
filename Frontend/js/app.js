@@ -197,15 +197,21 @@ async function backendApi(path, options = {}) {
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {})
+    };
+
+    if (session?.role === 'national_coordinator' && session?.areaId) {
+      headers['X-MFC-Area-ID'] = session.areaId;
+    }
+
     const response = await fetch(path, {
       ...options,
       signal: controller.signal,
       cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
-      }
+      headers
     });
 
     let body = null;
@@ -1214,6 +1220,21 @@ if (logoutBtn) {
   );
 
   if (session?.role !== 'member') {
+    if (session?.role === 'national_coordinator' && session?.areaId) {
+      const returnButton = document.createElement('button');
+      returnButton.type = 'button';
+      returnButton.className = 'sidebar-account-action';
+      returnButton.textContent = 'Return to National DB';
+      returnButton.onclick = () => {
+        session.areaId = null;
+        session.areaName = null;
+        updateStoredSession(session);
+        toast('Returning to National Dashboard...');
+        navigateWithLoader('/dashboard', true);
+      };
+      logoutBtn.parentElement?.insertBefore(returnButton, logoutBtn);
+    }
+
     const previewButton = document.createElement('button');
     previewButton.type = 'button';
     previewButton.className = 'sidebar-account-action member-preview-button';
@@ -1386,15 +1407,7 @@ if (sidebar && menuBtn) {
 // Main administrator dashboard with metrics, upcoming events, and quick actions.
 // ============================================================================
 
-function renderNationalCoordinatorDashboard(data) {
-  const areas = data.areas || [
-    { id: 'area-1', name: 'NCR Central' },
-    { id: 'area-2', name: 'NCR North' },
-    { id: 'area-3', name: 'NCR South' },
-    { id: 'area-4', name: 'Visayas' },
-    { id: 'area-5', name: 'Mindanao' }
-  ];
-
+async function renderNationalCoordinatorDashboard(data) {
   content.innerHTML = `
     <section class="dashboard-hero animate-in is-visible">
       <div class="dashboard-hero-copy">
@@ -1415,29 +1428,49 @@ function renderNationalCoordinatorDashboard(data) {
         <div class="section-line"></div>
       </div>
 
-      <div class="summary-card card" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 24px;">
-        ${areas.map(area => `
-          <button
-            class="summary-item"
-            style="border: none; background: var(--bg); cursor: pointer; text-align: left; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 100%; transition: transform 0.2s, box-shadow 0.2s;"
-            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'"
-            onmouseout="this.style.transform='none'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)'"
-            onclick='visitArea(${inlineJsArg(area.id)}, ${inlineJsArg(area.name)})'
-          >
-            <div class="summary-label" style="font-size: 1.1rem; color: var(--text); margin-bottom: 8px;">
-              ${esc(area.name)}
-            </div>
-            <p style="margin: 0; color: var(--muted); font-size: 0.85rem;">
-              Click to view database
-            </p>
-            <span class="summary-link-hint" style="font-size: 0.76rem; color: var(--blue); font-weight: 600; margin-top: auto; padding-top: 12px; display: inline-flex; align-items: center; gap: 4px;">
-              Visit Area &rarr;
-            </span>
-          </button>
-        `).join('')}
+      <div id="nc-areas-container" class="summary-card card" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 24px;">
+        <p style="color: var(--muted);">Loading areas...</p>
       </div>
     </section>
   `;
+
+  try {
+    const response = await backendApi('/api/areas');
+    const areas = response.areas || [];
+    
+    const container = document.getElementById('nc-areas-container');
+    if (!container) return;
+
+    if (areas.length === 0) {
+      container.innerHTML = '<p style="color: var(--muted);">No active Areas found in the system.</p>';
+      return;
+    }
+
+    container.innerHTML = areas.map(area => `
+      <button
+        class="summary-item"
+        style="border: none; background: var(--bg); cursor: pointer; text-align: left; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 100%; transition: transform 0.2s, box-shadow 0.2s;"
+        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'"
+        onmouseout="this.style.transform='none'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)'"
+        onclick='visitArea(${inlineJsArg(area.id)}, ${inlineJsArg(area.name)})'
+      >
+        <div class="summary-label" style="font-size: 1.1rem; color: var(--text); margin-bottom: 8px;">
+          ${esc(area.name)}
+        </div>
+        <p style="margin: 0; color: var(--muted); font-size: 0.85rem;">
+          Click to view database
+        </p>
+        <span class="summary-link-hint" style="font-size: 0.76rem; color: var(--blue); font-weight: 600; margin-top: auto; padding-top: 12px; display: inline-flex; align-items: center; gap: 4px;">
+          Visit Area &rarr;
+        </span>
+      </button>
+    `).join('');
+  } catch (err) {
+    const container = document.getElementById('nc-areas-container');
+    if (container) {
+      container.innerHTML = `<p style="color: var(--red);">Failed to load areas: ${esc(err.message)}</p>`;
+    }
+  }
 }
 
 window.visitArea = async (areaId, areaName) => {

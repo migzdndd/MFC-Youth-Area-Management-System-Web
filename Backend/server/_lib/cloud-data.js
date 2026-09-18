@@ -16,7 +16,11 @@ export function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 }
 
-export function requireArea(profile) {
+export function requireArea(req, profile) {
+  if (profile?.role === 'national_coordinator') {
+    const override = req.headers['x-mfc-area-id'] || req.headers['X-MFC-Area-ID'];
+    if (override) return override;
+  }
   if (!profile?.area_id) {
     const error = new Error('Your account is not assigned to an Area.');
     error.statusCode = 409;

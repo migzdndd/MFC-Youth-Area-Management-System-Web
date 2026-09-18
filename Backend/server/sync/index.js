@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
   try {
     const { supabase, profile } = await requireAuthenticatedProfile(req);
-    const areaId = requireArea(profile);
+    const areaId = requireArea(req, profile);
     await ensureStandardServices(supabase, areaId);
 
     let chaptersQuery = supabase.from('chapters').select('id, area_id, name, is_active, created_at, updated_at').eq('area_id', areaId).eq('is_active', true).order('name');
