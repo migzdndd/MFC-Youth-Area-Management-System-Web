@@ -202,6 +202,25 @@
   // 5. Fullscreen Animated Page Loader
   // Creates and controls branded overlay during navigation.
   // --------------------------------------------------------------------------
+  /**
+   * Generates the Uiverse honeycomb loader markup with center gel and 3 rings of bricks.
+   */
+  function buildSocketLoaderHtml() {
+    const gels = [
+      '<div class="gel center-gel"><div class="hex-brick"></div><div class="hex-brick h2"></div><div class="hex-brick h3"></div></div>'
+    ];
+    for (let i = 1; i <= 6; i++) {
+      gels.push(`<div class="gel c${i} r1"><div class="hex-brick"></div><div class="hex-brick h2"></div><div class="hex-brick h3"></div></div>`);
+    }
+    for (let i = 7; i <= 18; i++) {
+      gels.push(`<div class="gel c${i} r2"><div class="hex-brick"></div><div class="hex-brick h2"></div><div class="hex-brick h3"></div></div>`);
+    }
+    for (let i = 19; i <= 37; i++) {
+      gels.push(`<div class="gel c${i} r3"><div class="hex-brick"></div><div class="hex-brick h2"></div><div class="hex-brick h3"></div></div>`);
+    }
+    return `<div class="socket" aria-hidden="true">${gels.join('')}</div>`;
+  }
+
   function ensureLoader() {
     try {
       if (document.getElementById(LOADER_ID) || !document.body) return;
@@ -212,10 +231,7 @@
       overlay.setAttribute('aria-hidden', 'true');
       overlay.innerHTML = `
         <div class="page-loader__content" role="status" aria-live="polite" aria-label="Loading page">
-          <div class="page-loader__mark" aria-hidden="true">
-            <span class="page-loader__mark-ring"></span>
-            <img class="page-loader__logo" src="/img/logo-2.png" alt="" decoding="async" fetchpriority="high">
-          </div>
+          ${buildSocketLoaderHtml()}
           <div class="page-loader__copy">
             <span class="page-loader__overline">MFC Youth</span>
             <strong class="page-loader__label">Opening page</strong>
