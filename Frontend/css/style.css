@@ -3070,7 +3070,7 @@ html.page-is-loading body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: radial-gradient(circle at center, rgba(30, 20, 50, 0.94) 0%, #041b2b 75%);
+  background: radial-gradient(circle at center, rgba(8, 120, 189, 0.22) 0%, rgba(0, 40, 71, 0.96) 60%, #001b30 100%);
   isolation: isolate;
   opacity: 0;
   visibility: hidden;
@@ -3083,7 +3083,7 @@ html.page-is-loading body {
   position: absolute;
   content: "";
   z-index: -1;
-  border: 1px solid rgba(192, 132, 252, 0.12);
+  border: 1px solid rgba(101, 211, 255, 0.16);
   border-radius: 50%;
   transform: rotate(-18deg);
 }
@@ -3091,13 +3091,13 @@ html.page-is-loading body {
 .page-loader::before {
   width: min(72vw, 720px);
   aspect-ratio: 1;
-  box-shadow: 0 0 0 28px rgba(192, 132, 252, 0.02), 0 0 0 56px rgba(192, 132, 252, 0.015);
+  box-shadow: 0 0 0 28px rgba(101, 211, 255, 0.025), 0 0 0 56px rgba(101, 211, 255, 0.015);
 }
 
 .page-loader::after {
   width: min(42vw, 380px);
   aspect-ratio: 1;
-  border-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(247, 201, 72, 0.14);
   transform: rotate(34deg);
 }
 
@@ -3129,7 +3129,7 @@ html.page-is-loading body {
 }
 
 .hex-brick {
-  background: violet;
+  background: #f7c948;
   width: 30px;
   height: 17px;
   position: absolute;
@@ -3443,15 +3443,15 @@ html.page-is-loading body {
 
 @keyframes fade00 {
   0% {
-    background: rgb(228, 0, 228);
+    background: #f7c948;
   }
 
   50% {
-    background: red;
+    background: #0878bd;
   }
 
   100% {
-    background: violet;
+    background: #38bdf8;
   }
 }
 
@@ -3470,7 +3470,7 @@ html.page-is-loading body {
 }
 
 .page-loader__overline {
-  color: #c084fc;
+  color: #f7c948;
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -3486,7 +3486,7 @@ html.page-is-loading body {
 
 .page-loader__destination {
   overflow: hidden;
-  color: rgba(235, 249, 255, 0.65);
+  color: #75d5f5;
   font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4678,16 +4678,58 @@ html.page-is-loading body {
 
 @media (max-width: 900px) {
   .auth-layout-modern {
-    grid-template-columns: 1fr;
-    width: min(620px, 100%);
-  }
-
-  .login-hero {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    width: min(640px, 100%);
+    gap: 28px;
+    margin: 0 auto;
   }
 
   .login-card-modern {
     width: 100%;
+    order: 1;
+  }
+
+  .login-hero {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    order: 2;
+    padding: 24px 0 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .login-hero-brand {
+    margin-bottom: 20px;
+  }
+
+  .login-hero-logo {
+    width: 170px;
+  }
+
+  .login-hero-copy h2 {
+    font-size: clamp(1.85rem, 5vw, 2.5rem);
+    line-height: 1.1;
+  }
+
+  .login-hero-copy p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .login-feature-grid {
+    margin-top: 22px;
+    gap: 12px;
+  }
+
+  .login-hero-footer {
+    display: flex;
+    justify-content: space-around;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 14px;
   }
 
   .sidebar {
@@ -4716,7 +4758,7 @@ html.page-is-loading body {
 
 @media (max-width: 620px) {
   .auth-page-modern {
-    padding: 18px 14px 8px;
+    padding: 16px 12px 24px;
   }
 
   .login-card-modern {
@@ -4724,12 +4766,35 @@ html.page-is-loading body {
     border-radius: 20px;
   }
 
+  .login-card-top {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
   .secure-login-badge {
-    display: none;
+    display: inline-flex;
+    font-size: 0.65rem;
+    padding: 5px 9px;
   }
 
   .login-buttons-modern {
     grid-template-columns: 1fr;
+  }
+
+  .login-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .login-feature-grid article {
+    grid-column: 1 / -1 !important;
+  }
+
+  .login-hero-footer {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    text-align: center;
+    gap: 8px;
+    padding: 12px 8px;
   }
 
   .dashboard-hero {
